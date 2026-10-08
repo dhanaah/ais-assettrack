@@ -1,0 +1,180 @@
+<title>Pallet Tracking Flow</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one landscape SVG sheet, two swimlanes (Dispatch / Return), masters strip on top, integration & report rails on the right */
+:root{
+  --bg:#f3f4f2; --paper:#ffffff; --fg:#1b1f1d; --mute:#5c655f; --line:#c9cfca;
+  --lane:#e9ecea; --accent:#0b5f8a; --accent-2:#d5e8f2;
+  --ctrl:#b45309; --ctrl-2:#fbe7cf;
+  --ok:#1f7a3a; --ok-2:#d9efdf; --warn:#9b1c1c; --warn-2:#f6dada;
+  --ext:#5b3f9e; --ext-2:#e6def5;
+  --display:"Barlow Condensed",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#15181a; --paper:#1e2224; --fg:#e8ebe9; --mute:#9aa49e; --line:#3a4144;
+  --lane:#23282b; --accent:#6ab6dd; --accent-2:#163a4e;
+  --ctrl:#f0a450; --ctrl-2:#4a2f10; --ok:#6fcf8c; --ok-2:#1b3a26; --warn:#f08a8a; --warn-2:#4a1b1b;
+  --ext:#b79ae8; --ext-2:#2e2347; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#15181a; --paper:#1e2224; --fg:#e8ebe9; --mute:#9aa49e; --line:#3a4144;
+  --lane:#23282b; --accent:#6ab6dd; --accent-2:#163a4e;
+  --ctrl:#f0a450; --ctrl-2:#4a2f10; --ok:#6fcf8c; --ok-2:#1b3a26; --warn:#f08a8a; --warn-2:#4a1b1b;
+  --ext:#b79ae8; --ext-2:#2e2347; color-scheme:dark }
+body{background:var(--bg);color:var(--fg);font-family:var(--body);padding-inline:16px;padding-block:20px;margin:0}
+header{max-width:1600px;margin:0 auto 12px;display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline}
+h1{font-family:var(--display);font-weight:700;font-size:30px;margin:0;letter-spacing:.3px;text-wrap:balance}
+.sub{color:var(--mute);font-size:13px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--mute);max-width:1600px;margin:0 auto 10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:3px;border:1.5px solid}
+.sheet{max-width:1600px;margin:0 auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow-x:auto}
+svg{display:block;min-width:1500px;width:100%;height:auto;font-family:var(--body)}
+.lane{fill:var(--lane)}
+.laneLabel{font-family:var(--display);font-weight:700;font-size:26px;fill:var(--mute);letter-spacing:2px}
+.n text{font-size:12.5px;fill:var(--fg)}
+.n .t{font-weight:600;font-size:13px}
+.n .s{fill:var(--mute);font-size:11px}
+.step rect{fill:var(--paper);stroke:var(--fg);stroke-width:1.4}
+.app rect{fill:var(--accent-2);stroke:var(--accent);stroke-width:1.4}
+.ctrl polygon{fill:var(--ctrl-2);stroke:var(--ctrl);stroke-width:1.6}
+.ext rect{fill:var(--ext-2);stroke:var(--ext);stroke-width:1.4;stroke-dasharray:5 3}
+.ok rect{fill:var(--ok-2);stroke:var(--ok);stroke-width:1.4}
+.warn rect{fill:var(--warn-2);stroke:var(--warn);stroke-width:1.4}
+.edge{fill:none;stroke:var(--fg);stroke-width:1.5}
+.edge.ext{stroke:var(--ext);stroke-dasharray:5 3}
+.edge.no{stroke:var(--warn)}
+.edge.yes{stroke:var(--ok)}
+.elabel{font-size:11px;fill:var(--mute)}
+.elabel.yes{fill:var(--ok);font-weight:600}.elabel.no{fill:var(--warn);font-weight:600}
+.master rect{fill:var(--paper);stroke:var(--line);stroke-width:1.2}
+.master text{font-size:12px;fill:var(--fg)}
+.master .h{font-family:var(--display);font-weight:600;font-size:14px;fill:var(--mute);letter-spacing:1.5px}
+.foot{font-size:11px;fill:var(--mute)}
+</style>
+
+<header>
+  <h1>Returnable Pallet Tracking — End-to-End Flow</h1>
+  <span class="sub">AIS → OEM / OES / AFM customer → AIS · v0.4 · Oct 2026</span>
+</header>
+<div class="legend">
+  <span><i class="sw" style="background:var(--paper);border-color:var(--fg)"></i>Physical / scan step</span>
+  <span><i class="sw" style="background:var(--accent-2);border-color:var(--accent)"></i>Asset app function</span>
+  <span><i class="sw" style="background:var(--ctrl-2);border-color:var(--ctrl)"></i>Control check</span>
+  <span><i class="sw" style="background:var(--ext-2);border-color:var(--ext);border-style:dashed"></i>External system (Oracle EBS / GCS / Production)</span>
+  <span><i class="sw" style="background:var(--ok-2);border-color:var(--ok)"></i>Normal end state</span>
+  <span><i class="sw" style="background:var(--warn-2);border-color:var(--warn)"></i>Exception queue</span>
+</div>
+
+<div class="sheet"><svg viewBox="0 0 1600 760" id="chart" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pallet tracking flow chart">
+<defs>
+  <marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 z" fill="context-stroke"/></marker>
+</defs>
+</svg></div>
+
+<script>
+const S=document.getElementById('chart'),NS='http://www.w3.org/2000/svg';
+function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||S).appendChild(e);return e}
+function txt(x,y,lines,cls,anchor){lines.forEach((l,i)=>{const t=el('text',{x,y:y+i*14,'text-anchor':anchor||'middle',class:(i?'':'t')+(l.startsWith('·')?' s':'')});t.textContent=l;S.lastChild.appendChild(t)})}
+
+/* ---- lanes ---- */
+el('rect',{x:20,y:112,width:1440,height:290,rx:6,class:'lane'});
+el('rect',{x:20,y:420,width:1440,height:290,rx:6,class:'lane'});
+['D','I','S','P','A','T','C','H'].forEach((c,i)=>{const t=el('text',{x:40,y:150+i*30,class:'laneLabel','text-anchor':'middle'});t.textContent=c});
+['R','E','T','U','R','N'].forEach((c,i)=>{const t=el('text',{x:40,y:480+i*30,class:'laneLabel','text-anchor':'middle'});t.textContent=c});
+
+/* ---- masters strip ---- */
+const masters=[
+ ['PALLET MASTER',['Pallet No (never reused)','Home plant · type · tag · status']],
+ ['TAG MASTER',['Independent series, batches (400)','Assign / replace / retire']],
+ ['TRANSPORTER',['Code · vehicles · contact']],
+ ['CUSTOMER MASTER',['Mail IDs · contacts · plant map','Holding-days limit · reminders']],
+ ['CHALLAN SWITCH',['Per plant/customer:','ORACLE  |  APP']],
+];
+masters.forEach((m,i)=>{const x=80+i*280,g=el('g',{class:'master'});el('rect',{x,y:18,width:262,height:76,rx:4},g);
+ const h=el('text',{x:x+12,y:38,class:'h'},g);h.textContent=m[0];
+ m[1].forEach((l,j)=>{const t=el('text',{x:x+12,y:58+j*15},g);t.textContent=l})});
+
+/* ---- nodes: id,x,y,w,h,type,lines ---- */
+const N={};
+function node(id,x,y,w,h,type,lines){
+ const g=el('g',{class:'n '+type});
+ if(type==='ctrl'){el('polygon',{points:`${x+w/2},${y} ${x+w},${y+h/2} ${x+w/2},${y+h} ${x},${y+h/2}`},g)}
+ else el('rect',{x,y,width:w,height:h,rx:5},g);
+ const base=y+h/2-((lines.length-1)*7)+4;
+ lines.forEach((l,i)=>{const t=el('text',{x:x+w/2,y:base+i*14,'text-anchor':'middle',class:(i===0?'t':'')+(l.startsWith('·')?' s':'')},g);t.textContent=l});
+ N[id]={x,y,w,h};
+}
+/* DISPATCH lane */
+node('order',  90,160,150,70,'app',['Create Pick List','in Asset App','·transporter · customer']);
+node('ebs',   100,300,130,54,'ext',['Oracle EBS','·SO posted via API']);
+node('dock',  280,160,150,70,'step',['Dock Out-ward Scan','·scan each pallet tag','·same-plant AVAILABLE only']);
+node('dic',   470,150,150,90,'ctrl',['Pick List','Control','·qty · no excess']);
+node('chal',  660,160,150,70,'app',['Challan','·source: Oracle or App','·exact pallet list']);
+node('chc',   850,150,150,90,'ctrl',['Challan Control','·once per Pick List','·dock scan complete']);
+node('log',  1040,160,150,70,'app',['Logistics Approve','·vehicle · transporter','·challan']);
+node('gcsO', 1230,160,150,70,'ext',['GCS Outward','·auto-created','·out-gate QR approval']);
+node('gcsOut',1230,300,150,54,'step',['AIS Out Gate','·vehicle released']);
+node('cust',1480,240,100,120,'ok',['CUSTOMER','·pallets booked','·to customer','·ledger']);
+node('oraC',  660,300,150,54,'ext',['Oracle challan pull','·when switch = ORACLE']);
+node('atc',  1040,300,150,54,'step',['Status → AT CUSTOMER','·aging clock starts']);
+
+/* RETURN lane */
+node('rtsA', 1230,460,150,76,'app',['Return Slip – Mode A','·customer / driver scans','·phone + BT printer']);
+node('rtsB', 1230,560,150,76,'app',['Return Slip – Mode B','·security at IN gate','·full scan or qty only']);
+node('inG',  1040,490,150,76,'step',['AIS IN Gate','·scan slip QR','·GCS-IN auto-created']);
+node('gcsI', 1040,610,150,54,'ext',['GCS Inward','·qty from slip']);
+node('dockI', 850,490,150,76,'step',['Unloading Dock']);
+node('yard',  660,460,150,90,'step',['Pallet Yard In-ward','·scan slip + each pallet','·☐ accept other-plant pallet']);
+node('rec',   470,470,150,90,'ctrl',['Reconcile','·ledger vs slip','·vs scan']);
+node('avail', 280,450,150,56,'ok',['AVAILABLE','·back in plant stock']);
+node('held',  280,530,150,56,'warn',['HELD – other plant','·blocked for dispatch','·home plant alerted']);
+N.rec.hy=515;
+node('disq',  280,610,150,66,'warn',['Discrepancy Queue','·short · excess · unknown','·cross-customer · damaged']);
+node('rem',   660,610,150,54,'app',['Reminder Mail','·overdue per customer']);
+node('rep',    90,460,150,216,'app',['Reports','·Plant availability','·Pallet history','·Tag change history','·Customer holding','·& aging','·Tag stock']);
+
+/* ---- edges ---- */
+function P(id,side){const n=N[id];return side==='r'?[n.x+n.w,n.y+n.h/2]:side==='l'?[n.x,n.y+n.h/2]:side==='t'?[n.x+n.w/2,n.y]:[n.x+n.w/2,n.y+n.h]}
+function edge(a,sa,b,sb,cls,label,route,lab){
+ const [x1,y1]=P(a,sa),[x2,y2]=P(b,sb);let d,pts;
+ if(Array.isArray(route)){pts=[[x1,y1],...route,[x2,y2]];d='M'+pts.map(p=>p.join(',')).join(' L')}
+ else if(route==='h') d=`M${x1},${y1} L${(x1+x2)/2},${y1} L${(x1+x2)/2},${y2} L${x2},${y2}`;
+ else if(route==='v') d=`M${x1},${y1} L${x1},${(y1+y2)/2} L${x2},${(y1+y2)/2} L${x2},${y2}`;
+ else d=`M${x1},${y1} L${x2},${y2}`;
+ el('path',{d,class:'edge '+(cls||''),'marker-end':'url(#ah)'});
+ if(label){const lx=lab?lab[0]:(x1+x2)/2,ly=lab?lab[1]:(y1+y2)/2-5;const t=el('text',{x:lx,y:ly,class:'elabel '+(cls||''),'text-anchor':'middle'});t.textContent=label}
+}
+edge('order','b','ebs','t','ext','SO post');
+edge('ebs','r','dock','b','ext','SO No. returned',[[355,327]],[300,318]);
+edge('order','r','dock','l');
+edge('dock','r','dic','l');
+edge('dic','r','chal','l','yes','pass');
+edge('dic','t','dock','t','no','fail → rescan',[[545,136],[355,136]],[450,131]);
+edge('oraC','t','chal','b','ext','');
+edge('chal','r','chc','l');
+edge('chc','r','log','l','yes','pass');
+edge('chc','t','chal','t','no','blocked',[[925,136],[735,136]],[830,131]);
+edge('log','r','gcsO','l');
+edge('gcsO','b','gcsOut','t','ext','');
+edge('log','b','atc','t');
+edge('gcsOut','r','cust','l','','',[[1430,327],[1430,300]]);
+edge('atc','r','gcsOut','l');
+
+/* return */
+edge('cust','b','rtsA','t','','',[[1530,410],[1305,410]]);
+edge('rtsA','l','inG','r','','',[[1210,498],[1210,528]]);
+edge('rtsB','l','inG','r','','',[[1210,598],[1210,528]]);
+edge('inG','b','gcsI','t','ext','');
+edge('inG','l','dockI','r');
+edge('dockI','l','yard','r','','',[[830,528],[830,505]]);
+edge('yard','l','rec','r','','',[[640,505],[640,515]]);
+edge('rec','t','avail','t','yes','match',[[545,440],[355,440]],[450,435]);
+edge('rec','l','held','r','','foreign + ☑',[[450,515],[450,558]],[450,503]);
+edge('rec','b','disq','r','no','mismatch',[[545,643]],[500,636]);
+edge('yard','b','rem','t','','ledger update');
+edge('rem','b','rep','b','','feeds reports',[[735,694],[165,694]],[450,689]);
+
+/* footnote */
+const f=el('text',{x:1480,y:740,class:'foot','text-anchor':'end'});f.textContent='Unticked checkbox: other-plant pallet scan is rejected and stays on customer ledger. Mode B qty-only slips are flagged PENDING VERIFICATION until yard scan.';
+const g=el('text',{x:80,y:740,class:'foot'});g.textContent='Developed by DT · Asset Tracking v0.4 (roadmap)';
+</script>

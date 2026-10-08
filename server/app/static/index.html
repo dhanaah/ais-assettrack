@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIS AssetTrack</title>
+<link rel="icon" type="image/png" href="/static/favicon.png"><link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap">
+<style>
+:root{--fg:#0f172a;--mute:#475569;--glass:rgba(255,255,255,.55);--glass2:rgba(255,255,255,.35);--edge:rgba(255,255,255,.65);--line:rgba(15,23,42,.08);--shadow:0 10px 30px rgba(15,23,42,.10);
+--accent:#0ea5e9;--accent-d:#0369a1;--violet:#7c3aed;--pink:#ec4899;--ok:#059669;--ok-2:rgba(16,185,129,.18);--warn:#dc2626;--warn-2:rgba(239,68,68,.16);--amber:#d97706;--amber-2:rgba(245,158,11,.18);--info-2:rgba(14,165,233,.18);--grey-2:rgba(100,116,139,.16)}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Segoe UI",system-ui,sans-serif;font-size:14px;color:var(--fg);min-height:100vh;background:#eef2ff;background-image:radial-gradient(1200px 600px at -10% -10%,#c7d2fe 0%,transparent 60%),radial-gradient(900px 500px at 110% 0%,#a5f3fc 0%,transparent 55%),radial-gradient(900px 600px at 50% 120%,#fbcfe8 0%,transparent 55%),linear-gradient(135deg,#e0e7ff,#ecfeff 50%,#fdf2f8);background-attachment:fixed}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 22px;background:linear-gradient(90deg,rgba(30,58,138,.92),rgba(220,38,38,.85));backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:#fff;box-shadow:0 6px 24px rgba(79,70,229,.25);border-bottom:1px solid rgba(255,255,255,.35)}
+header h1{font-family:Outfit,Inter,sans-serif;font-size:19px;margin:0;font-weight:700;letter-spacing:.2px}header .sp{flex:1}header small{opacity:.9;font-size:12.5px}
+nav{position:sticky;top:53px;z-index:6;display:flex;flex-wrap:wrap;gap:6px;padding:10px 22px;background:var(--glass2);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--edge)}
+nav button{background:rgba(255,255,255,.45);border:1px solid var(--edge);padding:7px 14px;border-radius:999px;cursor:pointer;font:inherit;font-size:13px;color:var(--fg);font-weight:500;transition:.15s}
+nav button:hover{background:rgba(255,255,255,.8);transform:translateY(-1px)}
+nav button.on{background:linear-gradient(90deg,#1e3a8a,#dc2626);color:#fff;border-color:transparent;box-shadow:0 6px 16px rgba(124,58,237,.35)}
+main{padding:18px 22px;max-width:1540px;margin:0 auto}
+.card{background:var(--glass);backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);border:1px solid var(--edge);border-radius:16px;padding:16px 18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--mute);font-weight:500}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid rgba(15,23,42,.12);border-radius:10px;background:rgba(255,255,255,.75);color:var(--fg);min-width:130px;outline:none;transition:.15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(14,165,233,.2)}
+button.p{background:linear-gradient(90deg,#1e3a8a,#dc2626);color:#fff;border:none;padding:9px 16px;border-radius:10px;cursor:pointer;font:inherit;font-weight:600;box-shadow:0 6px 16px rgba(124,58,237,.3);transition:.15s}
+button.p:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(124,58,237,.38)}
+button.s{background:rgba(255,255,255,.7);color:var(--accent-d);border:1px solid rgba(14,165,233,.35);padding:6px 12px;border-radius:9px;cursor:pointer;font:inherit;font-weight:500;margin:1px 2px}
+button.s:hover{background:#fff}
+button.d{background:linear-gradient(90deg,#f43f5e,#ec4899);color:#fff;border:none;padding:6px 12px;border-radius:9px;cursor:pointer;font:inherit}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:rgba(255,255,255,.6);backdrop-filter:blur(8px);font-weight:600;position:sticky;top:0;color:var(--mute);font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+tbody tr:hover td{background:rgba(255,255,255,.45)}
+.tw{overflow:auto;max-height:65vh;border-radius:10px}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.3px}
+.AVAILABLE,.APPLIED,.DONE{background:var(--ok-2);color:var(--ok)}.AT_CUSTOMER,.OPEN,.IN_GATE{background:var(--info-2);color:var(--accent-d)}
+.ALLOCATED,.IN_RETURN,.READY,.SO_PENDING,.CHALLANED,.APPROVED,.PENDING_VERIFICATION,.RECEIVING,.PENDING,.EXCEPTION{background:var(--amber-2);color:var(--amber)}
+.HELD,.DAMAGED,.REJECTED,.FAILED,.OVERDUE,.FOREIGN,.SHORT,.UNKNOWN,.CROSS_CUSTOMER,.EXCESS{background:var(--warn-2);color:var(--warn)}
+.DISCONTINUED,.CLOSED,.DISPATCHED,.UNDER_REPAIR{background:var(--grey-2);color:#334155}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.kpi{position:relative;overflow:hidden;z-index:0;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--edge);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow)}
+.kpi::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--kc,var(--accent))}
+.kpi b{font-family:Outfit,Inter,sans-serif;font-size:30px;display:block;line-height:1.1}.kpi span{font-size:11.5px;color:var(--mute);font-weight:600;letter-spacing:.4px}
+.kpi:nth-child(1){--kc:#10b981}.kpi:nth-child(2){--kc:#f59e0b}.kpi:nth-child(3){--kc:#0ea5e9}.kpi:nth-child(4){--kc:#8b5cf6}.kpi:nth-child(5){--kc:#f43f5e}.kpi:nth-child(6){--kc:#ef4444}.kpi:nth-child(7){--kc:#64748b}
+#msg{position:fixed;right:20px;bottom:20px;background:rgba(15,23,42,.9);backdrop-filter:blur(10px);color:#fff;padding:11px 16px;border-radius:12px;display:none;max-width:440px;z-index:9;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+#msg.err{background:rgba(220,38,38,.92)}
+h2{font-family:Outfit,Inter,sans-serif;font-size:17px;margin:0 0 12px;font-weight:700}h3{font-size:12px;margin:14px 0 6px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px}
+.login{max-width:380px;margin:70px auto;text-align:center}.login input{width:100%}.login h2{font-size:22px}.login button{width:100%;margin-top:14px}
+
+footer{text-align:center;color:var(--mute);font-size:11.5px;padding:16px}
+.muted{color:var(--mute);font-size:12px}
+pre{background:rgba(255,255,255,.6);padding:10px;border-radius:10px;white-space:pre-wrap}
+@media (prefers-color-scheme:dark){:root{--fg:#e2e8f0;--mute:#94a3b8;--glass:rgba(17,24,39,.55);--glass2:rgba(17,24,39,.4);--edge:rgba(255,255,255,.12);--line:rgba(255,255,255,.08);--shadow:0 10px 30px rgba(0,0,0,.35)}
+ body{background:#0b1020;background-image:radial-gradient(1200px 600px at -10% -10%,#312e81 0%,transparent 60%),radial-gradient(900px 500px at 110% 0%,#164e63 0%,transparent 55%),radial-gradient(900px 600px at 50% 120%,#831843 0%,transparent 55%)}
+ input,select,textarea{background:rgba(15,23,42,.7);color:var(--fg);border-color:rgba(255,255,255,.12)}th{background:rgba(17,24,39,.7)}tbody tr:hover td{background:rgba(255,255,255,.05)}button.s{background:rgba(15,23,42,.6);color:#7dd3fc}pre{background:rgba(15,23,42,.6)}}
+.dd{position:relative}.dd .car{margin-left:6px;font-size:10px;opacity:.7}
+.dd .menu{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:190px;background:rgba(255,255,255,.97);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--edge);border-radius:12px;box-shadow:var(--shadow);padding:6px;z-index:20;flex-direction:column;gap:2px}
+.dd.open .menu{display:flex}.dd .menu button{border:none;background:none;border-radius:8px;text-align:left;padding:8px 12px;width:100%}
+.dd .menu button:hover{background:rgba(14,165,233,.12)}.dd .menu button.sel{background:linear-gradient(90deg,#1e3a8a,#dc2626);color:#fff}
+@media (prefers-color-scheme:dark){.dd .menu{background:rgba(17,24,39,.95)}}
+</style>
+</head>
+<body>
+<header><img src="/static/icon-192.png" alt="AIS" style="height:34px;border-radius:8px;background:#fff;padding:2px"><h1>AssetTrack <small style="font-weight:500;opacity:.85;font-size:12px;letter-spacing:1.5px">TRACK · MONITOR · CONTROL</small></h1><small id="who"></small><span class="sp"></span><small id="ver"></small><button class="s" id="logout" style="display:none">Logout</button></header>
+<nav id="nav" style="display:none"></nav>
+<main id="main"></main>
+<footer>AIS AssetTrack · Developed by DT · Asahi India Glass Ltd. · <span id="ver2"></span></footer>
+<div id="msg"></div>
+<script>
+const API='/api/v1';let T=localStorage.getItem('tok'),ME=null,PAGE='dash';
+const $=s=>document.querySelector(s);const h=(t,a={},...c)=>{const e=document.createElement(t);for(const k in a){if(k==='on')for(const ev in a.on)e.addEventListener(ev,a.on[ev]);else if(k==='html')e.innerHTML=a[k];else if(k in e&&k!=='style')e[k]=a[k];else e.setAttribute(k,a[k])}c.flat().forEach(x=>e.append(x instanceof Node?x:document.createTextNode(x??'')));return e};
+function msg(t,err){const m=$('#msg');m.textContent=t;m.className=err?'err':'';m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',err?6000:3000)}
+async function api(path,opt={}){const o={method:opt.method||'GET',headers:{}};if(T)o.headers.Authorization='Bearer '+T;if(opt.body instanceof FormData)o.body=opt.body;else if(opt.body){o.headers['Content-Type']='application/json';o.body=JSON.stringify(opt.body)}
+ const r=await fetch(API+path,o);if(r.status===401){logout();throw new Error('Login required')}const j=await r.json().catch(()=>({}));if(!r.ok){throw new Error(j.detail?(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail)):r.statusText)}return j}
+function logout(){T=null;localStorage.removeItem('tok');ME=null;render()}
+function pill(s){return h('span',{className:'pill '+s},s||'')}
+function fmt(d){return d?String(d).replace('T',' ').slice(0,16):''}
+function table(cols,rows,act){const t=h('table',{},h('thead',{},h('tr',{},cols.map(c=>h('th',{},c[0])),act?h('th',{},''):'')));const tb=h('tbody');rows.forEach(r=>tb.append(h('tr',{},cols.map(c=>h('td',{},typeof c[1]==='function'?c[1](r):(r[c[1]]??''))),act?h('td',{},act(r)):'')));t.append(tb);return h('div',{className:'tw'},t)}
+function field(lbl,name,val='',type='text',extra={}){const i=type==='select'?h('select',{name,...extra},extra.opts.map(o=>h('option',{value:o[0],selected:o[0]==val},o[1]))):h('input',{name,value:val,type,...extra});return h('label',{},lbl,i)}
+function formData(f){const o={};new FormData(f).forEach((v,k)=>{o[k]=v});f.querySelectorAll('input[type=checkbox]').forEach(c=>o[c.name]=c.checked);return o}
+
+const PAGES=[['dash','Dashboard',null],['pallets','Pallets',null],['picklists','Pick Lists',null],['slips','Return Slips',null],['masters','Masters','GLOBAL_MASTERS'],['users','Users',['PLANT_USERS_ADMIN','INTEGRATION_CONFIG']],['import','Import','GLOBAL_MASTERS'],['sync','Sync Monitor',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN']],['reports','Reports',null],['audit','Audit',['AUDIT_LOG']]];
+const GROUPS=[['Dashboard',['dash']],['Operations',['picklists','slips','pallets']],['Masters',['masters','users','import']],['Monitor',['sync','reports','audit']]];
+function can(p){if(!p)return true;return (Array.isArray(p)?p:[p]).some(x=>ME.perms.includes(x))}
+
+async function render(){
+ const m=$('#main');m.innerHTML='';
+ if(!T){$('#nav').style.display='none';$('#logout').style.display='none';$('#who').textContent='';
+  const f=h('form',{className:'card login'},h('img',{src:'/static/logo.png',alt:'AIS AssetTrack',style:'max-width:260px;margin:0 auto 10px;display:block'}),h('h2',{},'Sign in'),field('User ID','user_id'),h('br'),field('Password','password','','password'),h('br'),h('button',{className:'p',type:'submit'},'Login'));
+  f.onsubmit=async e=>{e.preventDefault();try{const d=formData(f);const r=await api('/auth/login',{method:'POST',body:{...d,device_id:'WEB'}});T=r.token;localStorage.setItem('tok',T);if(r.must_change_pw)msg('Please change your password (Users > My account)');render()}catch(x){msg(x.message,1)}};
+  m.append(f);return}
+ try{ME=await api('/auth/me')}catch{return}
+ $('#who').textContent=`${ME.name} · ${ME.plant||'ALL PLANTS'} · ${ME.roles.join(', ')}`;$('#logout').style.display='';
+ const nav=$('#nav');nav.style.display='';nav.innerHTML='';
+ GROUPS.forEach(([g,ids])=>{const items=ids.map(id=>PAGES.find(p=>p[0]===id)).filter(p=>can(p[2]));if(!items.length)return;
+  if(items.length===1&&ids.length===1){nav.append(h('button',{className:PAGE===items[0][0]?'on':'',on:{click:()=>{PAGE=items[0][0];render()}}},items[0][1]));return}
+  const cur=items.find(p=>p[0]===PAGE);const dd=h('div',{className:'dd'+(cur?' on':'')},h('button',{className:cur?'on':'',on:{click:e=>{e.stopPropagation();document.querySelectorAll('.dd.open').forEach(x=>x!==dd&&x.classList.remove('open'));dd.classList.toggle('open')}}},g+(cur?' · '+cur[1]:''),h('span',{className:'car'},'▾')),h('div',{className:'menu'},items.map(p=>h('button',{className:PAGE===p[0]?'sel':'',on:{click:()=>{PAGE=p[0];render()}}},p[1]))));nav.append(dd)});
+ document.body.onclick=()=>document.querySelectorAll('.dd.open').forEach(x=>x.classList.remove('open'));
+ try{await ({dash,pallets,picklists,slips,masters,users,imp,sync,reports,audit})[PAGE==='import'?'imp':PAGE](m)}catch(x){m.append(h('div',{className:'card'},'Error: '+x.message))}
+}
+$('#logout').onclick=logout;
+
+async function dash(m){
+ const av=await api('/reports/availability'),hold=await api('/reports/customer-holding'),tot={};
+ for(const p in av)for(const s in av[p])tot[s]=(tot[s]||0)+av[p][s];
+ m.append(h('div',{className:'kpis'},['AVAILABLE','ALLOCATED','AT_CUSTOMER','IN_RETURN','HELD','DAMAGED','DISCONTINUED'].map(s=>h('div',{className:'kpi'},h('b',{},tot[s]||0),h('span',{},s.replace('_',' '))))));
+ m.append(h('div',{className:'card'},h('h2',{},'Plant-wise availability'),table([['Plant','plant'],...['AVAILABLE','ALLOCATED','AT_CUSTOMER','IN_RETURN','HELD','HELD_FROM_OTHER','DAMAGED','UNDER_REPAIR','DISCONTINUED'].map(s=>[s.replace(/_/g,' '),r=>r[s]||''])],Object.keys(av).sort().map(p=>({plant:p,...av[p]})))));
+ m.append(h('div',{className:'card'},h('h2',{},'Customer holding & aging'),table([['Plant','plant'],['Customer','customer'],['Name','name'],['Qty','qty'],['0-30','b0_30'],['31-60','b31_60'],['61+','b61'],['Max days','max_days'],['Limit','limit_days'],['',r=>r.overdue?pill('OVERDUE'):'']],hold)));
+}
+
+async function pallets(m){
+ const f=h('form',{className:'row'},field('Search','q'),field('Status','status','','select',{opts:[['','All'],...['AVAILABLE','ALLOCATED','AT_CUSTOMER','IN_RETURN','HELD','DAMAGED','UNDER_REPAIR','DISCONTINUED'].map(s=>[s,s])]}),field('Customer','customer'),h('button',{className:'p'},'Search'),h('button',{className:'s',type:'button',on:{click:()=>window.open(API+'/reports/export/pallets.xlsx?tok='+T)}},'Export'));
+ const out=h('div');f.onsubmit=async e=>{e.preventDefault();const d=formData(f);const q=new URLSearchParams(Object.fromEntries(Object.entries(d).filter(([k,v])=>v)));const r=await api('/pallets?'+q);out.innerHTML='';out.className='card';out.append(h('p',{className:'muted'},`${r.total} pallets`),table([['Pallet No','pallet_no'],['Home','home_plant'],['Type','pallet_type'],['Tag','current_tag'],['Status',r=>pill(r.status)],['Location','location_plant'],['Customer','customer_code'],['Dispatched',r=>fmt(r.dispatch_date)],['Challan','challan_ref'],['Pick list','picklist_no']],r.items,r=>h('button',{className:'s',on:{click:()=>palletDetail(r.pallet_no)}},'History')))};
+ m.append(h('div',{className:'card'},h('h2',{},'Pallets'),f),out);f.requestSubmit();
+ if(can('GLOBAL_MASTERS')){const nf=h('form',{className:'row'},field('Home plant','home_plant',ME.plant||''),field('Pallet No (blank = auto)','pallet_no'),field('Type','pallet_type'),field('Tag No','tag_no'),h('button',{className:'p'},'Register pallet'));nf.onsubmit=async e=>{e.preventDefault();try{const r=await api('/pallets',{method:'POST',body:formData(nf)});msg('Registered '+r.pallet_no);f.requestSubmit()}catch(x){msg(x.message,1)}};
+  const tf=h('form',{className:'row'},field('Pallet No','pallet_no'),field('New tag','tag_no'),field('Reason','reason','REPLACE'),h('button',{className:'p'},'Assign / replace tag'));tf.onsubmit=async e=>{e.preventDefault();const d=formData(tf);try{await api(`/pallets/${d.pallet_no}/assign-tag`,{method:'POST',body:d});msg('Tag assigned');f.requestSubmit()}catch(x){msg(x.message,1)}};
+  m.append(h('div',{className:'card'},h('h2',{},'Register / tag'),nf,h('br'),tf))}
+ if(can('DAMAGE_MARK')||can('DISCONTINUE_PALLET')){const sf=h('form',{className:'row'},field('Pallet No','pallet_no'),field('Status','status','DAMAGED','select',{opts:[['DAMAGED','DAMAGED'],['UNDER_REPAIR','UNDER_REPAIR'],['AVAILABLE','AVAILABLE'],['DISCONTINUED','DISCONTINUED (PIN)']]}),field('Remarks','remarks'),field('Supervisor PIN','supervisor_pin','','password'),h('button',{className:'p'},'Set status'));sf.onsubmit=async e=>{e.preventDefault();const d=formData(sf);try{await api(`/pallets/${d.pallet_no}/status`,{method:'POST',body:d});msg('Updated');f.requestSubmit()}catch(x){msg(x.message,1)}};m.append(h('div',{className:'card'},h('h2',{},'Manual status'),sf))}
+}
+async function palletDetail(no){const r=await api('/pallets/'+no);const m=$('#main');m.prepend(h('div',{className:'card'},h('h2',{},'Pallet '+r.pallet.pallet_no,' ',pill(r.pallet.status),' ',h('button',{className:'s',on:{click:e=>e.target.closest('.card').remove()}},'close')),h('h3',{},'Movement history'),table([['Time',r=>fmt(r.ts)],['Event','event_type'],['From','from_status'],['To','to_status'],['Plant','plant_code'],['Customer','customer_code'],['Ref','ref_doc'],['User','user_id'],['Device','device_id'],['Remarks','remarks']],r.history),h('h3',{},'Tag history'),table([['Time',r=>fmt(r.ts)],['Old','old_tag'],['New','new_tag'],['Reason','reason'],['User','user_id']],r.tag_history)));window.scrollTo(0,0)}
+
+async function picklists(m){
+ const list=h('div');async function load(){const r=await api('/picklists');list.innerHTML='';list.append(table([['Pick List','picklist_no'],['Plant','plant_code'],['Customer','customer_code'],['Type','pallet_type'],['Qty','qty'],['Scanned','scanned'],['Status',r=>pill(r.status)],['SO','so_number'],['Challan','challan_no'],['Vehicle','vehicle_no'],['GCS','gcs_no'],['Created',r=>fmt(r.created_at)]],r,r=>h('span',{},
+  r.status==='OPEN'&&can('DOCK_SCAN')?h('button',{className:'s',on:{click:()=>act(`/picklists/${r.picklist_no}/confirm`)}},'Confirm (control)'):'',
+  r.status==='READY'&&can('CHALLAN_REQUEST')?h('button',{className:'s',on:{click:()=>act(`/picklists/${r.picklist_no}/challan`)}},'Challan'):'',
+  r.status==='CHALLANED'&&can('LOGISTICS_APPROVE')?h('button',{className:'s',on:{click:()=>{const v=prompt('Vehicle No');if(v)act(`/picklists/${r.picklist_no}/approve`,{vehicle_no:v})}}},'Approve'):'',
+  r.status==='APPROVED'&&can('OUT_GATE_SCAN')?h('button',{className:'s',on:{click:()=>{const v=prompt('Scan GCS / challan QR');if(v)act(`/picklists/${r.picklist_no}/gate-out`,{scanned:v})}}},'Gate out'):'' )))}
+ async function act(p,b={}){try{const r=await api(p,{method:'POST',body:b});msg(r.so_message||r.gcs_message||'Done');load()}catch(x){msg(x.message,1)}}
+ if(can('PICKLIST_CREATE')){const f=h('form',{className:'row'},field('Customer code','customer_code'),field('Qty','qty','','number'),field('Pallet type','pallet_type'),field('Transporter','transporter_code'),h('button',{className:'p'},'Create pick list (posts SO)'));f.onsubmit=async e=>{e.preventDefault();try{const r=await api('/picklists',{method:'POST',body:{...formData(f),qty:+formData(f).qty}});msg(`${r.picklist_no}: ${r.so_message}`);load()}catch(x){msg(x.message,1)}};m.append(h('div',{className:'card'},h('h2',{},'New pick list'),f))}
+ if(can('DOCK_SCAN')){const sf=h('form',{className:'row'},field('Pick list','picklist_no'),field('Scan tag / pallet','scanned'),h('button',{className:'p'},'Dock scan'));sf.onsubmit=async e=>{e.preventDefault();const d=formData(sf);try{const r=await api('/sync/push',{method:'POST',body:{events:[{event_id:crypto.randomUUID(),device_id:'WEB',event_type:'PALLET_SCAN_DOCK',payload:d,local_ts:new Date().toISOString()}]}});const x=r.results[0];msg(x.status+': '+x.result,x.status==='REJECTED');load()}catch(x){msg(x.message,1)}};m.append(h('div',{className:'card'},h('h2',{},'Dock out-ward scan (web test)'),sf))}
+ m.append(h('div',{className:'card'},h('h2',{},'Pick lists'),list));load()}
+
+async function slips(m){
+ const list=h('div');async function load(){const r=await api('/slips');list.innerHTML='';list.append(table([['Slip','slip_no'],['Plant','plant_code'],['Customer','customer_code'],['Mode','mode'],['Vehicle','vehicle_no'],['Declared','declared_qty'],['Status',r=>pill(r.status)],['GCS-IN','gcs_in_no'],['Created',r=>fmt(r.created_at)],['Closed',r=>fmt(r.closed_at)]],r,r=>h('span',{},
+  ['OPEN','PENDING_VERIFICATION'].includes(r.status)&&can('IN_GATE_SCAN')?h('button',{className:'s',on:{click:()=>act(`/slips/${r.slip_no}/gate-in`)}},'Gate in'):'',
+  r.status!=='CLOSED'&&can('RECONCILE_CLOSE')?h('button',{className:'s',on:{click:()=>{const pin=prompt('Supervisor PIN (blank if no exceptions)')??'';act(`/slips/${r.slip_no}/close`,{supervisor_pin:pin||null})}}},'Reconcile & close'):'',
+  h('button',{className:'s',on:{click:()=>slipDetail(r.slip_no)}},'Lines'))))}
+ async function act(p,b={}){try{const r=await api(p,{method:'POST',body:b});msg(r.gcs_message||('Closed: received '+r.received+', short '+(r.short||[]).length));load()}catch(x){msg(x.message,1)}}
+ const f=h('form',{className:'row'},field('Customer code','customer_code'),field('Mode','mode','B1','select',{opts:[['A','A - customer end'],['B1','B1 - gate full scan'],['B2','B2 - gate qty only']]}),field('Vehicle','vehicle_no'),field('Customer challan no','customer_challan_no'),field('Pallets (comma sep)','pallets'),field('Declared qty (B2)','declared_qty','','number'),h('button',{className:'p'},'Create return slip'));
+ f.onsubmit=async e=>{e.preventDefault();const d=formData(f);d.pallets=d.pallets?d.pallets.split(/[,;\s]+/).filter(Boolean):[];d.declared_qty=d.declared_qty?+d.declared_qty:null;try{const r=await api('/slips',{method:'POST',body:d});msg(r.slip_no+(r.warnings.length?' warnings: '+r.warnings.join('; '):''),r.warnings.length>0);load()}catch(x){msg(x.message,1)}};
+ m.append(h('div',{className:'card'},h('h2',{},'New return slip'),f));
+ if(can('YARD_SCAN')){const sf=h('form',{className:'row'},field('Slip no','slip_no'),field('Scan tag / pallet','scanned'),h('label',{},'Accept other-plant',h('input',{type:'checkbox',name:'accept_foreign'})),h('label',{},'Damaged',h('input',{type:'checkbox',name:'damaged'})),h('button',{className:'p'},'Yard scan'));sf.onsubmit=async e=>{e.preventDefault();const d=formData(sf);try{const r=await api('/sync/push',{method:'POST',body:{events:[{event_id:crypto.randomUUID(),device_id:'WEB',event_type:'PALLET_SCAN_YARD',payload:d,local_ts:new Date().toISOString()}]}});const x=r.results[0];msg(x.status+': '+x.result,x.status==='REJECTED');load()}catch(x){msg(x.message,1)}};m.append(h('div',{className:'card'},h('h2',{},'Yard in-ward scan (web test)'),sf))}
+ m.append(h('div',{className:'card'},h('h2',{},'Return slips'),list));load()}
+async function slipDetail(no){const r=await api('/slips/'+no);$('#main').prepend(h('div',{className:'card'},h('h2',{},'Slip '+no,' ',pill(r.slip.status),' ',h('button',{className:'s',on:{click:e=>e.target.closest('.card').remove()}},'close')),table([['Pallet','pallet_no'],['Declared',r=>r.declared?'✓':''],['Received',r=>r.received?'✓':''],['Exception',r=>r.exception?pill(r.exception):''],['Resolved',r=>r.resolved?'✓':'']],r.lines,l=>l.exception&&!l.resolved&&can('RECONCILE_CLOSE')?h('button',{className:'s',on:{click:async()=>{await api(`/slips/${no}/resolve/${l.pallet_no}`,{method:'POST'});slipDetail(no)}}},'Resolve'):'')));window.scrollTo(0,0)}
+
+async function masters(m){
+ const pl=await api('/plants'),cu=await api('/customers'),tr=await api('/transporters'),tb=await api('/tag-batches');
+ m.append(h('div',{className:'card'},h('h2',{},'Plants'),table([['Code','code'],['Name','name'],['City','city'],['GSTIN','gstin'],['Prefix','pallet_prefix'],['Tag series',r=>`${r.tag_from||''}-${r.tag_to||''}`],['Challan','challan_source'],['Series','app_challan_series'],['Accept other plant',r=>r.accept_other_plant_default?'Y':'N'],['Hold days','holding_days_default'],['Active',r=>r.active?'Y':'N']],pl)));
+ const pf=h('form',{className:'row'},field('Code','code'),field('Name','name'),field('City','city'),field('State','state'),field('GSTIN','gstin'),field('Pallet prefix','pallet_prefix'),field('Tag from','tag_from','','number'),field('Tag to','tag_to','','number'),field('Challan','challan_source','APP','select',{opts:[['APP','APP'],['ORACLE','ORACLE']]}),field('App series','app_challan_series'),field('Hold days','holding_days_default','30','number'),h('button',{className:'p'},'Save plant'));
+ pf.onsubmit=async e=>{e.preventDefault();const d=formData(pf);['tag_from','tag_to','holding_days_default'].forEach(k=>d[k]=d[k]?+d[k]:null);d.holding_days_default=d.holding_days_default||30;try{await api('/plants',{method:'POST',body:d});msg('Saved');render()}catch(x){msg(x.message,1)}};m.append(h('div',{className:'card'},h('h2',{},'Add / edit plant'),pf));
+ m.append(h('div',{className:'card'},h('h2',{},'Customers'),table([['Code','code'],['Name','name'],['Type','ctype'],['Plant','plant_code'],['Email to','email_to'],['Hold days','holding_limit_days'],['Remind every','reminder_every_days'],['Escalate','escalation_days'],['Chargeable',r=>r.chargeable?'Y':'N'],['Return mode','return_mode'],['Challan ovr','challan_source_override'],['API key',r=>r.api_key_prefix?r.api_key_prefix+'…':''],['Active',r=>r.active?'Y':'N']],cu,r=>h('button',{className:'s',on:{click:async()=>{if(!confirm('Issue a new API key for '+r.code+'? The old key stops working.'))return;const k=await api(`/customers/${r.plant_code}/${r.code}/api-key`,{method:'POST'});prompt('API key for '+r.code+' (shown once, copy now):',k.api_key)}}},'API key'))));
+ m.append(h('div',{className:'card'},h('h2',{},'Transporters'),table([['Code','code'],['Name','name'],['Contact','contact_name'],['Mobile','contact_mobile'],['Plants','plant_codes'],['Vehicles','vehicles'],['Active',r=>r.active?'Y':'N']],tr)));
+ const bf=h('form',{className:'row'},field('Batch no','batch_no'),field('Plant','plant_code'),field('Tag from','tag_from','','number'),field('Tag to','tag_to','','number'),field('Vendor','vendor'),h('button',{className:'p'},'Receive tag batch'));bf.onsubmit=async e=>{e.preventDefault();const d=formData(bf);d.tag_from=+d.tag_from;d.tag_to=+d.tag_to;try{await api('/tag-batches',{method:'POST',body:d});msg('Batch created');render()}catch(x){msg(x.message,1)}};
+ m.append(h('div',{className:'card'},h('h2',{},'Tag batches'),table([['Batch','batch_no'],['Plant','plant_code'],['From','tag_from'],['To','tag_to'],['Vendor','vendor'],['Received',r=>fmt(r.received_date)],['In stock',r=>r.counts.IN_STOCK||0],['Assigned',r=>r.counts.ASSIGNED||0],['Retired',r=>r.counts.RETIRED||0]],tb),can('TAG_SERIES')?bf:''));
+}
+
+async function users(m){
+ const us=await api('/users'),ro=await api('/roles');
+ const f=h('form',{className:'row'},field('User ID','user_id'),field('Full name','full_name'),field('Plant','plant_code',ME.plant||''),h('label',{},'Roles (ctrl-click)',h('select',{name:'roles',multiple:true,size:5},ro.roles.filter(r=>!ME.plant||r.scope==='PLANT').map(r=>h('option',{value:r.code},`${r.code} - ${r.name}`)))),field('Password (new/reset)','password','','password'),field('Email','email'),field('Mobile','mobile'),field('Device ID','device_id'),h('label',{},'Supervisor',h('input',{type:'checkbox',name:'supervisor_allowed'})),h('label',{},'Active',h('input',{type:'checkbox',name:'active',checked:true})),h('button',{className:'p'},'Save user'));
+ f.onsubmit=async e=>{e.preventDefault();const d=formData(f);d.roles=[...f.roles.selectedOptions].map(o=>o.value);if(!d.plant_code)d.plant_code=null;if(!d.password)delete d.password;try{await api('/users',{method:'POST',body:d});msg('Saved');render()}catch(x){msg(x.message,1)}};
+ m.append(h('div',{className:'card'},h('h2',{},'Add / edit user'),f,h('p',{className:'muted'},'New users get the password you type and must change it at first login. Imported users start with Welcome@123.')));
+ m.append(h('div',{className:'card'},h('h2',{},'Users'),table([['User','user_id'],['Name','full_name'],['Plant',r=>r.plant_code||'ALL'],['Roles',r=>r.roles.join(', ')],['Supervisor',r=>r.supervisor_allowed?(r.has_pin?'Y (PIN set)':'Y (no PIN)'):''],['Device','device_id'],['Last login',r=>fmt(r.last_login)],['Locked',r=>r.locked_until?fmt(r.locked_until):''],['Active',r=>r.active?'Y':'N']],us,r=>h('span',{},r.locked_until?h('button',{className:'s',on:{click:async()=>{await api(`/users/${r.user_id}/unlock`,{method:'POST'});msg('Unlocked');render()}}},'Unlock'):'',h('button',{className:'s',on:{click:()=>{f.user_id.value=r.user_id;f.full_name.value=r.full_name;f.plant_code.value=r.plant_code||'';[...f.roles.options].forEach(o=>o.selected=r.roles.includes(o.value));f.email.value=r.email||'';f.mobile.value=r.mobile||'';f.device_id.value=r.device_id||'';f.supervisor_allowed.checked=r.supervisor_allowed;f.active.checked=r.active;window.scrollTo(0,0)}}},'Edit')))));
+ const pw=h('form',{className:'row'},field('Old password','old_password','','password'),field('New password','new_password','','password'),h('button',{className:'p'},'Change password'));pw.onsubmit=async e=>{e.preventDefault();try{await api('/auth/change-password',{method:'POST',body:formData(pw)});msg('Password changed');pw.reset()}catch(x){msg(x.message,1)}};
+ const pin=h('form',{className:'row'},field('Supervisor PIN (4+ digits)','pin','','password'),h('button',{className:'p'},'Set my PIN'));pin.onsubmit=async e=>{e.preventDefault();try{await api('/auth/set-pin',{method:'POST',body:formData(pin)});msg('PIN set');pin.reset()}catch(x){msg(x.message,1)}};
+ m.append(h('div',{className:'card'},h('h2',{},'My account'),pw,ME.supervisor?pin:''));
+ m.append(h('div',{className:'card'},h('h2',{},'Role matrix'),table([['Role','code'],['Name','name'],['Scope','scope'],['Permissions',r=>r.perms.join(', ')]],ro.roles)));
+}
+
+async function imp(m){
+ const f=h('form',{className:'row'},h('label',{},'Master template (.xlsx)',h('input',{type:'file',name:'file',accept:'.xlsx'})),h('button',{className:'p'},'Upload & import'));const out=h('div');
+ f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f);try{const r=await api('/import/masters',{method:'POST',body:fd});out.innerHTML='';out.append(table([['Sheet','sheet'],['Inserted','inserted'],['Updated','updated'],['Errors','errors']],Object.entries(r.summary).map(([k,v])=>({sheet:k,...v}))),r.errors.length?h('pre',{},r.errors.join('\n')):h('p',{className:'muted'},'No errors'));msg('Import done')}catch(x){msg(x.message,1)}};
+ m.append(h('div',{className:'card'},h('h2',{},'Import masters from Excel'),h('p',{className:'muted'},'Use Pallet_Tracking_Master_Template. Sheets: 1_Plants, 3_Users, 4_Customers, 5_Transporters, 6_Pallets, 7_Tags. Existing records are updated by code; the EXAMPLE row is skipped.'),f,out))}
+
+async function sync(m){
+ const r=await api('/sync/monitor'),ig=await api('/reports/integration');
+ m.append(h('div',{className:'card'},h('h2',{},'Devices'),table([['Device','device_id'],['Plant','plant'],['Last seen',r=>fmt(r.last_seen)],['Last user','last_user'],['App','app_version'],['Pending (reported)','pending'],['Blocked',r=>r.blocked?pill('REJECTED'):'']],r.devices,d=>can('PLANT_USERS_ADMIN')?h('button',{className:d.blocked?'s':'d',on:{click:async()=>{await api(`/sync/devices/${d.device_id}/block?blocked=${!d.blocked}`,{method:'POST'});render()}}},d.blocked?'Unblock':'Block'):'')));
+ m.append(h('div',{className:'card'},h('h2',{},'Rejected / exception events'),table([['Time',r=>fmt(r.ts)],['Device','device'],['User','user'],['Plant','plant'],['Type','type'],['Status',r=>pill(r.status)],['Result','result'],['Payload','payload']],r.exceptions)));
+ m.append(h('div',{className:'card'},h('h2',{},'Integration (mode: '+ig.mode+')'),can('INTEGRATION_CONFIG')?h('button',{className:'s',on:{click:async()=>{const x=await api('/reports/integration/retry',{method:'POST'});msg(`Retried: ${x.done} done, ${x.failed} failed`);render()}}},'Retry pending now'):'',h('h3',{},'Retry queue'),table([['Kind','kind'],['Ref','ref'],['Created',r=>fmt(r.created)],['Attempts','attempts'],['Status',r=>pill(r.status)],['Last error','last_error']],ig.retry_queue),h('h3',{},'Recent calls'),table([['Time',r=>fmt(r.ts)],['System','system'],['Op','op'],['Ref','ref'],['OK',r=>r.ok?'✓':'✗'],['Message','message']],ig.log)));
+}
+
+async function reports(m){
+ const ov=await api('/reports/overdue'),ts=await api('/reports/tag-stock'),th=await api('/reports/tag-history');
+ m.append(h('div',{className:'card'},h('h2',{},'Overdue pallets at customers'),table([['Pallet','pallet_no'],['Plant','plant'],['Customer','customer'],['Name','customer_name'],['Days','days'],['Limit','limit'],['Challan','challan'],['Chargeable',r=>r.chargeable?'Y':'N']],ov)));
+ m.append(h('div',{className:'card'},h('h2',{},'Tag stock'),table([['Plant','plant'],['In stock','IN_STOCK'],['Assigned','ASSIGNED'],['Retired','RETIRED']],Object.entries(ts).map(([k,v])=>({plant:k,...v})))));
+ m.append(h('div',{className:'card'},h('h2',{},'Tag change history'),table([['Time',r=>fmt(r.ts)],['Plant','plant'],['Pallet','pallet_no'],['Old tag','old_tag'],['New tag','new_tag'],['Reason','reason'],['User','user']],th)));
+ const pf=h('form',{className:'row'},field('Pallet / tag','no'),h('button',{className:'p'},'Pallet history'));pf.onsubmit=e=>{e.preventDefault();palletDetail(formData(pf).no)};m.append(h('div',{className:'card'},h('h2',{},'Pallet transaction history'),pf));
+}
+async function audit(m){const r=await api('/reports/audit');m.append(h('div',{className:'card'},h('h2',{},'Audit log'),table([['Time',r=>fmt(r.ts)],['User','user_id'],['Plant','plant_code'],['Action','action'],['Entity','entity'],['ID','entity_id'],['Old',r=>(r.old_value||'').slice(0,120)],['New',r=>(r.new_value||'').slice(0,160)],['IP','ip']],r)))}
+
+fetch(API+'/health').then(r=>r.json()).then(j=>{$('#ver').textContent='v'+j.version+' · '+j.integration_mode;$('#ver2').textContent='v'+j.version});
+render();
+</script>
+</body>
+</html>

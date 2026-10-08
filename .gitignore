@@ -1,0 +1,16 @@
+# python
+__pycache__/
+*.pyc
+server/pallet.db*
+server/logs/
+.venv/
+# node / expo
+hht/node_modules/
+hht/android/
+hht/ios/
+hht/.expo/
+*.apk
+*.aab
+# local
+.env
+*.local

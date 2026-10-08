@@ -1,0 +1,142 @@
+<title>Pallet Tracking Overview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: management one-pager — top row = dispatch loop (left→right), bottom row = return loop (right→left), big pictogram tiles, outcome strip */
+:root{
+  --bg:#f3f4f2; --paper:#fff; --fg:#1b1f1d; --mute:#5c655f; --line:#c9cfca;
+  --accent:#0b5f8a; --accent-2:#d5e8f2; --ctrl:#b45309; --ctrl-2:#fbe7cf;
+  --ok:#1f7a3a; --ok-2:#d9efdf; --ext:#5b3f9e; --ext-2:#e6def5; --cust:#9b1c1c; --cust-2:#f6dada;
+  --display:"Barlow Condensed",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#15181a; --paper:#1e2224; --fg:#e8ebe9; --mute:#9aa49e; --line:#3a4144; --accent:#6ab6dd; --accent-2:#163a4e;
+  --ctrl:#f0a450; --ctrl-2:#4a2f10; --ok:#6fcf8c; --ok-2:#1b3a26; --ext:#b79ae8; --ext-2:#2e2347; --cust:#f08a8a; --cust-2:#4a1b1b; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#15181a; --paper:#1e2224; --fg:#e8ebe9; --mute:#9aa49e; --line:#3a4144; --accent:#6ab6dd; --accent-2:#163a4e;
+  --ctrl:#f0a450; --ctrl-2:#4a2f10; --ok:#6fcf8c; --ok-2:#1b3a26; --ext:#b79ae8; --ext-2:#2e2347; --cust:#f08a8a; --cust-2:#4a1b1b; color-scheme:dark }
+body{background:var(--bg);color:var(--fg);font-family:var(--body);padding-inline:16px;padding-block:20px;margin:0}
+.sheet{max-width:1500px;margin:0 auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:22px 26px}
+.head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 20px;align-items:baseline}
+h1{font-family:var(--display);font-weight:700;font-size:34px;margin:0;letter-spacing:.3px}
+.sub{color:var(--mute);font-size:14px}
+.why{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 10px}
+.why div{border-left:4px solid var(--accent);padding:6px 12px;font-size:13.5px;line-height:1.4}
+.why b{display:block;font-family:var(--display);font-size:18px;letter-spacing:.5px}
+.svgwrap{overflow-x:auto}
+svg{display:block;width:100%;height:auto;min-width:1100px;font-family:var(--body)}
+.tile rect{fill:var(--paper);stroke:var(--fg);stroke-width:1.6}
+.tile.app rect{fill:var(--accent-2);stroke:var(--accent)}
+.tile.ctrl rect{fill:var(--ctrl-2);stroke:var(--ctrl)}
+.tile.ext rect{fill:var(--ext-2);stroke:var(--ext);stroke-dasharray:6 3}
+.tile.cust rect{fill:var(--cust-2);stroke:var(--cust)}
+.tile.ok rect{fill:var(--ok-2);stroke:var(--ok)}
+.tile .ico path{fill:none;stroke:var(--fg);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tile.app .ico path{stroke:var(--accent)} .tile.ctrl .ico path{stroke:var(--ctrl)} .tile.ext .ico path{stroke:var(--ext)} .tile.cust .ico path{stroke:var(--cust)} .tile.ok .ico path{stroke:var(--ok)}
+.tile .t{font-family:var(--display);font-weight:700;font-size:17px;fill:var(--fg)}
+.tile .d{font-size:12px;fill:var(--fg)}
+.tile .g{font-size:11.5px;fill:var(--mute);font-weight:500}
+.num{font-family:var(--display);font-weight:700;font-size:13px;fill:var(--paper)}
+.numbg{fill:var(--fg)}
+.edge{fill:none;stroke:var(--fg);stroke-width:2}
+.loopT{font-family:var(--display);font-weight:700;font-size:22px;fill:var(--mute);letter-spacing:3px}
+.band{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:4 4}
+.out{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:14px}
+.out div{background:var(--ok-2);border:1px solid var(--ok);border-radius:5px;padding:9px 12px;font-size:12.5px;line-height:1.35}
+.out b{display:block;font-family:var(--display);font-size:17px;color:var(--ok);letter-spacing:.5px}
+.foot{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);margin-top:12px}
+@media (max-width:900px){.why,.out{grid-template-columns:1fr}}
+</style>
+
+<div class="sheet">
+ <div class="head">
+  <h1>Returnable Pallet Tracking — How It Works</h1>
+  <span class="sub">Every AIS pallet tracked by ID from plant to customer and back · Management overview · v0.4 · Oct 2026</span>
+ </div>
+ <div class="why">
+  <div><b>Problem today</b>Dispatch is scanned, but returns are counted by quantity from a manual challan. Pallets at customers are not known by ID, so losses and aging are invisible.</div>
+  <div><b>What changes</b>One barcode tag per pallet, scanned at four points. A Return Slip with QR replaces the manual challan. Oracle and GCS are integrated so there is no double entry.</div>
+  <div><b>Result</b>Live plant availability, customer-wise holding by pallet ID, automatic reminders, chargeable list for overdue pallets, full history for every pallet and tag.</div>
+ </div>
+
+ <div class="svgwrap"><svg id="c" viewBox="0 0 1440 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pallet loop overview"></svg></div>
+
+ <div class="out">
+  <div><b>Plant availability</b>Exact count of pallets ready to dispatch, per plant, live.</div>
+  <div><b>Customer holding</b>Which pallets each customer has and for how many days.</div>
+  <div><b>Auto reminders</b>Mail to customer when holding exceeds the agreed limit.</div>
+  <div><b>Zero double entry</b>Sale order to EBS, challan from EBS or app, GCS in both directions.</div>
+  <div><b>Full traceability</b>Pallet history, tag change history, exception log for audit.</div>
+ </div>
+ <div class="foot"><span>Developed by DT · Pallet Asset Tracking v0.4 · Pilot: Chennai → rollout to all plants</span><span>Solid = plant / scan step · Blue = app · Amber = control · Dashed = Oracle EBS / GCS · Red = customer · Green = result</span></div>
+</div>
+
+<script>
+const S=document.getElementById('c'),NS='http://www.w3.org/2000/svg';
+function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||S).appendChild(e);return e}
+const IC={
+ list:'M8 6h13M8 12h13M8 18h13M3 6h.1M3 12h.1M3 18h.1',
+ scan:'M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10M9 9v6M12 9v6M15 9v6',
+ doc:'M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6',
+ check:'M4 12l5 5L20 7',
+ gate:'M3 20V4M21 20V4M7 6v14M11 6v14M15 6v14M19 6v14M3 6h18M3 12h18',
+ cust:'M3 21V9l9-5 9 5v12H3zM9 21v-6h6v6M12 4v5',
+ print:'M7 8V3h10v5M5 8h14a2 2 0 0 1 2 2v6h-4v-4H7v4H3v-6a2 2 0 0 1 2-2zM7 14h10v7H7z',
+ truck:'M2 7h11v9H2zM13 10h4l3 3v3h-7zM6 19a2 2 0 1 0 0-.1M17 19a2 2 0 1 0 0-.1',
+ pallet:'M2 10h20M2 14h20M4 10v4M12 10v4M20 10v4M4 6h16v4H4z',
+ balance:'M12 3v18M5 21h14M3 8h18M6 8l-3 6a3 3 0 0 0 6 0zM18 8l-3 6a3 3 0 0 0 6 0z',
+ mail:'M3 6h18v12H3zM3 7l9 6 9-6'
+};
+const d=el('defs');const m=el('marker',{id:'ah',markerWidth:9,markerHeight:9,refX:8,refY:4.5,orient:'auto',markerUnits:'userSpaceOnUse'},d);el('path',{d:'M0,0 L9,4.5 L0,9 z',fill:'context-stroke'},m);
+
+const W=196,H=150,G=14,X0=70;
+function tile(n,i,row,type,ic,title,...rest){
+ const guard=rest.pop(),desc=rest;
+ const x=X0+i*(W+G),y=row===0?60:330;
+ const g=el('g',{class:'tile '+type});
+ el('rect',{x,y,width:W,height:H,rx:7},g);
+ el('circle',{x:0,cx:x+16,cy:y+16,r:11,class:'numbg'},g);
+ const nn=el('text',{x:x+16,y:y+20.5,'text-anchor':'middle',class:'num'},g);nn.textContent=n;
+ const gi=el('g',{transform:`translate(${x+W/2-16},${y+22}) scale(1.35)`,class:'ico'},g);el('path',{d:IC[ic]},gi);
+ const t=el('text',{x:x+W/2,y:y+76,'text-anchor':'middle',class:'t'},g);t.textContent=title;
+ desc.forEach((l,j)=>{const e=el('text',{x:x+W/2,y:y+94+j*14,'text-anchor':'middle',class:'d'},g);e.textContent=l});
+ if(guard){const e=el('text',{x:x+W/2,y:y+H-10,'text-anchor':'middle',class:'g'},g);e.textContent='✓ '+guard}
+ return {x,y};
+}
+/* top row: dispatch */
+el('text',{x:X0,y:40,class:'loopT'}).textContent='DISPATCH  →';
+const T=[
+ tile(1,0,0,'app','list','Pick List','·created in app','·sale order posted to','Oracle EBS by API','only Available pallets'),
+ tile(2,1,0,'step','scan','Dock Scan','·every pallet tag scanned','·locked to pick list','count = pick list qty'),
+ tile(3,2,0,'ctrl','doc','Challan','·from Oracle or app','·switch per plant','·exact pallet list','one challan per pick list'),
+ tile(4,3,0,'app','check','Logistics OK','·vehicle · transporter','·approve in app','no gate pass before OK'),
+ tile(5,4,0,'ext','gate','GCS Out Gate','·GCS auto-created','·gate scans QR','vehicle matches challan'),
+ tile(6,5,0,'cust','cust','At Customer','·pallets on customer','ledger by ID','·aging clock starts','reminder if overdue'),
+];
+/* bottom row: return (right → left) */
+el('text',{x:X0,y:310,class:'loopT'}).textContent='←  RETURN';
+const B=[
+ tile(12,0,1,'ok','balance','Available','·back in plant stock','·GCS-IN & gate pass','closed','dashboards updated'),
+ tile(11,1,1,'ctrl','pallet','Reconcile','·ledger vs slip vs scan','·short / excess / damaged','to exception queue','supervisor closes exceptions'),
+ tile(10,2,1,'step','scan','Yard Scan','·slip + each pallet','·other-plant pallet','accept / reject option','pallet identified by ID'),
+ tile(9,3,1,'ext','gate','GCS In Gate','·scan slip QR','·GCS inward auto-','created with qty','no manual typing'),
+ tile(8,4,1,'step','truck','Return Vehicle','·slip travels with','empty pallets','slip QR tamper-proof'),
+ tile(7,5,1,'app','print','Return Slip','·customer scans & prints','·or AIS gate prints','(if no facility)','replaces manual challan'),
+];
+/* edges */
+function arrow(a,b){el('path',{d:`M${a.x+W},${a.y+H/2} L${b.x},${b.y+H/2}`,class:'edge','marker-end':'url(#ah)'})}
+for(let i=0;i<5;i++)arrow(T[i],T[i+1]);
+for(let i=5;i>0;i--){const a=B[i],b=B[i-1];el('path',{d:`M${a.x},${a.y+H/2} L${b.x+W},${b.y+H/2}`,class:'edge','marker-end':'url(#ah)'})}
+/* customer down to return slip */
+const c=T[5],r=B[5];
+el('path',{d:`M${c.x+W/2},${c.y+H} L${r.x+W/2},${r.y}`,class:'edge','marker-end':'url(#ah)'});
+el('text',{x:c.x+W/2+8,y:(c.y+H+r.y)/2+4,class:'g',fill:'var(--mute)','font-size':'11'}).textContent='empty pallets';
+/* available back to pick list */
+const a=B[0],p=T[0];
+el('path',{d:`M${a.x+W/2},${a.y} L${p.x+W/2},${p.y+H}`,class:'edge','marker-end':'url(#ah)'});
+el('text',{x:a.x+W/2+8,y:(p.y+H+a.y)/2+4,class:'g',fill:'var(--mute)','font-size':'11'}).textContent='ready for next dispatch';
+/* centre band */
+const mid=el('g');
+el('rect',{x:X0+W+G-20,y:236,width:4*(W+G)-G+40,height:48,rx:24,fill:'var(--accent-2)',stroke:'var(--accent)','stroke-width':1.4},mid);
+const mt=el('text',{x:X0+(W+G)*3-G/2,y:256,'text-anchor':'middle','font-family':'var(--display)','font-weight':'700','font-size':'16','fill':'var(--fg)'},mid);mt.textContent='ASSET TRACKING SERVER  ·  pallet & tag masters  ·  customer ledger  ·  reports  ·  reminder mails';
+const mt2=el('text',{x:X0+(W+G)*3-G/2,y:274,'text-anchor':'middle','font-size':'11.5','fill':'var(--mute)'},mid);mt2.textContent='Integrated with Oracle EBS (sale order, challan) · GCS (gate in/out) · HHT scanners · portable printers';
+</script>

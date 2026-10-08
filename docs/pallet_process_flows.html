@@ -1,0 +1,386 @@
+<title>Pallet Process Flows</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one swimlane chart per process, stacked as print pages; lanes = actors/systems, columns = time */
+:root{
+  --bg:#f3f4f2; --paper:#ffffff; --fg:#1b1f1d; --mute:#5c655f; --line:#c9cfca;
+  --lane:#eef0ee; --lane2:#e5e8e6; --accent:#0b5f8a; --accent-2:#d5e8f2;
+  --ctrl:#b45309; --ctrl-2:#fbe7cf; --ok:#1f7a3a; --ok-2:#d9efdf; --warn:#9b1c1c; --warn-2:#f6dada;
+  --ext:#5b3f9e; --ext-2:#e6def5; --doc:#4b5563; --doc-2:#e5e7eb;
+  --display:"Barlow Condensed",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#15181a; --paper:#1e2224; --fg:#e8ebe9; --mute:#9aa49e; --line:#3a4144; --lane:#22272a; --lane2:#1a1e20;
+  --accent:#6ab6dd; --accent-2:#163a4e; --ctrl:#f0a450; --ctrl-2:#4a2f10; --ok:#6fcf8c; --ok-2:#1b3a26;
+  --warn:#f08a8a; --warn-2:#4a1b1b; --ext:#b79ae8; --ext-2:#2e2347; --doc:#b7bec6; --doc-2:#2b3136; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#15181a; --paper:#1e2224; --fg:#e8ebe9; --mute:#9aa49e; --line:#3a4144; --lane:#22272a; --lane2:#1a1e20;
+  --accent:#6ab6dd; --accent-2:#163a4e; --ctrl:#f0a450; --ctrl-2:#4a2f10; --ok:#6fcf8c; --ok-2:#1b3a26;
+  --warn:#f08a8a; --warn-2:#4a1b1b; --ext:#b79ae8; --ext-2:#2e2347; --doc:#b7bec6; --doc-2:#2b3136; color-scheme:dark }
+body{background:var(--bg);color:var(--fg);font-family:var(--body);padding-inline:16px;padding-block:20px;margin:0}
+.wrap{max-width:1640px;margin:0 auto;display:grid;gap:28px}
+.page{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:18px 20px;break-after:page;page-break-after:always}
+.page:last-child{break-after:auto;page-break-after:auto}
+.head{display:flex;flex-wrap:wrap;gap:6px 20px;align-items:baseline;margin-bottom:8px}
+h1{font-family:var(--display);font-weight:700;font-size:28px;margin:0;letter-spacing:.3px}
+h2{font-family:var(--display);font-weight:700;font-size:24px;margin:0}
+.k{font-family:var(--display);font-weight:600;font-size:15px;color:var(--mute);letter-spacing:1.5px}
+.sub{color:var(--mute);font-size:13px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:var(--mute);margin-bottom:8px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:12px;height:12px;border-radius:3px;border:1.5px solid}
+.sheet{overflow-x:auto}
+svg{display:block;width:100%;height:auto;font-family:var(--body)}
+.laneBg{fill:var(--lane)} .laneBg.alt{fill:var(--lane2)}
+.laneT{font-family:var(--display);font-weight:600;font-size:14px;fill:var(--mute);letter-spacing:1px}
+.n text{font-size:11.5px;fill:var(--fg)} .n .t{font-weight:600;font-size:12.5px} .n .s{fill:var(--mute);font-size:10.5px}
+.step rect{fill:var(--paper);stroke:var(--fg);stroke-width:1.3}
+.app rect{fill:var(--accent-2);stroke:var(--accent);stroke-width:1.3}
+.ctrl polygon{fill:var(--ctrl-2);stroke:var(--ctrl);stroke-width:1.5}
+.ext rect{fill:var(--ext-2);stroke:var(--ext);stroke-width:1.3;stroke-dasharray:5 3}
+.ok rect{fill:var(--ok-2);stroke:var(--ok);stroke-width:1.3}
+.warn rect{fill:var(--warn-2);stroke:var(--warn);stroke-width:1.3}
+.doc path{fill:var(--doc-2);stroke:var(--doc);stroke-width:1.3}
+.ico path{fill:none;stroke:var(--fg);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+.ext .ico path{stroke:var(--ext)} .app .ico path{stroke:var(--accent)} .warn .ico path{stroke:var(--warn)} .ok .ico path{stroke:var(--ok)} .doc .ico path{stroke:var(--doc)}
+.edge{fill:none;stroke:var(--fg);stroke-width:1.4}
+.edge.ext{stroke:var(--ext);stroke-dasharray:5 3} .edge.no{stroke:var(--warn)} .edge.yes{stroke:var(--ok)}
+.el{font-size:10.5px;fill:var(--mute)} .el.yes{fill:var(--ok);font-weight:600} .el.no{fill:var(--warn);font-weight:600}
+.notes{columns:3;column-gap:28px;font-size:12px;color:var(--fg);margin-top:10px;line-height:1.45}
+.notes b{color:var(--accent)}
+.foot{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);margin-top:8px}
+@media (max-width:900px){.notes{columns:1}}
+</style>
+
+<div class="wrap" id="root"></div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e}
+function h(t,a,p){const e=document.createElement(t);for(const k in a)e[k]=a[k];p.appendChild(e);return e}
+
+const LEG=[['paper','fg','Manual / scan step'],['accent-2','accent','Asset app function'],['ctrl-2','ctrl','Decision / control'],['ext-2','ext','External system (EBS · GCS · Production · Mail)'],['doc-2','doc','Document / print'],['ok-2','ok','Normal end state'],['warn-2','warn','Exception']];
+
+/* ===== pictograms (24x24, stroke only) ===== */
+const IC={
+ scan:'M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10M9 9v6M12 9v6M15 9v6',
+ truck:'M2 7h11v9H2zM13 10h4l3 3v3h-7zM6 19a2 2 0 1 0 0-.1M17 19a2 2 0 1 0 0-.1',
+ gate:'M3 20V4M21 20V4M7 6v14M11 6v14M15 6v14M19 6v14M3 6h18M3 12h18',
+ doc:'M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6M9 8h2',
+ print:'M7 8V3h10v5M5 8h14a2 2 0 0 1 2 2v6h-4v-4H7v4H3v-6a2 2 0 0 1 2-2zM7 14h10v7H7z',
+ server:'M3 4h18v6H3zM3 14h18v6H3zM7 7h.1M7 17h.1',
+ pallet:'M2 10h20M2 14h20M4 10v4M12 10v4M20 10v4M4 6h16v4H4z',
+ mail:'M3 6h18v12H3zM3 7l9 6 9-6',
+ clock:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+ factory:'M3 21V11l5 3V11l5 3V11l5 3v7H3zM17 7V3h3v8M6 17h2M11 17h2M16 17h2',
+ person:'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+ tag:'M3 12V4h8l10 10-8 8L3 12zM7 8h.1',
+ chart:'M3 21h18M6 17V10M11 17V5M16 17v-7M21 17v-3',
+ check:'M4 12l5 5L20 7',
+ warn:'M12 3l10 18H2zM12 10v5M12 18h.1',
+ wh:'M3 21V9l9-5 9 5v12H3zM8 21v-8h8v8M8 17h8',
+ api:'M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16',
+ pin:'M12 2a6 6 0 0 1 6 6c0 5-6 12-6 12S6 13 6 8a6 6 0 0 1 6-6zM12 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4'
+};
+function pick(n){
+ const s=n.lines.join(' ').toLowerCase();
+ if(n.ic)return n.ic;
+ if(/scan/.test(s))return 'scan';
+ if(/print/.test(s))return 'print';
+ if(/pdf|challan|slip|rts|mail/.test(s)&&n.type==='doc')return 'doc';
+ if(/mail/.test(s))return 'mail';
+ if(/gcs|gate/.test(s))return 'gate';
+ if(/vehicle|truck|departs|unloading/.test(s))return 'truck';
+ if(/ebs|api|sale order|invoice/.test(s))return 'api';
+ if(/dashboard|report/.test(s))return 'chart';
+ if(/nightly|aging|clock|days/.test(s))return 'clock';
+ if(/customer/.test(s)&&n.type!=='ok')return 'person';
+ if(/tag/.test(s))return 'tag';
+ if(/warehouse|dock|yard/.test(s))return 'wh';
+ if(/pallet|available|discontinued|held/.test(s))return 'pallet';
+ if(n.type==='warn')return 'warn';
+ if(n.type==='ok')return 'check';
+ if(n.type==='app')return 'server';
+ return null;
+}
+/* ===== renderer ===== */
+const COLW=186,LANEH=118,LX=120,NW=166,NH=62,DH=84,PADT=12;
+function render(c,idx){
+ const page=h('section',{className:'page'},document.getElementById('root'));
+ const head=h('div',{className:'head'},page);
+ h('span',{className:'k',textContent:'PROCESS '+(idx+1)+' / '+CH.length},head);
+ h('h2',{textContent:c.title},head);
+ h('span',{className:'sub',textContent:c.sub||''},head);
+ const lg=h('div',{className:'legend'},page);
+ LEG.forEach(([f,s,l])=>{const sp=h('span',{},lg);const i=h('i',{className:'sw'},sp);i.style.background=`var(--${f})`;i.style.borderColor=`var(--${s})`;if(s==='ext')i.style.borderStyle='dashed';sp.append(l)});
+ const sheet=h('div',{className:'sheet'},page);
+ const cols=Math.max(...c.nodes.map(n=>n.col))+1;
+ const W=LX+cols*COLW+20,H=PADT+c.lanes.length*LANEH+10;
+ const svg=el('svg',{viewBox:`0 0 ${W} ${H}`,xmlns:NS,role:'img','aria-label':c.title},sheet);
+ svg.style.minWidth=Math.min(W,1500)+'px';
+ const d=el('defs',{},svg);const m=el('marker',{id:'ah'+idx,markerWidth:8,markerHeight:8,refX:7,refY:4,orient:'auto',markerUnits:'userSpaceOnUse'},d);el('path',{d:'M0,0 L8,4 L0,8 z',fill:'context-stroke'},m);
+ c.lanes.forEach((ln,i)=>{const y=PADT+i*LANEH;el('rect',{x:10,y,width:W-20,height:LANEH-6,rx:5,class:'laneBg'+(i%2?' alt':'')},svg);
+  const t=el('text',{x:22,y:y+LANEH/2+5,class:'laneT'},svg);ln.split('\n').forEach((s,j)=>{const ts=el('tspan',{x:22,dy:j?14:(ln.includes('\n')?-6:0)},t);ts.textContent=s})});
+ const N={};
+ c.nodes.forEach(n=>{
+  const w=n.w||NW,hh=n.type==='ctrl'?DH:(n.h||NH);
+  const cx=LX+n.col*COLW+COLW/2,cy=PADT+n.lane*LANEH+(LANEH-6)/2;
+  const x=cx-w/2,y=cy-hh/2;const g=el('g',{class:'n '+n.type},svg);
+  if(n.type==='ctrl')el('polygon',{points:`${cx},${y} ${x+w},${cy} ${cx},${y+hh} ${x},${cy}`},g);
+  else if(n.type==='doc')el('path',{d:`M${x},${y} H${x+w} V${y+hh-8} Q${x+w*0.75},${y+hh-16} ${x+w/2},${y+hh-8} T${x},${y+hh-8} Z`},g);
+  else el('rect',{x,y,width:w,height:hh,rx:5},g);
+  const ic=n.type==='ctrl'?null:pick(n);let tx=cx;
+  if(ic){const sz=20,ix=x+7,iy=cy-sz/2;const gi=el('g',{transform:`translate(${ix},${iy}) scale(${sz/24})`,class:'ico'},g);el('path',{d:IC[ic]},gi);tx=cx+11}
+  const base=cy-((n.lines.length-1)*6.5)+4;
+  n.lines.forEach((l,i)=>{const t=el('text',{x:tx,y:base+i*13,'text-anchor':'middle',class:(i===0?'t':'')+(l.startsWith('·')?' s':'')},g);t.textContent=l});
+  N[n.id]={x,y,w,h:hh,cx,cy,lane:n.lane,col:n.col};
+ });
+ const P=(n,s)=>s==='r'?[n.x+n.w,n.cy]:s==='l'?[n.x,n.cy]:s==='t'?[n.cx,n.y]:[n.cx,n.y+n.h];
+ c.edges.forEach(e=>{
+  const a=N[e.a],b=N[e.b];let pts;
+  if(e.via){pts=[P(a,e.via[0]),...e.via.slice(1,-1),P(b,e.via[e.via.length-1])]}
+  else if(a.lane===b.lane&&b.col>a.col){pts=[P(a,'r'),P(b,'l')]}
+  else if(a.lane===b.lane&&b.col<a.col){const yy=PADT+a.lane*LANEH+8;pts=[P(a,'t'),[a.cx,yy],[b.cx,yy],P(b,'t')]}
+  else if(a.col===b.col){pts=b.lane>a.lane?[P(a,'b'),P(b,'t')]:[P(a,'t'),P(b,'b')]}
+  else if(b.col>a.col){const mx=(a.x+a.w+b.x)/2;pts=[P(a,'r'),[mx,a.cy],[mx,b.cy],P(b,'l')]}
+  else{const mx=(b.x+b.w+a.x)/2;pts=[P(a,'l'),[mx,a.cy],[mx,b.cy],P(b,'r')]}
+  el('path',{d:'M'+pts.map(p=>p.join(',')).join(' L'),class:'edge '+(e.cls||''),'marker-end':`url(#ah${idx})`},svg);
+  if(e.l){const [x1,y1]=pts[0],[x2,y2]=pts[1];const t=el('text',{x:(x1+x2)/2+(e.dx||0),y:(y1+y2)/2-5+(e.dy||0),'text-anchor':'middle',class:'el '+(e.cls||'')},svg);t.textContent=e.l}
+ });
+ if(c.notes){const nt=h('div',{className:'notes'},page);c.notes.forEach(n=>{const p=h('p',{},nt);p.style.margin='0 0 6px';p.innerHTML='<b>'+n[0]+'</b> '+n[1]})}
+ const f=h('div',{className:'foot'},page);h('span',{textContent:'Developed by DT · Pallet Asset Tracking · Process flows v0.4 · Oct 2026'},f);h('span',{textContent:'Page '+(idx+1)+' of '+CH.length},f);
+}
+
+/* ===== charts ===== */
+const CH=[
+{title:'Order Creation & EBS Posting',sub:'Dispatch starts in the Asset App; the sale order is created in Oracle EBS by API',
+ lanes:['Planner /\nDispatch user','Asset App\nserver','Oracle EBS','Dock'],
+ nodes:[
+  {id:'a1',lane:0,col:0,type:'step',lines:['Create Pick List','·customer · transporter','·pallet type · qty']},
+  {id:'a2',lane:1,col:1,type:'app',lines:['Validate masters','·customer active','·transporter active']},
+  {id:'a3',lane:1,col:2,type:'ctrl',lines:['Available','≥ qty?']},
+  {id:'a4',lane:0,col:2,type:'warn',lines:['Reject / reduce qty','·show plant availability']},
+  {id:'a5',lane:1,col:3,type:'app',lines:['Build SO payload','·item = pallet type','·returnable flag']},
+  {id:'a6',lane:2,col:4,type:'ext',lines:['Create Sale Order','·EBS API','·returns SO No.']},
+  {id:'a7',lane:1,col:5,type:'ctrl',lines:['API','success?']},
+  {id:'a8',lane:1,col:6,type:'warn',lines:['Retry queue','·3 attempts · alert admin','·Pick List stays DRAFT']},
+  {id:'a9',lane:1,col:7,type:'app',lines:['Store SO No.','·Pick List status OPEN','·reserve qty (soft)']},
+  {id:'a10',lane:3,col:8,type:'ok',lines:['Pick List → Dock','·visible on HHT']},
+  {id:'a11',lane:2,col:7,type:'ext',lines:['Invoice / delivery','·existing EBS flow','·glass dispatch']},
+ ],
+ edges:[
+  {a:'a1',b:'a2'},{a:'a2',b:'a3'},{a:'a3',b:'a4',cls:'no',l:'no'},{a:'a3',b:'a5',cls:'yes',l:'yes'},
+  {a:'a5',b:'a6',cls:'ext',l:'POST'},{a:'a6',b:'a7',cls:'ext',l:'SO No.'},{a:'a7',b:'a8',cls:'no',l:'fail'},
+  {a:'a8',b:'a5',cls:'no',l:'retry'},{a:'a7',b:'a9',via:['t',[LX+5*COLW+COLW/2,PADT+LANEH+8],[LX+7*COLW+COLW/2,PADT+LANEH+8],'t'],cls:'yes',l:'ok'},
+  {a:'a9',b:'a10'},{a:'a9',b:'a11',cls:'ext',l:'SO ref'},
+ ],
+ notes:[['Who:','Dispatch planner creates the Pick List; the app owns master validation and the EBS call.'],
+  ['SO payload:','Customer code, ship-to, pallet type as item, qty, returnable flag, Pick List reference in the order header for traceability.'],
+  ['Invoice:','Glass invoicing stays in the existing EBS / HMIL flow. The pallet SO is linked by Pick List reference so the pallet challan can print the invoice number.'],
+  ['Edit / cancel:','A Pick List can be edited only in DRAFT. After SO posting, changes go through a cancel-and-recreate so EBS and app never diverge.']]},
+
+{title:'Dock Out-ward Scanning & Pick List Control',sub:'Every pallet leaving the plant is scanned by tag and locked to one Pick List',
+ lanes:['Dock operator\n(HHT)','Asset App\nserver','Exceptions'],
+ nodes:[
+  {id:'b1',lane:0,col:0,type:'step',lines:['Open Pick List on HHT','·shows qty · customer']},
+  {id:'b2',lane:0,col:1,type:'step',lines:['Scan pallet tag','·barcode / QR']},
+  {id:'b3',lane:1,col:2,type:'app',lines:['Resolve tag → Pallet No','·Tag Master lookup']},
+  {id:'b4',lane:1,col:3,type:'ctrl',lines:['Tag active','& known?']},
+  {id:'b5',lane:2,col:3,type:'warn',lines:['Unknown / retired tag','·reject · log · quarantine']},
+  {id:'b6',lane:1,col:4,type:'ctrl',lines:['Home plant','= this plant?']},
+  {id:'b7',lane:2,col:4,type:'warn',lines:['Foreign pallet','·reject · home plant alert']},
+  {id:'b8',lane:1,col:5,type:'ctrl',lines:['Status','AVAILABLE?']},
+  {id:'b9',lane:2,col:5,type:'warn',lines:['Not available','·show current status / Pick List']},
+  {id:'b10',lane:1,col:6,type:'app',lines:['Add to Pick List','·status ALLOCATED','·count +1']},
+  {id:'b11',lane:0,col:7,type:'ctrl',lines:['Count =','Pick List qty?']},
+  {id:'b12',lane:1,col:8,type:'app',lines:['Pick List Control','·type match · no excess','·no shortfall']},
+  {id:'b13',lane:0,col:9,type:'step',lines:['Confirm load list','·supervisor PIN']},
+  {id:'b14',lane:1,col:10,type:'ok',lines:['READY FOR CHALLAN','·pallet list frozen']},
+ ],
+ edges:[
+  {a:'b1',b:'b2'},{a:'b2',b:'b3'},{a:'b3',b:'b4'},{a:'b4',b:'b5',cls:'no',l:'no'},{a:'b4',b:'b6',cls:'yes',l:'yes'},
+  {a:'b6',b:'b7',cls:'no',l:'no'},{a:'b6',b:'b8',cls:'yes',l:'yes'},{a:'b8',b:'b9',cls:'no',l:'no'},{a:'b8',b:'b10',cls:'yes',l:'yes'},
+  {a:'b10',b:'b11'},{a:'b11',b:'b2',cls:'no',l:'next pallet'},{a:'b11',b:'b12',cls:'yes',l:'yes'},{a:'b12',b:'b13'},{a:'b13',b:'b14'},
+ ],
+ notes:[['Duplicate scan:','Same tag scanned twice on one Pick List is ignored with a beep, not counted twice.'],
+  ['Remove:','Operator can remove a pallet from the list before confirm; it returns to AVAILABLE.'],
+  ['Offline:','HHT caches the Pick List and Tag Master; scans are queued and validated again on sync. Confirm is online-only.'],
+  ['Partial load:','If the vehicle takes fewer pallets, supervisor reduces Pick List qty with reason; the SO qty is updated in EBS.']]},
+
+{title:'Challan → Logistics → GCS Outward → Gate',sub:'Challan source switch (ORACLE / APP), logistics approval and system-controlled out-gate',
+ lanes:['Dispatch','Asset App\nserver','Oracle EBS','Logistics','GCS /\nSecurity'],
+ nodes:[
+  {id:'c1',lane:0,col:0,type:'step',lines:['Request challan','·for READY Pick List']},
+  {id:'c2',lane:1,col:1,type:'ctrl',lines:['Challan','Control']},
+  {id:'c3',lane:0,col:1,type:'warn',lines:['Blocked','·not READY / already','·challaned']},
+  {id:'c4',lane:1,col:2,type:'ctrl',lines:['Source','switch?']},
+  {id:'c5',lane:2,col:3,type:'ext',lines:['Create returnable challan','·EBS API · challan no.']},
+  {id:'c6',lane:1,col:3,type:'app',lines:['App challan series','·PLANT/YY/NNNNN','·GST returnable format']},
+  {id:'c7',lane:1,col:4,type:'doc',lines:['Challan PDF + QR','·pallet list · invoice ref']},
+  {id:'c8',lane:0,col:5,type:'step',lines:['Print & attach','·2 copies']},
+  {id:'c9',lane:3,col:6,type:'step',lines:['Logistics Approve','·vehicle · driver','·transporter']},
+  {id:'c10',lane:3,col:7,type:'ctrl',lines:['Approve?']},
+  {id:'c11',lane:0,col:7,type:'warn',lines:['Returned to Dispatch','·with reason']},
+  {id:'c12',lane:4,col:8,type:'ext',lines:['GCS Outward created','·challan no · vehicle · qty']},
+  {id:'c13',lane:4,col:9,type:'step',lines:['Out gate scans GCS QR','·verifies challan QR']},
+  {id:'c14',lane:4,col:10,type:'ctrl',lines:['Match?']},
+  {id:'c15',lane:3,col:10,type:'warn',lines:['Hold vehicle','·logistics call']},
+  {id:'c16',lane:1,col:11,type:'ok',lines:['AT CUSTOMER','·customer ledger +','·aging clock starts']},
+ ],
+ edges:[
+  {a:'c1',b:'c2'},{a:'c2',b:'c3',cls:'no',l:'fail'},{a:'c2',b:'c4',cls:'yes',l:'pass'},
+  {a:'c4',b:'c5',cls:'ext',l:'ORACLE'},{a:'c4',b:'c6',l:'APP'},{a:'c5',b:'c7',cls:'ext',l:'challan no.'},{a:'c6',b:'c7'},
+  {a:'c7',b:'c8'},{a:'c8',b:'c9'},{a:'c9',b:'c10'},{a:'c10',b:'c11',cls:'no',l:'no'},{a:'c10',b:'c12',cls:'yes',l:'yes'},
+  {a:'c12',b:'c13',cls:'ext'},{a:'c13',b:'c14'},{a:'c14',b:'c15',cls:'no',l:'no'},{a:'c14',b:'c16',cls:'yes',l:'yes'},
+ ],
+ notes:[['Switch:','Set per plant and overridable per customer in Customer Master. ORACLE mode stores the EBS challan number; APP mode posts its number back to EBS as a reference.'],
+  ['Challan QR:','Encodes challan no, Pick List, customer, pallet count and a hash, so the gate and the customer can verify it offline.'],
+  ['GCS:','One GCS outward per vehicle; it may carry several challans. GCS approval is auto when the gate scan matches; manual override needs a reason.'],
+  ['After gate:','Pallet status AT CUSTOMER, dispatch date stamped, customer ledger incremented by pallet ID, reminder schedule evaluated nightly.']]},
+
+{title:'Return Slip Creation (Mode A · Mode B)',sub:'One Return Slip (RTS) with QR, created at the customer or at the AIS gate',
+ lanes:['Customer /\nDriver (Mode A)','Asset App\n(mobile / HHT)','AIS Security\n(Mode B)','Ledger'],
+ nodes:[
+  {id:'d1',lane:0,col:0,type:'step',lines:['Empty pallets ready','·at customer']},
+  {id:'d2',lane:0,col:1,type:'ctrl',lines:['Scanning','facility?']},
+  {id:'d3',lane:0,col:2,type:'step',lines:['Scan each pallet tag','·phone / portable scanner']},
+  {id:'d4',lane:1,col:3,type:'ctrl',lines:['Pallet on this','customer ledger?']},
+  {id:'d5',lane:1,col:4,type:'warn',lines:['Flag: cross-customer','·or unknown · include','·with warning']},
+  {id:'d6',lane:1,col:5,type:'app',lines:['Create RTS','·slip no · vehicle','·pallet list · signed QR']},
+  {id:'d7',lane:0,col:6,type:'doc',lines:['Print RTS','·BT thermal printer','·2 copies']},
+  {id:'d8',lane:2,col:2,type:'step',lines:['Vehicle at IN gate','·manual challan only']},
+  {id:'d9',lane:2,col:3,type:'ctrl',lines:['Pallets','accessible?']},
+  {id:'d10',lane:2,col:4,type:'step',lines:['B1: scan each tag','·on vehicle']},
+  {id:'d11',lane:2,col:5,type:'step',lines:['B2: enter qty','·from manual challan','·PENDING VERIFICATION']},
+  {id:'d12',lane:2,col:6,type:'doc',lines:['Print RTS at gate','·HHT with printer']},
+  {id:'d13',lane:3,col:7,type:'ok',lines:['RTS registered','·expected list / qty','·status IN RETURN']},
+  {id:'d14',lane:0,col:7,type:'step',lines:['Vehicle departs','·slip travels with load']},
+ ],
+ edges:[
+  {a:'d1',b:'d2'},{a:'d2',b:'d3',cls:'yes',l:'yes'},{a:'d2',b:'d8',cls:'no',l:'no → Mode B'},
+  {a:'d3',b:'d4'},{a:'d4',b:'d5',cls:'no',l:'no'},{a:'d4',b:'d6',via:['t',[LX+3*COLW+COLW/2,PADT+LANEH+8],[LX+5*COLW+COLW/2,PADT+LANEH+8],'t'],cls:'yes',l:'yes'},{a:'d5',b:'d6'},
+  {a:'d6',b:'d7'},{a:'d7',b:'d14'},{a:'d14',b:'d13'},
+  {a:'d8',b:'d9'},{a:'d9',b:'d10',cls:'yes',l:'yes'},{a:'d9',b:'d11',via:['b',[LX+3*COLW+COLW/2,PADT+3*LANEH-14],[LX+5*COLW+COLW/2,PADT+3*LANEH-14],'b'],cls:'no',l:'no'},
+  {a:'d10',b:'d12',via:['t',[LX+4*COLW+COLW/2,PADT+2*LANEH+8],[LX+6*COLW+COLW/2,PADT+2*LANEH+8],'t']},{a:'d11',b:'d12'},{a:'d12',b:'d13'},
+ ],
+ notes:[['Mode A kit:','Android phone + Bluetooth ESC/POS printer, or a handheld with built-in printer. App works offline; slip syncs when online. Customer login limited to their own ledger.'],
+  ['Signed QR:','Slip ID + pallet list hash + timestamp signed by the app key, so the gate can accept it offline and a hand-edited slip fails.'],
+  ['Mode B2:','Quantity-only slips are allowed only when pallets cannot be scanned on the vehicle. They stay PENDING until the yard scan supplies the IDs.'],
+  ['Self-service:','Customers with a portal login can raise an RTS from their own holding list (Phase 6).']]},
+
+{title:'IN Gate → Yard In-ward → Reconciliation',sub:'Scan-driven receipt, three-way match and exception handling',
+ lanes:['Security /\nIN gate','GCS','Yard team\n(HHT)','Asset App\nserver','Outcome'],
+ nodes:[
+  {id:'e1',lane:0,col:0,type:'step',lines:['Scan RTS QR','·at IN gate']},
+  {id:'e2',lane:1,col:1,type:'ext',lines:['GCS Inward auto-created','·slip no · qty · vehicle']},
+  {id:'e3',lane:0,col:2,type:'step',lines:['Vehicle to unloading','·dock']},
+  {id:'e4',lane:2,col:3,type:'step',lines:['Scan RTS at yard','·opens expected list']},
+  {id:'e5',lane:2,col:4,type:'step',lines:['Scan each pallet','·☐ accept other-plant']},
+  {id:'e6',lane:3,col:5,type:'ctrl',lines:['Known tag &','same plant?']},
+  {id:'e7',lane:3,col:6,type:'ctrl',lines:['Checkbox','ticked?']},
+  {id:'e8',lane:4,col:6,type:'warn',lines:['Scan rejected','·stays on customer ledger']},
+  {id:'e9',lane:4,col:7,type:'warn',lines:['HELD – other plant','·blocked for dispatch','·home plant alerted']},
+  {id:'e10',lane:3,col:7,type:'app',lines:['Add to received list','·damage? photo']},
+  {id:'e11',lane:2,col:8,type:'ctrl',lines:['More','pallets?']},
+  {id:'e12',lane:3,col:9,type:'app',lines:['Reconcile','·ledger vs slip vs scan']},
+  {id:'e13',lane:3,col:10,type:'ctrl',lines:['All','match?']},
+  {id:'e14',lane:4,col:10,type:'warn',lines:['Discrepancy queue','·short · excess · unknown','·cross-customer · damaged']},
+  {id:'e15',lane:4,col:11,type:'ok',lines:['AVAILABLE','·ledger −  · GCS-IN closed','·gate pass closed']},
+  {id:'e16',lane:1,col:11,type:'ext',lines:['GCS Inward closed','·confirmed qty']},
+ ],
+ edges:[
+  {a:'e1',b:'e2',cls:'ext'},{a:'e1',b:'e3'},{a:'e3',b:'e4'},{a:'e4',b:'e5'},{a:'e5',b:'e6'},
+  {a:'e6',b:'e10',via:['t',[LX+5*COLW+COLW/2,PADT+3*LANEH+8],[LX+7*COLW+COLW/2,PADT+3*LANEH+8],'t'],cls:'yes',l:'yes'},
+  {a:'e6',b:'e7',cls:'no',l:'foreign'},{a:'e7',b:'e8',cls:'no',l:'no'},{a:'e7',b:'e9',cls:'yes',l:'yes'},
+  {a:'e10',b:'e11'},{a:'e11',b:'e5',cls:'yes',l:'yes'},{a:'e11',b:'e12',cls:'no',l:'no'},{a:'e12',b:'e13'},
+  {a:'e13',b:'e14',cls:'no',l:'no'},{a:'e13',b:'e15',cls:'yes',l:'yes'},{a:'e14',b:'e15',l:'after resolution'},{a:'e15',b:'e16',cls:'ext'},
+ ],
+ notes:[['Short:','On slip, not scanned → stays AT CUSTOMER, counted in reminders; customer informed by mail with the slip number.'],
+  ['Excess:','Scanned, not on slip → accepted; source customer auto-corrected from ledger; noted on the closure report.'],
+  ['Cross-customer:','Pallet booked to customer X arrives from Y → moved between ledgers, flagged for logistics review.'],
+  ['Unknown tag:','Not in Tag Master → held in quarantine bin until Master team identifies or re-tags it.'],
+  ['Damaged:','Status DAMAGED with photo; chargeable per Customer Master; repair/scrap decided by yard supervisor.'],
+  ['Closure:','Only a supervisor can close a receipt with open exceptions; the GCS inward is closed with the confirmed quantity.']]},
+
+{title:'Master & Tag Management',sub:'Tag series, batch printing, assignment, replacement and pallet discontinuation',
+ lanes:['Master\nMaintenance team','Asset App\nserver','Vendor','Yard / Plant'],
+ nodes:[
+  {id:'f1',lane:0,col:0,type:'step',lines:['Generate tag series','·range · plant · batch']},
+  {id:'f2',lane:1,col:1,type:'app',lines:['Reserve series','·status ISSUED-TO-VENDOR']},
+  {id:'f3',lane:2,col:2,type:'ext',lines:['Print tags','·batch of 400','·barcode + QR']},
+  {id:'f4',lane:0,col:3,type:'step',lines:['Receive & verify batch','·scan first / last']},
+  {id:'f5',lane:1,col:4,type:'app',lines:['Tags IN STOCK','·per plant']},
+  {id:'f6',lane:3,col:5,type:'step',lines:['Fix tag on pallet','·scan tag · scan/enter','·Pallet No']},
+  {id:'f7',lane:1,col:6,type:'ctrl',lines:['Pallet No valid','& same plant?']},
+  {id:'f8',lane:0,col:6,type:'warn',lines:['Reject','·other-plant No · discontinued','·already tagged']},
+  {id:'f9',lane:1,col:7,type:'app',lines:['Tag ASSIGNED','·Pallet Master updated','·history row']},
+  {id:'f10',lane:3,col:8,type:'step',lines:['Tag damaged / lost','·replacement request']},
+  {id:'f11',lane:1,col:9,type:'app',lines:['Replace tag','·old RETIRED · new ASSIGNED','·Tag Change History']},
+  {id:'f12',lane:0,col:10,type:'step',lines:['Discontinue pallet','·reason · approval']},
+  {id:'f13',lane:1,col:11,type:'ok',lines:['DISCONTINUED','·No. & tag locked forever']},
+ ],
+ edges:[
+  {a:'f1',b:'f2'},{a:'f2',b:'f3',cls:'ext'},{a:'f3',b:'f4',cls:'ext'},{a:'f4',b:'f5'},{a:'f5',b:'f6'},{a:'f6',b:'f7'},
+  {a:'f7',b:'f8',cls:'no',l:'no'},{a:'f7',b:'f9',cls:'yes',l:'yes'},{a:'f9',b:'f10'},{a:'f10',b:'f11'},{a:'f11',b:'f12'},{a:'f12',b:'f13'},
+ ],
+ notes:[['Rules:','Pallet No is permanent and never reused. A tag is assigned to one pallet at a time; a retired tag is never reassigned. Only the Master team can create series, replace tags or discontinue pallets.'],
+  ['New pallets:','Pallet No is generated from the plant series when a new pallet is registered; tag assigned at the same time.'],
+  ['Audit:','Every master change writes who / when / old value / new value. Tag Change History and Pallet History reports read from this log.'],
+  ['Inter-plant transfer:','Changing Home Plant is a Master-team action with approval; it moves the pallet to the new plant series mapping without changing the Pallet No.']]},
+
+{title:'Reminders, Aging & Reporting',sub:'Nightly job against Customer Master limits; dashboards for plant and management',
+ lanes:['Scheduler','Asset App\nserver','Mail','Customer','Logistics /\nManagement'],
+ nodes:[
+  {id:'g1',lane:0,col:0,type:'step',lines:['Nightly job','·e.g. 06:00']},
+  {id:'g2',lane:1,col:1,type:'app',lines:['Compute aging','·days since dispatch','·per pallet · per customer']},
+  {id:'g3',lane:1,col:2,type:'ctrl',lines:['Over limit or','frequency due?']},
+  {id:'g4',lane:1,col:3,type:'doc',lines:['Reminder mail','·pallet list · slip refs','·holding vs limit']},
+  {id:'g5',lane:2,col:4,type:'ext',lines:['Send to customer','·IDs from Customer Master','·CC plant logistics']},
+  {id:'g6',lane:3,col:5,type:'step',lines:['Customer returns','·raises RTS']},
+  {id:'g7',lane:1,col:6,type:'ctrl',lines:['Escalation','threshold?']},
+  {id:'g8',lane:4,col:7,type:'warn',lines:['Escalate','·sales · chargeable list']},
+  {id:'g9',lane:4,col:3,type:'app',lines:['Dashboard','·plant availability','·customer holding · aging']},
+  {id:'g10',lane:4,col:5,type:'app',lines:['Reports','·pallet history · tag history','·tag stock · exceptions']},
+  {id:'g11',lane:1,col:8,type:'ok',lines:['Log sent / skipped','·reminder history']},
+ ],
+ edges:[
+  {a:'g1',b:'g2'},{a:'g2',b:'g3'},{a:'g3',b:'g4',cls:'yes',l:'yes'},{a:'g4',b:'g5',cls:'ext'},{a:'g5',b:'g6'},
+  {a:'g3',b:'g7',via:['b',[LX+2*COLW+COLW/2,PADT+2*LANEH-14],[LX+6*COLW+COLW/2,PADT+2*LANEH-14],'b'],cls:'no',l:'no'},{a:'g7',b:'g8',cls:'yes',l:'yes'},{a:'g7',b:'g11',cls:'no',l:'no'},
+  {a:'g2',b:'g9',via:['b',[LX+1*COLW+COLW/2,PADT+4*LANEH+(LANEH-6)/2],'l']},{a:'g9',b:'g10'},
+ ],
+ notes:[['Customer Master fields:','holding-days limit, reminder frequency (e.g. every 7 days after limit), escalation days, chargeable flag, mail IDs, CC list.'],
+  ['Mail content:','Customer name, plant, pallet count by age bucket (0-30 / 31-60 / 60+), slip references, and a link to the self-service page in Phase 6.'],
+  ['Dashboard:','Plant-wise Available / At Customer / In Return / Held / Damaged / Discontinued; top-10 customers by holding; overdue trend.'],
+  ['Exports:','All reports export to Excel; pallet history also prints as a single-pallet PDF.']]},
+
+{title:'Roles, Plant Restriction & User Control',sub:'15 plants · every user tied to one plant · role matrix maintained in Admin · supervisor PIN on sensitive actions',
+ lanes:['Central Admin','Master\nMaintenance','Plant Admin','Plant users\n(HHT / web)','System'],
+ nodes:[
+  {id:'h1',lane:0,col:0,type:'app',lines:['Plant Master','·15 plants · code · GSTIN','·series · challan switch']},
+  {id:'h2',lane:0,col:1,type:'app',lines:['Role Master','·permission matrix','·editable, not hard-coded']},
+  {id:'h3',lane:1,col:2,type:'app',lines:['Global masters','·Pallet · Tag · Customer','·Transporter · series']},
+  {id:'h4',lane:2,col:2,type:'step',lines:['Create plant users','·own plant only','·assign one or more roles']},
+  {id:'h5',lane:3,col:3,type:'step',lines:['Login','·user + password / PIN','·device registered']},
+  {id:'h6',lane:4,col:4,type:'ctrl',lines:['Plant &','role valid?']},
+  {id:'h7',lane:3,col:5,type:'warn',lines:['Denied','·logged · lock after','·5 failed attempts']},
+  {id:'h8',lane:4,col:5,type:'app',lines:['Session scoped','·plant filter on all data','·menus by role'],ic:'check'},
+  {id:'h9',lane:3,col:6,type:'step',lines:['Transaction','·scan / approve / close']},
+  {id:'h10',lane:4,col:7,type:'ctrl',lines:['Sensitive','action?']},
+  {id:'h11',lane:3,col:8,type:'step',lines:['Supervisor PIN','·second user approval']},
+  {id:'h12',lane:4,col:9,type:'ok',lines:['Committed + audit log','·user · role · plant · device','·time · old/new value']},
+  {id:'h13',lane:0,col:9,type:'app',lines:['Audit & reports','·all plants · read-only','·Management role'],ic:'chart'},
+ ],
+ edges:[
+  {a:'h1',b:'h2'},{a:'h2',b:'h3'},{a:'h2',b:'h4'},{a:'h3',b:'h5'},{a:'h4',b:'h5'},{a:'h5',b:'h6'},
+  {a:'h6',b:'h7',cls:'no',l:'no'},
+  {a:'h6',b:'h8',cls:'yes',l:'yes'},{a:'h8',b:'h9'},{a:'h9',b:'h10'},{a:'h10',b:'h11',cls:'yes',l:'yes'},{a:'h10',b:'h12',cls:'no',l:'no'},{a:'h11',b:'h12'},
+  {a:'h12',b:'h13'},
+ ],
+ notes:[['Plant roles:','Security IN Gate · Security Logistics/OUT Gate · Pallet Yard In-charge · FG Warehouse · QA/PDI · Logistics. Full permission matrix in the master template (sheet 2_Roles).'],
+  ['Admin roles:','Plant Admin (users and settings of own plant) · Master Maintenance (global masters, tag series, discontinue, inter-plant transfer) · Central Admin (everything, integrations) · Management (all-plant dashboards, read-only).'],
+  ['Plant restriction:','One plant per user; Central and Management roles are multi-plant. Data, scans, reports and pick lists are filtered automatically. A plant cannot dispatch or assign another plant\u2019s pallets.'],
+  ['Sensitive actions (PIN):','Close reconciliation with open exceptions · reduce pick list qty · manual GCS override · discontinue pallet · change home plant · delete user.'],
+  ['Security policy:','Password rules, forced change on first login, lock after 5 failures, HHT device registration, immutable audit log. AD/LDAP optional later.']]},
+];
+CH.forEach(render);
+</script>

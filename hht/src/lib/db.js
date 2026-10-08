@@ -1,0 +1,90 @@
+// Local SQLite: reference cache + outbox (durable queue of scans). Developed by DT
+import * as SQLite from 'expo-sqlite';
+
+let db;
+export async function openDb() {
+  if (db) return db;
+  db = await SQLite.openDatabaseAsync('pallet_hht.db');
+  await db.execAsync(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+    CREATE TABLE IF NOT EXISTS pallets (pallet_no TEXT PRIMARY KEY, tag TEXT, home TEXT, type TEXT, status TEXT, customer TEXT, picklist TEXT);
+    CREATE INDEX IF NOT EXISTS ix_pallets_tag ON pallets(tag);
+    CREATE TABLE IF NOT EXISTS tags (tag TEXT PRIMARY KEY, pallet TEXT, status TEXT);
+    CREATE TABLE IF NOT EXISTS picklists (picklist_no TEXT PRIMARY KEY, customer TEXT, type TEXT, qty INTEGER, status TEXT, scanned INTEGER);
+    CREATE TABLE IF NOT EXISTS slips (slip_no TEXT PRIMARY KEY, customer TEXT, mode TEXT, qty INTEGER, status TEXT, pallets TEXT);
+    CREATE TABLE IF NOT EXISTS customers (code TEXT PRIMARY KEY, name TEXT, return_mode TEXT);
+    CREATE TABLE IF NOT EXISTS outbox (
+      event_id TEXT PRIMARY KEY, event_type TEXT, payload TEXT, local_ts TEXT, offline INTEGER,
+      status TEXT DEFAULT 'PENDING', result TEXT, attempts INTEGER DEFAULT 0, created_at TEXT);
+    CREATE INDEX IF NOT EXISTS ix_outbox_status ON outbox(status);
+    CREATE TABLE IF NOT EXISTS local_docs (doc_no TEXT PRIMARY KEY, kind TEXT, payload TEXT, status TEXT DEFAULT 'PENDING', result TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS local_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT, pallet_no TEXT, ts TEXT);
+  `);
+  return db;
+}
+
+export const kv = {
+  async get(k, d = null) { const r = await (await openDb()).getFirstAsync('SELECT v FROM kv WHERE k=?', k); return r ? JSON.parse(r.v) : d; },
+  async set(k, v) { await (await openDb()).runAsync('INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)', k, JSON.stringify(v)); },
+};
+
+// ---------- reference cache
+export async function applyPull(data) {
+  const d = await openDb();
+  await d.withTransactionAsync(async () => {
+    if (data.full) { await d.execAsync('DELETE FROM pallets; DELETE FROM tags; DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;'); }
+    for (const p of data.pallets) await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist);
+    for (const t of data.tags) await d.runAsync('INSERT OR REPLACE INTO tags VALUES(?,?,?)', t.tag, t.pallet, t.status);
+    await d.execAsync('DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;');
+    for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned);
+    for (const s of data.slips) await d.runAsync('INSERT OR REPLACE INTO slips VALUES(?,?,?,?,?,?)', s.slip_no, s.customer, s.mode, s.qty, s.status, JSON.stringify(s.pallets));
+    for (const c of data.customers) await d.runAsync('INSERT OR REPLACE INTO customers VALUES(?,?,?)', c.code, c.name, c.return_mode);
+  });
+  await kv.set('plant', data.plant);
+  await kv.set('last_pull', data.server_time);
+}
+
+export async function resolveTag(scanned) {
+  const d = await openDb(); const s = String(scanned).trim();
+  let p = await d.getFirstAsync('SELECT * FROM pallets WHERE tag=?', s);
+  if (!p) p = await d.getFirstAsync('SELECT * FROM pallets WHERE pallet_no=?', s);
+  if (!p) { const t = await d.getFirstAsync('SELECT * FROM tags WHERE tag=?', s); if (t && t.pallet) p = await d.getFirstAsync('SELECT * FROM pallets WHERE pallet_no=?', t.pallet); if (!p && t) return { tag: t, pallet: null }; }
+  return { tag: null, pallet: p || null };
+}
+export const setPalletLocal = async (pallet_no, fields) => {
+  const d = await openDb(); const sets = Object.keys(fields).map(k => `${k}=?`).join(',');
+  await d.runAsync(`UPDATE pallets SET ${sets} WHERE pallet_no=?`, ...Object.values(fields), pallet_no);
+};
+export const listPicklists = async () => (await openDb()).getAllAsync("SELECT * FROM picklists WHERE status IN ('OPEN','SO_PENDING','READY') ORDER BY picklist_no DESC");
+export const listSlips = async () => (await openDb()).getAllAsync("SELECT * FROM slips ORDER BY slip_no DESC");
+export const listCustomers = async () => (await openDb()).getAllAsync('SELECT * FROM customers ORDER BY name');
+export const getPicklist = async (no) => (await openDb()).getFirstAsync('SELECT * FROM picklists WHERE picklist_no=?', no);
+export const getSlip = async (no) => (await openDb()).getFirstAsync('SELECT * FROM slips WHERE slip_no=?', no);
+
+// local scan ledger per document (works offline, survives restart)
+export const addLocalScan = async (ref, pallet_no) => (await openDb()).runAsync('INSERT INTO local_scans(ref,pallet_no,ts) VALUES(?,?,?)', ref, pallet_no, new Date().toISOString());
+export const localScans = async (ref) => (await openDb()).getAllAsync('SELECT * FROM local_scans WHERE ref=? ORDER BY id', ref);
+export const localScanExists = async (ref, pallet_no) => !!(await (await openDb()).getFirstAsync('SELECT 1 FROM local_scans WHERE ref=? AND pallet_no=?', ref, pallet_no));
+export const removeLocalScan = async (ref, pallet_no) => (await openDb()).runAsync('DELETE FROM local_scans WHERE ref=? AND pallet_no=?', ref, pallet_no);
+
+// ---------- outbox
+export async function enqueue(event_type, payload, offline) {
+  const d = await openDb();
+  const event_id = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : uuid();
+  await d.runAsync('INSERT INTO outbox(event_id,event_type,payload,local_ts,offline,created_at) VALUES(?,?,?,?,?,?)',
+    event_id, event_type, JSON.stringify(payload), new Date().toISOString(), offline ? 1 : 0, new Date().toISOString());
+  return event_id;
+}
+export const pendingEvents = async (limit = 200) => (await openDb()).getAllAsync("SELECT * FROM outbox WHERE status='PENDING' ORDER BY local_ts LIMIT ?", limit);
+export const pendingCount = async () => (await (await openDb()).getFirstAsync("SELECT COUNT(*) c FROM outbox WHERE status='PENDING'")).c;
+export const markEvent = async (event_id, status, result) => (await openDb()).runAsync('UPDATE outbox SET status=?, result=?, attempts=attempts+1 WHERE event_id=?', status, result || null, event_id);
+export const recentEvents = async (n = 100) => (await openDb()).getAllAsync('SELECT * FROM outbox ORDER BY created_at DESC LIMIT ?', n);
+export const purgeOld = async (days = 30) => (await openDb()).runAsync("DELETE FROM outbox WHERE status<>'PENDING' AND created_at < ?", new Date(Date.now() - days * 864e5).toISOString());
+
+// local documents created offline (return slips) - replayed on sync
+export const enqueueDoc = async (doc_no, kind, payload) => (await openDb()).runAsync('INSERT OR REPLACE INTO local_docs(doc_no,kind,payload,created_at) VALUES(?,?,?,?)', doc_no, kind, JSON.stringify(payload), new Date().toISOString());
+export const pendingDocs = async () => (await openDb()).getAllAsync("SELECT * FROM local_docs WHERE status='PENDING' ORDER BY created_at");
+export const markDoc = async (doc_no, status, result) => (await openDb()).runAsync('UPDATE local_docs SET status=?, result=? WHERE doc_no=?', status, result || null, doc_no);
+
+function uuid() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); }); }
