@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## 1.3.0 (2026-10-09)
+- Activity logger: middleware records every action (WEB/HHT/EXT/SYSTEM) with user, plant, device, IP, result, duration; secrets scrubbed
+- Activity page (Monitor menu): filters, summary by action/user/device, Excel export; HHT device-activity intake (/activity/device)
 ## 1.2.0 (2026-10-08)
 - Print-ready A4 challan and return slip with AIS logo, AssetTrack wordmark and QR (/print/challan/{no}, /print/slip/{no}); print buttons in web UI
 ## 1.1.0 (2026-10-08)

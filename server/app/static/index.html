@@ -36,7 +36,7 @@ tbody tr:hover td{background:rgba(255,255,255,.45)}
 .AVAILABLE,.APPLIED,.DONE{background:var(--ok-2);color:var(--ok)}.AT_CUSTOMER,.OPEN,.IN_GATE{background:var(--info-2);color:var(--accent-d)}
 .ALLOCATED,.IN_RETURN,.READY,.SO_PENDING,.CHALLANED,.APPROVED,.PENDING_VERIFICATION,.RECEIVING,.PENDING,.EXCEPTION{background:var(--amber-2);color:var(--amber)}
 .HELD,.DAMAGED,.REJECTED,.FAILED,.OVERDUE,.FOREIGN,.SHORT,.UNKNOWN,.CROSS_CUSTOMER,.EXCESS{background:var(--warn-2);color:var(--warn)}
-.DISCONTINUED,.CLOSED,.DISPATCHED,.UNDER_REPAIR{background:var(--grey-2);color:#334155}
+.DISCONTINUED,.CLOSED,.DISPATCHED,.UNDER_REPAIR,.SYSTEM{background:var(--grey-2);color:#334155}.WEB{background:var(--info-2);color:var(--accent-d)}.HHT{background:var(--ok-2);color:var(--ok)}.EXT{background:rgba(124,58,237,.16);color:#6d28d9}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
 .kpi{position:relative;overflow:hidden;z-index:0;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--edge);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow)}
 .kpi::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--kc,var(--accent))}
@@ -70,7 +70,7 @@ pre{background:rgba(255,255,255,.6);padding:10px;border-radius:10px;white-space:
 const API='/api/v1';let T=localStorage.getItem('tok'),ME=null,PAGE='dash';
 const $=s=>document.querySelector(s);const h=(t,a={},...c)=>{const e=document.createElement(t);for(const k in a){if(k==='on')for(const ev in a.on)e.addEventListener(ev,a.on[ev]);else if(k==='html')e.innerHTML=a[k];else if(k in e&&k!=='style')e[k]=a[k];else e.setAttribute(k,a[k])}c.flat().forEach(x=>e.append(x instanceof Node?x:document.createTextNode(x??'')));return e};
 function msg(t,err){const m=$('#msg');m.textContent=t;m.className=err?'err':'';m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',err?6000:3000)}
-async function api(path,opt={}){const o={method:opt.method||'GET',headers:{}};if(T)o.headers.Authorization='Bearer '+T;if(opt.body instanceof FormData)o.body=opt.body;else if(opt.body){o.headers['Content-Type']='application/json';o.body=JSON.stringify(opt.body)}
+async function api(path,opt={}){const o={method:opt.method||'GET',headers:{'X-Device-Id':'WEB-'+(navigator.userAgent.match(/(Chrome|Edg|Firefox)\/\d+/)||['browser'])[0].replace('/','')}};if(T)o.headers.Authorization='Bearer '+T;if(opt.body instanceof FormData)o.body=opt.body;else if(opt.body){o.headers['Content-Type']='application/json';o.body=JSON.stringify(opt.body)}
  const r=await fetch(API+path,o);if(r.status===401){logout();throw new Error('Login required')}const j=await r.json().catch(()=>({}));if(!r.ok){throw new Error(j.detail?(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail)):r.statusText)}return j}
 function logout(){T=null;localStorage.removeItem('tok');ME=null;render()}
 function pill(s){return h('span',{className:'pill '+s},s||'')}
@@ -79,8 +79,8 @@ function table(cols,rows,act){const t=h('table',{},h('thead',{},h('tr',{},cols.m
 function field(lbl,name,val='',type='text',extra={}){const i=type==='select'?h('select',{name,...extra},extra.opts.map(o=>h('option',{value:o[0],selected:o[0]==val},o[1]))):h('input',{name,value:val,type,...extra});return h('label',{},lbl,i)}
 function formData(f){const o={};new FormData(f).forEach((v,k)=>{o[k]=v});f.querySelectorAll('input[type=checkbox]').forEach(c=>o[c.name]=c.checked);return o}
 
-const PAGES=[['dash','Dashboard',null],['pallets','Pallets',null],['picklists','Pick Lists',null],['slips','Return Slips',null],['masters','Masters','GLOBAL_MASTERS'],['users','Users',['PLANT_USERS_ADMIN','INTEGRATION_CONFIG']],['import','Import','GLOBAL_MASTERS'],['sync','Sync Monitor',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN']],['reports','Reports',null],['audit','Audit',['AUDIT_LOG']]];
-const GROUPS=[['Dashboard',['dash']],['Operations',['picklists','slips','pallets']],['Masters',['masters','users','import']],['Monitor',['sync','reports','audit']]];
+const PAGES=[['dash','Dashboard',null],['pallets','Pallets',null],['picklists','Pick Lists',null],['slips','Return Slips',null],['masters','Masters','GLOBAL_MASTERS'],['users','Users',['PLANT_USERS_ADMIN','INTEGRATION_CONFIG']],['import','Import','GLOBAL_MASTERS'],['sync','Sync Monitor',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN']],['reports','Reports',null],['audit','Audit',['AUDIT_LOG']],['activity','Activity',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN','REPORTS_PLANT']]];
+const GROUPS=[['Dashboard',['dash']],['Operations',['picklists','slips','pallets']],['Masters',['masters','users','import']],['Monitor',['activity','sync','reports','audit']]];
 function can(p){if(!p)return true;return (Array.isArray(p)?p:[p]).some(x=>ME.perms.includes(x))}
 
 async function render(){
@@ -96,7 +96,7 @@ async function render(){
   if(items.length===1&&ids.length===1){nav.append(h('button',{className:PAGE===items[0][0]?'on':'',on:{click:()=>{PAGE=items[0][0];render()}}},items[0][1]));return}
   const cur=items.find(p=>p[0]===PAGE);const dd=h('div',{className:'dd'+(cur?' on':'')},h('button',{className:cur?'on':'',on:{click:e=>{e.stopPropagation();document.querySelectorAll('.dd.open').forEach(x=>x!==dd&&x.classList.remove('open'));dd.classList.toggle('open')}}},g+(cur?' · '+cur[1]:''),h('span',{className:'car'},'▾')),h('div',{className:'menu'},items.map(p=>h('button',{className:PAGE===p[0]?'sel':'',on:{click:()=>{PAGE=p[0];render()}}},p[1]))));nav.append(dd)});
  document.body.onclick=()=>document.querySelectorAll('.dd.open').forEach(x=>x.classList.remove('open'));
- try{await ({dash,pallets,picklists,slips,masters,users,imp,sync,reports,audit})[PAGE==='import'?'imp':PAGE](m)}catch(x){m.append(h('div',{className:'card'},'Error: '+x.message))}
+ try{await ({dash,pallets,picklists,slips,masters,users,imp,sync,reports,audit,activity})[PAGE==='import'?'imp':PAGE](m)}catch(x){m.append(h('div',{className:'card'},'Error: '+x.message))}
 }
 $('#logout').onclick=logout;
 
@@ -185,6 +185,18 @@ async function reports(m){
  m.append(h('div',{className:'card'},h('h2',{},'Tag stock'),table([['Plant','plant'],['In stock','IN_STOCK'],['Assigned','ASSIGNED'],['Retired','RETIRED']],Object.entries(ts).map(([k,v])=>({plant:k,...v})))));
  m.append(h('div',{className:'card'},h('h2',{},'Tag change history'),table([['Time',r=>fmt(r.ts)],['Plant','plant'],['Pallet','pallet_no'],['Old tag','old_tag'],['New tag','new_tag'],['Reason','reason'],['User','user']],th)));
  const pf=h('form',{className:'row'},field('Pallet / tag','no'),h('button',{className:'p'},'Pallet history'));pf.onsubmit=e=>{e.preventDefault();palletDetail(formData(pf).no)};m.append(h('div',{className:'card'},h('h2',{},'Pallet transaction history'),pf));
+}
+
+async function activity(m){
+ const acts=await api('/activity/actions');const sum=await api('/activity/summary?days=7');
+ m.append(h('div',{className:'kpis'},h('div',{className:'kpi'},h('b',{},sum.total),h('span',{},'ACTIONS · 7 DAYS')),h('div',{className:'kpi'},h('b',{},sum.errors),h('span',{},'ERRORS / REJECTED')),...['WEB','HHT','EXT','SYSTEM'].map(k=>h('div',{className:'kpi'},h('b',{},sum.by_source[k]||0),h('span',{},k)))));
+ const f=h('form',{className:'row'},field('User','user'),field('Plant','plant',ME.plant||''),field('Device','device'),field('Action','action','','select',{opts:[['','All'],...acts.map(a=>[a,a])]}),field('Source','source','','select',{opts:[['','All'],['WEB','WEB'],['HHT','HHT'],['EXT','EXT'],['SYSTEM','SYSTEM']]}),field('Result','status','','select',{opts:[['','All'],['ok','OK'],['error','Errors']]}),field('Ref / document','ref'),field('Text','q'),field('From','frm','','date'),field('To','to','','date'),h('button',{className:'p'},'Search'),h('button',{className:'s',type:'button',on:{click:()=>{const d=formData(f);const q=new URLSearchParams(Object.fromEntries(Object.entries(d).filter(([k,v])=>v)));window.open(API+'/activity/export.xlsx?'+q+'&tok='+T)}}},'Export Excel'));
+ const out=h('div');
+ f.onsubmit=async e=>{e.preventDefault();const d=formData(f);const q=new URLSearchParams(Object.fromEntries(Object.entries(d).filter(([k,v])=>v)));const r=await api('/activity?'+q);out.innerHTML='';
+  out.append(h('div',{className:'card'},h('p',{className:'muted'},`${r.total} actions (showing ${r.items.length})`),table([['Time',x=>fmt(x.ts)],['Src',x=>pill(x.source)],['User','user_id'],['Plant','plant_code'],['Device','device_id'],['Action',x=>h('b',{},x.action)],['Ref','ref'],['Result',x=>h('span',{style:(x.status>=400||x.status===0&&/reject|fail|error/i.test(x.result||''))?'color:var(--warn);font-weight:600':''},(x.status&&x.status!==0?x.status+' · ':'')+(x.result||''))],['ms','duration_ms'],['IP','ip'],['Detail',x=>h('span',{className:'muted',title:x.detail||''},(x.detail||'').slice(0,140))]],r.items)))};
+ m.append(h('div',{className:'card'},h('h2',{},'Activity log'),f),out);f.requestSubmit();
+ m.append(h('div',{className:'card'},h('h2',{},'Last 7 days — by action'),table([['Action','action'],['Count','count']],sum.by_action)));
+ m.append(h('div',{className:'row',style:'align-items:flex-start'},h('div',{className:'card',style:'flex:1;min-width:300px'},h('h2',{},'By user'),table([['User','user'],['Actions','count'],['Last seen',x=>fmt(x.last)]],sum.by_user)),h('div',{className:'card',style:'flex:1;min-width:300px'},h('h2',{},'By device'),table([['Device','device'],['Actions','count'],['Last seen',x=>fmt(x.last)]],sum.by_device))));
 }
 async function audit(m){const r=await api('/reports/audit');m.append(h('div',{className:'card'},h('h2',{},'Audit log'),table([['Time',r=>fmt(r.ts)],['User','user_id'],['Plant','plant_code'],['Action','action'],['Entity','entity'],['ID','entity_id'],['Old',r=>(r.old_value||'').slice(0,120)],['New',r=>(r.new_value||'').slice(0,160)],['IP','ip']],r)))}
 

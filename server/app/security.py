@@ -82,11 +82,12 @@ def load_perms(db: Session, user: models.User) -> set[str]:
     return {r[0] for r in rows}
 
 
-def current_user(creds: HTTPAuthorizationCredentials = Depends(bearer), db: Session = Depends(get_db)) -> Principal:
-    if creds is None:
+def current_user(request: Request, creds: HTTPAuthorizationCredentials = Depends(bearer), db: Session = Depends(get_db)) -> Principal:
+    raw = creds.credentials if creds else request.query_params.get("tok")   # ?tok= allows browser downloads / new-tab prints
+    if not raw:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login required")
     try:
-        data = jwt.decode(creds.credentials, config.JWT_SECRET, algorithms=[config.JWT_ALGO])
+        data = jwt.decode(raw, config.JWT_SECRET, algorithms=[config.JWT_ALGO])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired, login again")
     except jwt.PyJWTError:

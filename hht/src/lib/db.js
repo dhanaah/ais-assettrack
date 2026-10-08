@@ -20,6 +20,7 @@ export async function openDb() {
     CREATE INDEX IF NOT EXISTS ix_outbox_status ON outbox(status);
     CREATE TABLE IF NOT EXISTS local_docs (doc_no TEXT PRIMARY KEY, kind TEXT, payload TEXT, status TEXT DEFAULT 'PENDING', result TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS local_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT, pallet_no TEXT, ts TEXT);
+    CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, action TEXT, ref TEXT, result TEXT, detail TEXT, sent INTEGER DEFAULT 0);
   `);
   return db;
 }
@@ -88,3 +89,12 @@ export const pendingDocs = async () => (await openDb()).getAllAsync("SELECT * FR
 export const markDoc = async (doc_no, status, result) => (await openDb()).runAsync('UPDATE local_docs SET status=?, result=? WHERE doc_no=?', status, result || null, doc_no);
 
 function uuid() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); }); }
+
+// ---------- activity trail (who did what on this device; reported to server on sync)
+export async function logActivity(action, ref = null, result = null, detail = null) {
+  try { await (await openDb()).runAsync('INSERT INTO activity(ts,action,ref,result,detail) VALUES(?,?,?,?,?)', new Date().toISOString(), action, ref, result, detail ? JSON.stringify(detail).slice(0, 2000) : null); } catch (e) { }
+}
+export const unsentActivity = async (n = 500) => (await openDb()).getAllAsync('SELECT * FROM activity WHERE sent=0 ORDER BY id LIMIT ?', n);
+export const markActivitySent = async (ids) => { if (ids.length) await (await openDb()).runAsync(`UPDATE activity SET sent=1 WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids); };
+export const recentActivity = async (n = 100) => (await openDb()).getAllAsync('SELECT * FROM activity ORDER BY id DESC LIMIT ?', n);
+export const purgeActivity = async (days = 30) => (await openDb()).runAsync('DELETE FROM activity WHERE sent=1 AND ts < ?', new Date(Date.now() - days * 864e5).toISOString());

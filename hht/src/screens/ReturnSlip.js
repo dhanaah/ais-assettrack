@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, useToast, Toast } from '../ui/kit';
-import { listCustomers, enqueueDoc, kv } from '../lib/db';
+import { listCustomers, enqueueDoc, kv, logActivity } from '../lib/db';
 import { validateReturnPallet } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow } from '../lib/sync';
@@ -34,8 +34,9 @@ export default function ReturnSlip({ onBack, deviceId }) {
       await enqueueDoc(slip_no, 'RETURN_SLIP', body); slip = { slip_no, status: 'OPEN', declared_qty: mode === 'B2' ? +qty : pallets.length }; provisional = true;
     }
     const printable = { ...slip, mode, customer_code: cust.code, customer_name: cust.name, vehicle_no: body.vehicle_no, customer_challan_no: dc, driver_name: drv, pallets: body.pallets, declared_qty: slip.declared_qty, date: new Date().toLocaleString(), provisional };
+    logActivity(provisional ? 'SLIP_CREATE_OFFLINE' : 'SLIP_CREATE', slip.slip_no, `${mode} ${cust.code} qty ${printable.declared_qty}`);
     setDone(printable);
-    try { const r = await printSlip(printable, plant); if (!r.printed) setPreview(r.text); else toast('Printed 2 copies'); } catch (e) { toast('Print failed: ' + e.message, 'err'); setPreview(slipText(printable, plant)); }
+    try { const r = await printSlip(printable, plant); if (!r.printed) setPreview(r.text); else toast('Printed 2 copies'); logActivity('PRINT_SLIP', slip.slip_no, r.printed ? 'printed' : 'no printer - shown'); } catch (e) { toast('Print failed: ' + e.message, 'err'); logActivity('PRINT_ERROR', slip.slip_no, e.message); setPreview(slipText(printable, plant)); }
   };
   const reset = () => { setCust(null); setPallets([]); setVeh(''); setDc(''); setDrv(''); setQty(''); setDone(null); setPreview(null); };
 

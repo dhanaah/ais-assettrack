@@ -2,7 +2,7 @@
 // Runs every 60 s when online and immediately after each scan when online. Developed by DT
 import NetInfo from '@react-native-community/netinfo';
 import { api, APP_VERSION, hasToken } from './api';
-import { pendingEvents, markEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld } from './db';
+import { pendingEvents, markEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
 
 export const state = { online: false, syncing: false, pending: 0, lastSync: null, lastError: null, serverVersion: null };
 const listeners = new Set();
@@ -38,6 +38,12 @@ export async function syncNow({ full = false } = {}) {
       for (const x of r.results) await markEvent(x.event_id, x.status, x.result);
       if (batch.length < 100) break;
     }
+    // 2b report device activity trail
+    const acts = await unsentActivity();
+    if (acts.length) {
+      await api('/activity/device', { method: 'POST', body: { device_id: deviceId, app_version: APP_VERSION, items: acts.map(a => ({ ts: a.ts, action: a.action, ref: a.ref, result: a.result, detail: a.detail })) } });
+      await markActivitySent(acts.map(a => a.id));
+    }
     // 3 heartbeat + pull delta
     const pend = await pendingCount();
     await api('/sync/push', { method: 'POST', body: { events: [{ event_id: cryptoId(), device_id: deviceId, event_type: 'HEARTBEAT', payload: { pending: pend }, local_ts: new Date().toISOString(), app_version: APP_VERSION }] } });
@@ -45,9 +51,10 @@ export async function syncNow({ full = false } = {}) {
     const data = await api('/sync/pull' + (since ? '?since=' + encodeURIComponent(since) : ''), { timeout: 60000 });
     await applyPull(data);
     state.serverVersion = data.server_time; state.lastSync = new Date().toISOString();
-    await purgeOld();
+    await purgeOld(); await purgeActivity();
+    await logActivity('SYNC', null, `pushed ok, pending ${state.pending}`);
   } catch (e) {
-    state.lastError = e.message; state.online = !e.offline && state.online;
+    state.lastError = e.message; logActivity('SYNC_ERROR', null, e.message); state.online = !e.offline && state.online;
     if (e.status === 401) state.lastError = 'LOGIN';
   } finally { state.syncing = false; state.pending = await pendingCount(); emit(); }
 }

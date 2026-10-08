@@ -2,8 +2,9 @@
 import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 
-export const APP_VERSION = '1.2.0';
-let token = null, baseUrl = null;
+export const APP_VERSION = '1.3.0';
+let token = null, baseUrl = null, deviceHeader = 'HHT';
+export const setApiDevice = (id) => { deviceHeader = id; };
 
 export async function loadSession() {
   token = await SecureStore.getItemAsync('token');
@@ -22,7 +23,7 @@ export async function api(path, { method = 'GET', body, timeout = 15000, auth = 
   try {
     const r = await fetch(baseUrl + '/api/v1' + path, {
       method, signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json', 'X-Device': 'HHT', ...(auth && token ? { Authorization: 'Bearer ' + token } : {}) },
+      headers: { 'Content-Type': 'application/json', 'X-Device': 'HHT', 'X-Device-Id': deviceHeader, 'X-App-Version': APP_VERSION, ...(auth && token ? { Authorization: 'Bearer ' + token } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     const j = await r.json().catch(() => ({}));

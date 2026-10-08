@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, FlatList, Switch, TextInput } from 'react
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast } from '../ui/kit';
 import { listSlips, getSlip, enqueue, addLocalScan, localScans, setPalletLocal, kv } from '../lib/db';
 import { validateYardScan } from '../lib/rules';
+import { logActivity } from '../lib/db';
 import { api } from '../lib/api';
 import { state as sync, syncNow } from '../lib/sync';
 
@@ -14,11 +15,11 @@ export default function Yard({ onBack }) {
   const onSlipScan = async (code) => { const no = code.startsWith('RTS|') ? code.split('|')[1] : code; const s = await getSlip(no); if (!s) return toast('Slip not in cache: ' + no, 'err'); open(s); };
   const onScan = async (code) => {
     const v = await validateYardScan(slip, code, accept);
-    if (!v.ok) return toast(v.msg, v.dup ? 'warn' : 'err');
+    if (!v.ok) { logActivity('SCAN_REJECTED_LOCAL', slip.slip_no, v.msg, { scanned: code }); return toast(v.msg, v.dup ? 'warn' : 'err'); }
     const pno = v.pallet ? v.pallet.pallet_no : code;
     await addLocalScan(slip.slip_no, pno);
     if (v.pallet) await setPalletLocal(pno, { status: v.exception === 'FOREIGN' ? 'HELD' : damaged ? 'DAMAGED' : 'AVAILABLE', customer: null });
-    await enqueue('PALLET_SCAN_YARD', { slip_no: slip.slip_no, scanned: code, accept_foreign: accept, damaged }, !sync.online);
+    await enqueue('PALLET_SCAN_YARD', { slip_no: slip.slip_no, scanned: code, accept_foreign: accept, damaged }, !sync.online); logActivity(sync.online ? 'SCAN_YARD' : 'SCAN_YARD_OFFLINE', slip.slip_no, v.msg, { accept, damaged });
     setScans(await localScans(slip.slip_no)); toast(v.msg + (damaged ? ' (DAMAGED)' : ''), v.exception ? 'warn' : undefined); setDamaged(false);
     if (sync.online) syncNow().catch(() => {});
   };
@@ -27,7 +28,7 @@ export default function Yard({ onBack }) {
   const short = declared.filter(p => !received.has(p)); const extra = scans.filter(s => !declared.includes(s.pallet_no));
   const close = async () => {
     if (!sync.online) return toast('Closing needs the server; scans are saved and will sync.', 'warn');
-    try { await syncNow(); const r = await api(`/slips/${slip.slip_no}/close`, { method: 'POST', body: { supervisor_pin: pin || null } }); toast(`Closed: received ${r.received}, short ${r.short.length}`); setSlip(null); await syncNow(); setSlips(await listSlips()); }
+    try { await syncNow(); const r = await api(`/slips/${slip.slip_no}/close`, { method: 'POST', body: { supervisor_pin: pin || null } }); toast(`Closed: received ${r.received}, short ${r.short.length}`); logActivity('SLIP_CLOSE', slip.slip_no, `received ${r.received}, short ${r.short.length}`); setSlip(null); await syncNow(); setSlips(await listSlips()); }
     catch (e) { toast(e.message, 'err'); }
   };
 

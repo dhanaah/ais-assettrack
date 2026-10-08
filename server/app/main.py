@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from . import config, models, integration
 from .db import engine, Base, SessionLocal
 from .security import ROLE_SEED, hash_pw
-from .routers import auth, masters, imports, sync, documents, reports, external, prints
+from .routers import auth, masters, imports, sync, documents, reports, external, prints, activity
+from .activity import ActivityMiddleware
 
 log = logging.getLogger("pallet")
 
@@ -41,9 +42,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=config.APP_NAME, version=config.APP_VERSION, lifespan=lifespan,
               description=f"{config.DEVELOPER} · Returnable pallet asset tracking for AIS Glass")
-for r in (auth, masters, imports, sync, documents, reports, external, prints):
+for r in (auth, masters, imports, sync, documents, reports, external, prints, activity):
     app.include_router(r.router)
 app.include_router(external.admin)
+app.add_middleware(ActivityMiddleware)
 
 static_dir = config.BASE_DIR / "app" / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

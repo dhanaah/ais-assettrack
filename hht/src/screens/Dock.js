@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast } from '../ui/kit';
 import { listPicklists, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal } from '../lib/db';
 import { validateDockScan } from '../lib/rules';
+import { logActivity } from '../lib/db';
 import { api } from '../lib/api';
 import { state as sync, syncNow } from '../lib/sync';
 
@@ -15,10 +16,10 @@ export default function Dock({ onBack }) {
 
   const onScan = async (code) => {
     const v = await validateDockScan(pk.picklist_no, code);
-    if (!v.ok) { toast(v.msg, v.dup ? 'warn' : 'err'); return; }
+    if (!v.ok) { toast(v.msg, v.dup ? 'warn' : 'err'); logActivity('SCAN_REJECTED_LOCAL', pk.picklist_no, v.msg, { scanned: code }); return; }
     await addLocalScan(pk.picklist_no, v.pallet.pallet_no);
     await setPalletLocal(v.pallet.pallet_no, { status: 'ALLOCATED', picklist: pk.picklist_no });
-    await enqueue('PALLET_SCAN_DOCK', { picklist_no: pk.picklist_no, scanned: code }, !sync.online);
+    await enqueue('PALLET_SCAN_DOCK', { picklist_no: pk.picklist_no, scanned: code }, !sync.online); logActivity(sync.online ? 'SCAN_DOCK' : 'SCAN_DOCK_OFFLINE', pk.picklist_no, v.pallet.pallet_no);
     setScans(await localScans(pk.picklist_no)); toast(`${v.pallet.pallet_no}  ${v.count}/${v.qty}`);
     if (sync.online) syncNow().catch(() => {});
   };
@@ -28,7 +29,7 @@ export default function Dock({ onBack }) {
   const confirm = async () => {
     if (scans.length !== pk.qty) return toast(`Pick List Control: ${scans.length} scanned vs qty ${pk.qty}`, 'err');
     if (!sync.online) return toast('Confirm needs the server (offline). Scans are saved; confirm when online.', 'warn');
-    try { await syncNow(); const r = await api(`/picklists/${pk.picklist_no}/confirm`, { method: 'POST' }); toast(`${pk.picklist_no} is ${r.status}`); setPk(null); await syncNow(); load(); }
+    try { await syncNow(); const r = await api(`/picklists/${pk.picklist_no}/confirm`, { method: 'POST' }); toast(`${pk.picklist_no} is ${r.status}`); logActivity('PICKLIST_CONFIRM', pk.picklist_no, r.status); setPk(null); await syncNow(); load(); }
     catch (e) { toast(e.message, 'err'); }
   };
 
