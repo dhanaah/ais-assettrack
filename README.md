@@ -14,3 +14,15 @@
 
 ## Quick start
 See `server/README.md` and `hht/README.md`.
+
+## CI / APK build (GitHub Actions)
+- Every push to `main` runs the server smoke test and builds a debug-signed HHT APK (download from the workflow's Artifacts).
+- Pushing a tag `hht-v*` also attaches the APK to a GitHub Release.
+- For a store/production-signed APK add a keystore and `signingConfigs` via repository secrets.
+
+## Push to GitHub (first time)
+```
+# create an empty private repo dhanaah/ais-assettrack on github.com, then:
+git remote add origin https://github.com/dhanaah/ais-assettrack.git
+git push -u origin main --tags
+```
