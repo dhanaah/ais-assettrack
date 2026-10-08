@@ -61,7 +61,7 @@ pre{background:rgba(255,255,255,.6);padding:10px;border-radius:10px;white-space:
 </style>
 </head>
 <body>
-<header><img src="/static/icon-192.png" alt="AIS" style="height:34px;border-radius:8px;background:#fff;padding:2px"><h1>AssetTrack <small style="font-weight:500;opacity:.85;font-size:12px;letter-spacing:1.5px">TRACK · MONITOR · CONTROL</small></h1><small id="who"></small><span class="sp"></span><small id="ver"></small><button class="s" id="logout" style="display:none">Logout</button></header>
+<header><img src="/static/icon-192.png" alt="AIS" style="height:44px;border-radius:8px;background:#fff;padding:2px"><span style="display:inline-flex;align-items:center;background:rgba(255,255,255,.92);border-radius:8px;padding:4px 12px;height:44px"><img src="/static/wordmark.png" alt="AssetTrack" style="height:36px"></span><small id="who"></small><span class="sp"></span><small id="ver"></small><button class="s" id="logout" style="display:none">Logout</button></header>
 <nav id="nav" style="display:none"></nav>
 <main id="main"></main>
 <footer>AIS AssetTrack · Developed by DT · Asahi India Glass Ltd. · <span id="ver2"></span></footer>
@@ -86,7 +86,7 @@ function can(p){if(!p)return true;return (Array.isArray(p)?p:[p]).some(x=>ME.per
 async function render(){
  const m=$('#main');m.innerHTML='';
  if(!T){$('#nav').style.display='none';$('#logout').style.display='none';$('#who').textContent='';
-  const f=h('form',{className:'card login'},h('img',{src:'/static/logo.png',alt:'AIS AssetTrack',style:'max-width:260px;margin:0 auto 10px;display:block'}),h('h2',{},'Sign in'),field('User ID','user_id'),h('br'),field('Password','password','','password'),h('br'),h('button',{className:'p',type:'submit'},'Login'));
+  const f=h('form',{className:'card login'},h('img',{src:'/static/icon-192.png',alt:'AIS',style:'height:70px;margin:0 auto 6px;display:block'}),h('img',{src:'/static/wordmark.png',alt:'AssetTrack',style:'max-width:280px;margin:0 auto 12px;display:block'}),h('h2',{},'Sign in'),field('User ID','user_id'),h('br'),field('Password','password','','password'),h('br'),h('button',{className:'p',type:'submit'},'Login'));
   f.onsubmit=async e=>{e.preventDefault();try{const d=formData(f);const r=await api('/auth/login',{method:'POST',body:{...d,device_id:'WEB'}});T=r.token;localStorage.setItem('tok',T);if(r.must_change_pw)msg('Please change your password (Users > My account)');render()}catch(x){msg(x.message,1)}};
   m.append(f);return}
  try{ME=await api('/auth/me')}catch{return}

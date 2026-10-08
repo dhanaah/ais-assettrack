@@ -13,7 +13,7 @@ export default function Login({ onDone, deviceId }) {
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   return (<View style={{ flex: 1, backgroundColor: C.bg }}><Page>
-    <View style={{ alignItems: 'center', marginTop: 60, marginBottom: 20 }}><Image source={require('../../assets/logo.png')} style={{ width: 240, height: 148, resizeMode: 'contain', marginBottom: 8 }} /><Text style={S.mute}>TRACK · MONITOR · CONTROL · v{APP_VERSION}</Text></View>
+    <View style={{ alignItems: 'center', marginTop: 60, marginBottom: 20 }}><Image source={require('../../assets/icon.png')} style={{ width: 110, height: 110, resizeMode: 'contain' }} /><Image source={require('../../assets/wordmark.png')} style={{ width: 260, height: 80, resizeMode: 'contain', marginBottom: 4 }} /><Text style={S.mute}>v{APP_VERSION}</Text></View>
     <View style={S.card}>
       <Text style={S.mute}>Server URL</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" placeholder="http://server:8001" />
       <Text style={S.mute}>User ID</Text><TextInput style={S.input} value={u} onChangeText={setU} autoCapitalize="none" />
