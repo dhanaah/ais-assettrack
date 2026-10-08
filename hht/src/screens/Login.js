@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Image } from 'react-native';
-import { S, Btn, Page, useToast, Toast, C } from '../ui/kit';
+import { S, Btn, Page, useToast, Toast, C, Footer } from '../ui/kit';
 import { login, setServer, getServer, APP_VERSION } from '../lib/api';
 import { kv } from '../lib/db';
 
@@ -21,6 +21,6 @@ export default function Login({ onDone, deviceId }) {
       <Btn title={busy ? 'Signing in…' : 'Sign in'} onPress={go} disabled={busy} />
       <Text style={[S.mute, { marginTop: 10, textAlign: 'center' }]}>Device {deviceId}</Text>
     </View>
-    <Text style={[S.mute, { textAlign: 'center' }]}>Developed by DT · AIS Glass</Text>
+    <Footer />
   </Page><Toast msg={msg} /></View>);
 }

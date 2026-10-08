@@ -1,6 +1,6 @@
 // Small UI kit + ScanInput (hardware scanner wedge + camera). Developed by DT
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Vibration, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Vibration, ScrollView, Image } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 export const C = { bg: '#eef2ff', card: 'rgba(255,255,255,0.78)', fg: '#0f172a', mute: '#475569', accent: '#1e3a8a', violet: '#dc2626', ok: '#059669', warn: '#dc2626', amber: '#d97706', line: 'rgba(15,23,42,0.1)' };
@@ -71,11 +71,19 @@ export function CameraScanner({ visible, onClose, onScan }) {
       </View></Modal>);
 }
 
-export const Header = ({ title, sub, onBack, right }) => (
+export const AisLogo = ({ size = 34 }) => <Image source={require('../../assets/icon.png')} style={{ width: size, height: size, borderRadius: 8, backgroundColor: '#fff' }} />;
+export const Wordmark = ({ height = 30 }) => <Image source={require('../../assets/wordmark.png')} style={{ height, width: height * 3.5, resizeMode: 'contain' }} />;
+
+export const Header = ({ title, sub, onBack, right, logo }) => (
   <View style={{ backgroundColor: C.accent, paddingTop: 42, paddingBottom: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }}>
     {onBack ? <TouchableOpacity onPress={onBack} style={{ paddingRight: 12 }}><Text style={{ color: '#fff', fontSize: 22 }}>‹</Text></TouchableOpacity> : null}
-    <View style={{ flex: 1 }}><Text style={{ color: '#fff', fontWeight: '700', fontSize: 17 }}>{title}</Text>{sub ? <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>{sub}</Text> : null}</View>
+    {logo ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 10 }}><AisLogo size={36} /><View style={{ backgroundColor: '#fff', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2 }}><Wordmark height={26} /></View></View> : null}
+    <View style={{ flex: 1 }}>{title ? <Text style={{ color: '#fff', fontWeight: '700', fontSize: 17 }}>{title}</Text> : null}{sub ? <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>{sub}</Text> : null}</View>
     {right}
   </View>);
+
+export const Footer = () => (
+  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 }}>
+    <AisLogo size={18} /><Text style={{ color: C.mute, fontSize: 11.5 }}>Asahi India Glass Ltd. · AssetTrack · Developed by DT</Text></View>);
 
 export const Page = ({ children }) => <ScrollView style={S.screen} contentContainerStyle={S.pad} keyboardShouldPersistTaps="handled">{children}</ScrollView>;

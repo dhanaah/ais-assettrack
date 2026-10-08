@@ -1,6 +1,7 @@
 // Bluetooth ESC/POS printing (2"/3" thermal). Uses react-native-bluetooth-escpos-printer when built with
 // expo prebuild / EAS. In Expo Go the module is absent and print falls back to showing the slip text. Developed by DT
 import { kv } from './db';
+import { PRINT_LOGO_B64, PRINT_LOGO_W } from './printLogo';
 let BT = null;
 try { BT = require('react-native-bluetooth-escpos-printer'); } catch (e) { BT = null; }
 
@@ -23,12 +24,17 @@ export async function ensureConnected() {
   try { await BT.BluetoothManager.connect(addr); } catch (e) { /* already connected */ }
 }
 
+async function printLogo(P) {
+  try { await P.printPic(PRINT_LOGO_B64, { width: PRINT_LOGO_W, left: 0 }); await P.printText('\n', {}); }
+  catch (e) { await P.printText('AIS - ASAHI INDIA GLASS LTD.\n', { fonttype: 1 }); }
+}
 function pad(l, r, w = 32) { const s = l + ' '.repeat(Math.max(1, w - l.length - r.length)) + r; return s.slice(0, w); }
 
 // Return slip text (32 cols for 2", 48 for 3")
 export function slipText(slip, plant, cols = 32) {
   const L = [];
-  L.push('AIS GLASS - PALLET RETURN SLIP');
+  L.push('ASAHI INDIA GLASS LTD.');
+  L.push('PALLET RETURN SLIP');
   L.push(plant?.name || plant?.code || '');
   L.push('-'.repeat(cols));
   L.push(`Slip No : ${slip.slip_no}`);
@@ -55,8 +61,8 @@ export async function printSlip(slip, plant, copies = 2) {
     await P.printerInit();
     await P.printerAlign(P.ALIGN.CENTER);
     await P.setBlob(0);
-    await P.printText('AIS GLASS\n', { widthtimes: 1, heigthtimes: 1, fonttype: 1 });
-    await P.printText('PALLET RETURN SLIP\n\n', {});
+    await printLogo(P);
+    await P.printText('PALLET RETURN SLIP\n\n', { widthtimes: 1, heigthtimes: 1, fonttype: 1 });
     await P.printQRCode(slipQr(slip, plant), 220, P.ERROR_CORRECTION.M);
     await P.printText('\n', {});
     await P.printerAlign(P.ALIGN.LEFT);
@@ -66,11 +72,11 @@ export async function printSlip(slip, plant, copies = 2) {
 }
 
 export async function printChallan(k, plant, lines, copies = 2) {
-  const text = [`AIS GLASS - PALLET CHALLAN`, plant?.name || '', '-'.repeat(32), `Challan : ${k.challan_no}`, `PickList: ${k.picklist_no}`, `SO      : ${k.so_number || ''}`,
+  const text = [`ASAHI INDIA GLASS LTD.`, `PALLET CHALLAN (RETURNABLE)`, plant?.name || '', '-'.repeat(32), `Challan : ${k.challan_no}`, `PickList: ${k.picklist_no}`, `SO      : ${k.so_number || ''}`,
     `Customer: ${k.customer_code}`, `Vehicle : ${k.vehicle_no || ''}`, '-'.repeat(32), ...lines.map((p, i) => pad(`${i + 1}.`, p)), '-'.repeat(32), `TOTAL PALLETS: ${lines.length}`, '', 'Returnable - property of AIS Glass', ''].join('\n');
   if (!BT) return { printed: false, text, qr: `CHL|${k.challan_no}|${k.picklist_no}|${lines.length}` };
   await ensureConnected();
   const { BluetoothEscposPrinter: P } = BT;
-  for (let c = 0; c < copies; c++) { await P.printerInit(); await P.printerAlign(P.ALIGN.CENTER); await P.printQRCode(`CHL|${k.challan_no}|${k.picklist_no}|${lines.length}`, 220, P.ERROR_CORRECTION.M); await P.printerAlign(P.ALIGN.LEFT); await P.printText(text + '\n\n\n', {}); }
+  for (let c = 0; c < copies; c++) { await P.printerInit(); await P.printerAlign(P.ALIGN.CENTER); await printLogo(P); await P.printText('PALLET CHALLAN (RETURNABLE)\n', { fonttype: 1 }); await P.printQRCode(`CHL|${k.challan_no}|${k.picklist_no}|${lines.length}`, 220, P.ERROR_CORRECTION.M); await P.printerAlign(P.ALIGN.LEFT); await P.printText(text + '\n\n\n', {}); }
   return { printed: true };
 }

@@ -1,4 +1,6 @@
 # Changelog — AIS AssetTrack Server
+## 1.2.0 (2026-10-08)
+- Print-ready A4 challan and return slip with AIS logo, AssetTrack wordmark and QR (/print/challan/{no}, /print/slip/{no}); print buttons in web UI
 ## 1.1.0 (2026-10-08)
 - Product renamed AIS AssetTrack; AIS / AssetTrack logo, favicon and blue-red brand theme
 - Repository initialised (monorepo: server + hht), Git tags

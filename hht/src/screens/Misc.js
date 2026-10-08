@@ -1,7 +1,7 @@
 // Gate IN, Gate OUT, Damage/Tag, Lookup, Pending & Sync, Settings. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Switch } from 'react-native';
-import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast } from '../ui/kit';
+import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo } from '../ui/kit';
 import { api, getServer, setServer } from '../lib/api';
 import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
@@ -96,6 +96,6 @@ export function Settings({ onBack, deviceId }) {
       <Btn title="List paired printers" secondary onPress={async () => { try { setPrinters(await listPaired()); } catch (e) { toast(e.message, 'err'); } }} />
       {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { try { await connect(p.address); setSel(p.address); toast('Connected ' + p.name); } catch (e) { toast(e.message, 'err'); } }} style={[S.btnS, { alignItems: 'flex-start' }]}><Text style={S.btnSText}>{p.name}  {p.address}</Text></TouchableOpacity>)}</View>
     <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done'); }} /></View>
-    <Text style={[S.mute, { textAlign: 'center' }]}>AIS Pallet HHT · Developed by DT</Text>
+    <Footer />
   </Page><Toast msg={msg} /></View>);
 }

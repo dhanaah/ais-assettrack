@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { S, C, Page, Header } from '../ui/kit';
+import { S, C, Page, Header, Footer } from '../ui/kit';
 
 const TILES = [
   ['dock', 'Dock Out-ward Scan', 'Scan pallets to a pick list', 'DOCK_SCAN', '#0ea5e9'],
@@ -17,7 +17,7 @@ export default function Home({ me, sync, nav, onLogout }) {
   const perms = me.perms || [];
   const col = !sync.online ? C.warn : sync.pending ? C.amber : C.ok;
   return (<View style={{ flex: 1 }}>
-    <Header title="AIS AssetTrack" sub={`${me.name} · ${me.plant} · ${me.roles.join(', ')}`} right={<TouchableOpacity onPress={onLogout}><Text style={{ color: '#fff' }}>Logout</Text></TouchableOpacity>} />
+    <Header logo sub={`${me.name} · ${me.plant} · ${me.roles.join(', ')}`} right={<TouchableOpacity onPress={onLogout}><Text style={{ color: '#fff' }}>Logout</Text></TouchableOpacity>} />
     <TouchableOpacity onPress={() => nav('pending')} style={{ backgroundColor: col, paddingVertical: 6, paddingHorizontal: 14 }}>
       <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }}>{sync.online ? 'ONLINE' : 'OFFLINE'} · {sync.pending} pending{sync.syncing ? ' · syncing…' : ''}{sync.lastSync ? ' · last sync ' + sync.lastSync.slice(11, 16) : ''}{sync.lastError && sync.lastError !== 'LOGIN' ? ' · ' + sync.lastError : ''}</Text></TouchableOpacity>
     <Page>
@@ -27,6 +27,6 @@ export default function Home({ me, sync, nav, onLogout }) {
             <Text style={{ fontWeight: '700', fontSize: 14.5, color: C.fg }}>{t[1]}</Text><Text style={[S.mute, { marginTop: 4 }]}>{t[2]}</Text></TouchableOpacity>))}
       </View>
       <TouchableOpacity onPress={() => nav('settings')} style={{ marginTop: 16 }}><Text style={[S.mute, { textAlign: 'center' }]}>Settings · Printer · Full resync</Text></TouchableOpacity>
-      <Text style={[S.mute, { textAlign: 'center', marginTop: 6 }]}>Developed by DT</Text>
+      <Footer />
     </Page></View>);
 }
