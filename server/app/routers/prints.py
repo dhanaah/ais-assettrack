@@ -110,31 +110,16 @@ def challan(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     return HTMLResponse(html)
 
 
-@router.get("/slip-label/{no}", response_class=HTMLResponse)
-def slip_label(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
-    p = _auth(tok, db)
-    s = db.get(models.ReturnSlip, no)
-    if not s:
-        raise HTTPException(404, "Slip not found")
-    p.require_plant(s.plant_code)
-    from .external import slip_label_html
-    return HTMLResponse(slip_label_html(db, s))
-
-
-@router.get("/slip/{no}", response_class=HTMLResponse)
-def slip(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
-    p = _auth(tok, db)
-    s = db.get(models.ReturnSlip, no)
-    if not s:
-        raise HTTPException(404, "Slip not found")
-    p.require_plant(s.plant_code)
+def slip_html(db, s, printed_by: str) -> str:
+    """Pallet Return Slip - the A4 pattern shown in the approval deck. Used by AIS (web/HHT) and by the customer API."""
     plant = db.get(models.Plant, s.plant_code)
     cust = db.query(models.Customer).filter_by(code=s.customer_code, plant_code=s.plant_code).first()
-    lines = db.query(models.ReturnSlipLine).filter_by(slip_no=no).all()
+    lines = db.query(models.ReturnSlipLine).filter_by(slip_no=s.slip_no).all()
     rows = "".join(f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{'✓' if l.declared else ''}</td><td>{'✓' if l.received else ''}</td><td>{l.exception or ''}</td></tr>" for i, l in enumerate(lines, 1))
-    html = f"""<!doctype html><html><head><meta charset="utf-8"><title>Return slip {no}</title><style>{CSS}</style></head><body>
+    qr = services.slip_qr(s, signed=s.source != "HHT")
+    return f"""<!doctype html><html><head><meta charset="utf-8"><title>Return slip {s.slip_no}</title><style>{CSS}</style></head><body>
     <button class="btn" onclick="window.print()">Print / Save PDF</button>
-    {_head(plant, 'PALLET RETURN SLIP', services.slip_qr(s, signed=s.source != 'HHT'))}
+    {_head(plant, 'PALLET RETURN SLIP', qr)}
     <div class="grid">
       <div class="box"><b>SLIP NO / DATE</b>{s.slip_no} · {s.created_at:%d-%m-%Y %H:%M} · mode {s.mode} · {s.status}</div>
       <div class="box"><b>CUSTOMER</b>{cust.name if cust else s.customer_code} ({s.customer_code})</div>
@@ -144,5 +129,14 @@ def slip(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <table><tr><th>#</th><th>Pallet No</th><th>Declared</th><th>Received</th><th>Exception</th></tr>{rows or '<tr><td colspan=5>Quantity-only slip (B2) — pallets identified at yard scan</td></tr>'}
     <tr><th colspan="4" style="text-align:right">DECLARED QTY</th><th>{s.declared_qty}</th></tr></table>
     <div class="sig"><div>Security (IN gate)</div><div>Driver</div><div>Pallet yard in-charge</div></div>
-    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {p.user_id}</div></body></html>"""
-    return HTMLResponse(html)
+    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {printed_by}</div></body></html>"""
+
+
+@router.get("/slip/{no}", response_class=HTMLResponse)
+def slip(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
+    p = _auth(tok, db)
+    s = db.get(models.ReturnSlip, no)
+    if not s:
+        raise HTTPException(404, "Slip not found")
+    p.require_plant(s.plant_code)
+    return HTMLResponse(slip_html(db, s, p.user_id))

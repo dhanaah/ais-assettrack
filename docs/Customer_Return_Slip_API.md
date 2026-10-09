@@ -4,7 +4,7 @@
 ## 1. What it does
 When empty AIS pallets are loaded on a vehicle at your plant, your system (or a simple web form / script) sends AIS:
 the **pallets**, the **vehicle number** and your **delivery challan**. AIS returns a **Return Slip number** and a
-**QR label**. Print the label and hand it to the driver. At the AIS IN gate, security scans the QR — the vehicle is
+printable **Return Slip with QR**. Print it and hand it to the driver. At the AIS IN gate, security scans the QR — the vehicle is
 checked in automatically and the pallets are reconciled against your list.
 
 ## 2. Access
@@ -58,9 +58,10 @@ Response:
 ```
 `warnings` lists tags AIS does not show at your site — the slip is still created; AIS reconciles at receipt.
 
-### 3.4 Print the QR label — `GET {label_url}`
-Open `label_url` (prefix the base host) in a browser and press **Print label**. Size 100 × 75 mm
-(fits a thermal label printer or A4 cut). No API key is needed for this link; the link itself is unguessable.
+### 3.4 Print the Return Slip — `GET {label_url}`
+Open `label_url` (prefix the base host) in a browser and press **Print / Save PDF**. You get the standard A4
+AIS Pallet Return Slip (AIS logo, slip no / date, customer, vehicle / driver, your challan, pallet list,
+signature boxes) with the signed QR at top right. No API key is needed for this link; the link itself is unguessable.
 If you prefer printing from your own system, encode `qr_payload` as a QR code (error correction M).
 
 ### 3.5 Track the slip — `GET /return-slip/{slip_no}`

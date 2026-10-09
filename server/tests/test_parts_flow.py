@@ -177,7 +177,7 @@ with TestClient(app) as c:
     K = {"X-API-Key": "ais_testkey_123456"}
     r = c.post("/api/ext/v1/return-slip", headers=K, json={"pallets": ["CHN-P001"], "vehicle_no": "TN 09 AB 1111", "customer_challan_no": "DC-77"}).json()
     check(r["qr_payload"].startswith("AIS1|RS|") and r["label_url"], f"customer slip {r['slip_no']} QR {r['qr_payload']}")
-    lab = c.get(r["label_url"]); check(lab.status_code == 200 and "<svg" in lab.text and "TN09AB1111" in lab.text, "label prints with QR")
+    lab = c.get(r["label_url"]); check(lab.status_code == 200 and "<svg" in lab.text and "TN09AB1111" in lab.text and "PALLET RETURN SLIP" in lab.text, "A4 return slip prints with signed QR")
     check(c.get(r["label_url"][:-3] + "XXX").status_code == 403, "label link cannot be guessed")
     bad = r["qr_payload"].replace("TN09AB1111", "TN09AB9999")
     g = c.post(f"/api/v1/slips/{r['slip_no']}/gate-in", headers=H, json={"qr": bad})
