@@ -17,3 +17,4 @@ hht/.expo/
 dist/
 server/.venv/
 scripts/apk_url.txt
+server/.setup_ok
