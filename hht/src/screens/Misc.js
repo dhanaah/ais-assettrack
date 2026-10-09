@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Switch } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo } from '../ui/kit';
-import { Screen } from '../ui/kit';
+import { Screen, applyTheme, T } from '../ui/kit';
+import { THEMES, THEME_KEYS } from '../ui/theme';
 import { api, getServer, setServer } from '../lib/api';
 import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
@@ -89,11 +90,13 @@ export function Pending({ onBack }) {
   </Page></Screen>);
 }
 
-export function Settings({ onBack, deviceId }) {
+export function Settings({ onBack, deviceId, onTheme }) {
   const [srv, setSrv] = useState(getServer()); const [printers, setPrinters] = useState([]); const [sel, setSel] = useState(null); const [msg, toast] = useToast();
   useEffect(() => { kv.get('printer').then(setSel); }, []);
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>
     <View style={S.card}><Text style={S.h2}>Server</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" /><Btn title="Save" secondary onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId}</Text></View>
+    <View style={S.card}><Text style={S.h2}>Theme</Text><Text style={S.mute}>Current: {THEMES[T.key].name}</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{THEME_KEYS.map(k => <TouchableOpacity key={k} onPress={async () => { applyTheme(k); await kv.set('theme', k); onTheme && onTheme(k); toast('Theme: ' + THEMES[k].name); }} style={[S.btnS, { flex: 1, minWidth: '45%', marginTop: 0, backgroundColor: T.key === k ? C.accent : undefined }]}><Text style={[S.btnSText, T.key === k ? { color: '#fff' } : null]}>{THEMES[k].name}</Text></TouchableOpacity>)}</View></View>
     <View style={S.card}><Text style={S.h2}>Bluetooth printer {printerAvailable() ? '' : '(module not in this build)'}</Text><Text style={S.mute}>Selected: {sel || 'none'}</Text>
       <Btn title="List paired printers" secondary onPress={async () => { try { setPrinters(await listPaired()); } catch (e) { toast(e.message, 'err'); } }} />
       {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { try { await connect(p.address); setSel(p.address); toast('Connected ' + p.name); } catch (e) { toast(e.message, 'err'); } }} style={[S.btnS, { alignItems: 'flex-start' }]}><Text style={S.btnSText}>{p.name}  {p.address}</Text></TouchableOpacity>)}</View>

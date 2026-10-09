@@ -50,11 +50,70 @@ h1{font-family:Outfit,sans-serif;font-size:26px;margin:0 0 4px}h2{font-family:Ou
 .bar{border-radius:999px;margin:8px 10px 0;display:inline-block;position:relative;z-index:1}
 .ring{width:74px;height:74px;border-radius:50%;border:6px solid #1e3a8a;display:grid;place-items:center;font-size:22px;font-weight:800;color:#1e3a8a;background:rgba(255,255,255,.7);margin:0 auto}
 .inp{border-radius:12px;border:1.5px solid rgba(30,58,138,.35)}
+
+.t-dark .scr{background:linear-gradient(135deg,#0b1020,#111a3a,#1f0f2e)!important;color:#e5e7eb}.t-dark .scr::before{background:rgba(79,70,229,.35)}.t-dark .scr::after{background:rgba(6,182,212,.25)}
+.t-dark .card,.t-dark .tile,.t-dark .li{background:rgba(17,24,39,.62)!important;border-color:rgba(255,255,255,.14)!important;color:#e5e7eb}.t-dark .tile b{color:#e5e7eb}.t-dark .tile span,.t-dark .mute{color:#9ca3af}.t-dark .hdr{background:linear-gradient(90deg,#1e3a8a,#6d28d9,#be123c)!important}
+.t-classic .scr{background:#f4f6f8!important}.t-classic .scr::before,.t-classic .scr::after{display:none}.t-classic .card,.t-classic .tile,.t-classic .li{background:#fff!important;border:1px solid #e5e7eb!important;box-shadow:0 1px 3px rgba(0,0,0,.08)!important;border-radius:12px!important}.t-classic .hdr{background:#1e3a8a!important;border-radius:0}.t-classic .btn{background:#1e3a8a!important}
+.t-outdoor .scr{background:#fff!important}.t-outdoor .scr::before,.t-outdoor .scr::after{display:none}.t-outdoor .card,.t-outdoor .tile,.t-outdoor .li{background:#fff!important;border:2px solid #111827!important;box-shadow:none!important;border-radius:10px!important;color:#000}.t-outdoor .tile b{color:#000;font-size:12.5px}.t-outdoor .tile span,.t-outdoor .mute{color:#1f2937}.t-outdoor .hdr{background:#0b2a6f!important;border-radius:0}.t-outdoor .bar{border:2px solid #111827}
+.tl{text-align:center;font-weight:700;color:#334155;margin:6px 0 4px;font-size:14px}
 </style>
 
 <h1>AIS AssetTrack — HHT screens &amp; challan formats</h1>
 <div class="sub">Mock-ups rendered from the app's actual styles (v1.4.0 glassmorphism). Rugged HHT or phone, portrait.</div>
 
+<h2>0. Themes (Settings → Theme)</h2><div class="row"><div class="t-glass"><div class="tl">Glass (light) — default</div><div class="phone"><div class="scr">
+  <div class="hdr"><div class="logo"><img src="/home/claude/ais-assettrack/hht/assets/icon.png" style="width:26px;height:26px;border-radius:6px;background:#fff"><span style="background:#fff;border-radius:5px;padding:1px 5px;display:inline-flex"><img src="/home/claude/ais-assettrack/hht/assets/wordmark.png" style="height:18px"></span></div><div style="flex:1"><small>R. Kumar · CHN · FGWH, SEC_OUT</small></div><small>Logout</small></div>
+  <div class="bar ok">ONLINE · 0 pending · last sync 14:32</div>
+  <div class="body"><div class="tiles">
+   <div class="tile"><div class="ic" style="background:#0ea5e9">▣</div><b>Dock Out-ward Scan</b><span>Scan pallets to a pick list</span></div>
+   <div class="tile"><div class="ic" style="background:#6366f1">⇥</div><b>OUT Gate</b><span>Scan GCS / challan QR</span></div>
+   <div class="tile"><div class="ic" style="background:#a855f7">▤</div><b>Return Slip (B1 / B2)</b><span>Create slip at IN gate</span></div>
+   <div class="tile"><div class="ic" style="background:#c026d3">⇤</div><b>IN Gate</b><span>Scan return slip QR</span></div>
+   <div class="tile"><div class="ic" style="background:#10b981">≋</div><b>Yard In-ward Scan</b><span>Receive pallets, reconcile</span></div>
+   <div class="tile"><div class="ic" style="background:#f59e0b">⚠</div><b>Damage / Tag issue</b><span>Mark damaged, request tag</span></div>
+   <div class="tile"><div class="ic" style="background:#64748b">⌕</div><b>Pallet Lookup</b><span>Status of any tag</span></div>
+   <div class="tile"><div class="ic" style="background:#ec4899">☁</div><b>Pending &amp; Sync</b><span>Outbox, last sync, errors</span></div>
+  </div><div class="mute" style="text-align:center;margin-top:14px">Settings · Printer · Full resync<br>Developed by DT</div></div>
+ </div></div></div><div class="t-dark"><div class="tl">Glass (dark)</div><div class="phone"><div class="scr">
+  <div class="hdr"><div class="logo"><img src="/home/claude/ais-assettrack/hht/assets/icon.png" style="width:26px;height:26px;border-radius:6px;background:#fff"><span style="background:#fff;border-radius:5px;padding:1px 5px;display:inline-flex"><img src="/home/claude/ais-assettrack/hht/assets/wordmark.png" style="height:18px"></span></div><div style="flex:1"><small>R. Kumar · CHN · FGWH, SEC_OUT</small></div><small>Logout</small></div>
+  <div class="bar ok">ONLINE · 0 pending · last sync 14:32</div>
+  <div class="body"><div class="tiles">
+   <div class="tile"><div class="ic" style="background:#0ea5e9">▣</div><b>Dock Out-ward Scan</b><span>Scan pallets to a pick list</span></div>
+   <div class="tile"><div class="ic" style="background:#6366f1">⇥</div><b>OUT Gate</b><span>Scan GCS / challan QR</span></div>
+   <div class="tile"><div class="ic" style="background:#a855f7">▤</div><b>Return Slip (B1 / B2)</b><span>Create slip at IN gate</span></div>
+   <div class="tile"><div class="ic" style="background:#c026d3">⇤</div><b>IN Gate</b><span>Scan return slip QR</span></div>
+   <div class="tile"><div class="ic" style="background:#10b981">≋</div><b>Yard In-ward Scan</b><span>Receive pallets, reconcile</span></div>
+   <div class="tile"><div class="ic" style="background:#f59e0b">⚠</div><b>Damage / Tag issue</b><span>Mark damaged, request tag</span></div>
+   <div class="tile"><div class="ic" style="background:#64748b">⌕</div><b>Pallet Lookup</b><span>Status of any tag</span></div>
+   <div class="tile"><div class="ic" style="background:#ec4899">☁</div><b>Pending &amp; Sync</b><span>Outbox, last sync, errors</span></div>
+  </div><div class="mute" style="text-align:center;margin-top:14px">Settings · Printer · Full resync<br>Developed by DT</div></div>
+ </div></div></div><div class="t-classic"><div class="tl">AIS classic</div><div class="phone"><div class="scr">
+  <div class="hdr"><div class="logo"><img src="/home/claude/ais-assettrack/hht/assets/icon.png" style="width:26px;height:26px;border-radius:6px;background:#fff"><span style="background:#fff;border-radius:5px;padding:1px 5px;display:inline-flex"><img src="/home/claude/ais-assettrack/hht/assets/wordmark.png" style="height:18px"></span></div><div style="flex:1"><small>R. Kumar · CHN · FGWH, SEC_OUT</small></div><small>Logout</small></div>
+  <div class="bar ok">ONLINE · 0 pending · last sync 14:32</div>
+  <div class="body"><div class="tiles">
+   <div class="tile"><div class="ic" style="background:#0ea5e9">▣</div><b>Dock Out-ward Scan</b><span>Scan pallets to a pick list</span></div>
+   <div class="tile"><div class="ic" style="background:#6366f1">⇥</div><b>OUT Gate</b><span>Scan GCS / challan QR</span></div>
+   <div class="tile"><div class="ic" style="background:#a855f7">▤</div><b>Return Slip (B1 / B2)</b><span>Create slip at IN gate</span></div>
+   <div class="tile"><div class="ic" style="background:#c026d3">⇤</div><b>IN Gate</b><span>Scan return slip QR</span></div>
+   <div class="tile"><div class="ic" style="background:#10b981">≋</div><b>Yard In-ward Scan</b><span>Receive pallets, reconcile</span></div>
+   <div class="tile"><div class="ic" style="background:#f59e0b">⚠</div><b>Damage / Tag issue</b><span>Mark damaged, request tag</span></div>
+   <div class="tile"><div class="ic" style="background:#64748b">⌕</div><b>Pallet Lookup</b><span>Status of any tag</span></div>
+   <div class="tile"><div class="ic" style="background:#ec4899">☁</div><b>Pending &amp; Sync</b><span>Outbox, last sync, errors</span></div>
+  </div><div class="mute" style="text-align:center;margin-top:14px">Settings · Printer · Full resync<br>Developed by DT</div></div>
+ </div></div></div><div class="t-outdoor"><div class="tl">Outdoor high-contrast</div><div class="phone"><div class="scr">
+  <div class="hdr"><div class="logo"><img src="/home/claude/ais-assettrack/hht/assets/icon.png" style="width:26px;height:26px;border-radius:6px;background:#fff"><span style="background:#fff;border-radius:5px;padding:1px 5px;display:inline-flex"><img src="/home/claude/ais-assettrack/hht/assets/wordmark.png" style="height:18px"></span></div><div style="flex:1"><small>R. Kumar · CHN · FGWH, SEC_OUT</small></div><small>Logout</small></div>
+  <div class="bar ok">ONLINE · 0 pending · last sync 14:32</div>
+  <div class="body"><div class="tiles">
+   <div class="tile"><div class="ic" style="background:#0ea5e9">▣</div><b>Dock Out-ward Scan</b><span>Scan pallets to a pick list</span></div>
+   <div class="tile"><div class="ic" style="background:#6366f1">⇥</div><b>OUT Gate</b><span>Scan GCS / challan QR</span></div>
+   <div class="tile"><div class="ic" style="background:#a855f7">▤</div><b>Return Slip (B1 / B2)</b><span>Create slip at IN gate</span></div>
+   <div class="tile"><div class="ic" style="background:#c026d3">⇤</div><b>IN Gate</b><span>Scan return slip QR</span></div>
+   <div class="tile"><div class="ic" style="background:#10b981">≋</div><b>Yard In-ward Scan</b><span>Receive pallets, reconcile</span></div>
+   <div class="tile"><div class="ic" style="background:#f59e0b">⚠</div><b>Damage / Tag issue</b><span>Mark damaged, request tag</span></div>
+   <div class="tile"><div class="ic" style="background:#64748b">⌕</div><b>Pallet Lookup</b><span>Status of any tag</span></div>
+   <div class="tile"><div class="ic" style="background:#ec4899">☁</div><b>Pending &amp; Sync</b><span>Outbox, last sync, errors</span></div>
+  </div><div class="mute" style="text-align:center;margin-top:14px">Settings · Printer · Full resync<br>Developed by DT</div></div>
+ </div></div></div></div>
 <h2>1. Home · Dock out-ward scan · Yard in-ward scan</h2>
 <div class="row">
  <div><div class="phone"><div class="scr">
