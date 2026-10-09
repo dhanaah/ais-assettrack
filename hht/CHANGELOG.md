@@ -1,4 +1,6 @@
 # Changelog — AIS AssetTrack HHT
+## 1.4.1 (2026-10-09)
+- AIS logo and AssetTrack wordmark without white background (transparent PNGs); reversed white/red versions on the gradient header
 ## 1.4.0 (2026-10-09)
 - Themes in Settings: Glass (light), Glass (dark), AIS classic, Outdoor high-contrast; remembered per device
 - Glassmorphism UI: gradient backdrop with soft blobs, frosted glass cards (translucent overlay), gradient header and buttons, icon tiles (Ionicons), colour-ring counters

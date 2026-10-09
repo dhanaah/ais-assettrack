@@ -102,14 +102,14 @@ export function CameraScanner({ visible, onClose, onScan }) {
       </View></Modal>);
 }
 
-export const AisLogo = ({ size = 34 }) => <Image source={require('../../assets/icon.png')} style={{ width: size, height: size, borderRadius: 8, backgroundColor: '#fff' }} />;
+export const AisLogo = ({ size = 34, onDark }) => <Image source={onDark ? require('../../assets/icon_on_dark.png') : require('../../assets/icon.png')} style={{ width: size, height: size, resizeMode: 'contain' }} />;
 export const pillColors = () => T.dark ? { AVAILABLE: ['#064e3b', '#6ee7b7'], AT_CUSTOMER: ['#0c4a6e', '#7dd3fc'], ALLOCATED: ['#78350f', '#fcd34d'], HELD: ['#7f1d1d', '#fca5a5'], DAMAGED: ['#7f1d1d', '#fca5a5'], REJECTED: ['#7f1d1d', '#fca5a5'], APPLIED: ['#064e3b', '#6ee7b7'], DONE: ['#064e3b', '#6ee7b7'], PENDING: ['#78350f', '#fcd34d'], EXCEPTION: ['#78350f', '#fcd34d'], OPEN: ['#0c4a6e', '#7dd3fc'], READY: ['#78350f', '#fcd34d'], IN_RETURN: ['#78350f', '#fcd34d'], FAILED: ['#7f1d1d', '#fca5a5'] } : pillColor;
-export const Wordmark = ({ height = 30 }) => <Image source={require('../../assets/wordmark.png')} style={{ height, width: height * 3.5, resizeMode: 'contain' }} />;
+export const Wordmark = ({ height = 30, onDark }) => <Image source={onDark ? require('../../assets/wordmark_on_dark.png') : require('../../assets/wordmark.png')} style={{ height, width: height * 3.5, resizeMode: 'contain' }} />;
 
 export const Header = ({ title, sub, onBack, right, logo }) => (
   <LinearGradient colors={GRAD.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingTop: 42, paddingBottom: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderBottomLeftRadius: 18, borderBottomRightRadius: 18, shadowColor: '#312e81', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
     {onBack ? <TouchableOpacity onPress={onBack} style={{ paddingRight: 12 }}><Text style={{ color: '#fff', fontSize: 22 }}>‹</Text></TouchableOpacity> : null}
-    {logo ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 10 }}><AisLogo size={36} /><View style={{ backgroundColor: '#fff', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2 }}><Wordmark height={26} /></View></View> : null}
+    {logo ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 10 }}><AisLogo size={38} onDark /><Wordmark height={26} onDark /></View> : null}
     <View style={{ flex: 1 }}>{title ? <Text style={{ color: '#fff', fontWeight: '700', fontSize: 17 }}>{title}</Text> : null}{sub ? <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>{sub}</Text> : null}</View>
     {right}
   </LinearGradient>);
