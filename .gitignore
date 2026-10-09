@@ -16,3 +16,4 @@ hht/.expo/
 *.local
 dist/
 server/.venv/
+scripts/apk_url.txt
