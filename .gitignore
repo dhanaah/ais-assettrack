@@ -14,3 +14,5 @@ hht/.expo/
 # local
 .env
 *.local
+dist/
+server/.venv/
