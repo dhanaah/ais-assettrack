@@ -156,3 +156,38 @@ def customer_holding(db: Session, plant: str | None = None):
         r["b0_30" if days <= 30 else "b31_60" if days <= 60 else "b61"] += 1
         r["max_days"] = max(r["max_days"], days)
     return list(res.values())
+
+
+# ---------------------------------------------------------------- return slip QR (v1)
+# AIS1|RS|<slip_no>|<plant>|<customer>|<vehicle>|<qty>|<yyMMddHHmm>|<sig8>
+# sig8 = first 8 hex of HMAC-SHA256(server secret, everything before it). Slips made on the HHT offline carry "-".
+def _sig(body: str) -> str:
+    import hmac, hashlib
+    from . import config
+    return hmac.new(config.JWT_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()[:8].upper()
+
+
+def slip_qr(sl, signed: bool = True) -> str:
+    ts = (sl.created_at or utcnow()).strftime("%y%m%d%H%M")
+    body = f"AIS1|RS|{sl.slip_no}|{sl.plant_code}|{sl.customer_code}|{sl.vehicle_no or ''}|{sl.declared_qty or 0}|{ts}"
+    return f"{body}|{_sig(body) if signed else '-'}"
+
+
+def label_token(slip_no: str) -> str:
+    return _sig("LABEL|" + slip_no) + _sig("LABEL2|" + slip_no)
+
+
+def parse_slip_qr(code: str) -> dict:
+    """Accepts AIS1|RS|... (verifies check code) or legacy RTS|slip|plant|cust|qty or a bare slip number."""
+    s = (code or "").strip()
+    if s.startswith("AIS1|RS|"):
+        parts = s.split("|")
+        if len(parts) != 9:
+            return {"slip_no": None, "error": "QR format not recognised"}
+        body, sig = "|".join(parts[:8]), parts[8]
+        ok = sig != "-" and sig.upper() == _sig(body)
+        return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": int(parts[6] or 0),
+                "signed": sig != "-", "valid": ok or sig == "-", "error": None if (ok or sig == "-") else "QR check code invalid - label altered or not issued by AssetTrack"}
+    if s.startswith("RTS|"):
+        return {"slip_no": s.split("|")[1], "signed": False, "valid": True, "error": None}
+    return {"slip_no": s, "signed": False, "valid": True, "error": None}

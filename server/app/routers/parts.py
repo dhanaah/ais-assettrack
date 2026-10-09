@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from .. import models, services, lpn as lpnsvc
 from ..db import get_db
-from ..security import current_user, need, Principal, audit, verify_supervisor_pin
+from ..security import current_user, need, hht, Principal, audit, verify_supervisor_pin
 from ..models import utcnow
 
 router = APIRouter(prefix="/api/v1", tags=["parts"])
@@ -311,7 +311,7 @@ def picklist_lpns(no: str, p: Principal = Depends(current_user), db: Session = D
 
 
 @router.post("/picklists/{no}/pdi")
-def pdi_mark(no: str, body: PdiIn, request: Request, p: Principal = Depends(need("PDI_CHECK")), db: Session = Depends(get_db)):
+def pdi_mark(no: str, body: PdiIn, request: Request, p: Principal = Depends(hht("PDI_CHECK")), db: Session = Depends(get_db)):
     k = db.get(models.PickList, no)
     if not k:
         raise HTTPException(404, "Not found")
@@ -327,7 +327,7 @@ def pdi_mark(no: str, body: PdiIn, request: Request, p: Principal = Depends(need
 
 
 @router.post("/picklists/{no}/pdi-complete")
-def pdi_complete(no: str, request: Request, p: Principal = Depends(need("PDI_CHECK")), db: Session = Depends(get_db)):
+def pdi_complete(no: str, request: Request, p: Principal = Depends(hht("PDI_CHECK")), db: Session = Depends(get_db)):
     k = db.get(models.PickList, no)
     if not k:
         raise HTTPException(404, "Not found")
@@ -374,7 +374,8 @@ def _pallet_of(db, sc):
 
 
 @router.post("/moves")
-def move_pallets(body: MoveIn, request: Request, p: Principal = Depends(need("INTERNAL_MOVE")), db: Session = Depends(get_db)):
+def move_pallets(body: MoveIn, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
+    p.require_any("INTERNAL_MOVE", "MOVE_TO_" + body.to_zone.upper())
     if not p.plant:
         raise HTTPException(400, "Plant user required")
     out = []
@@ -400,7 +401,7 @@ class ReceiptIn(BaseModel):
 
 
 @router.post("/plant-receipts")
-def plant_receipt(body: ReceiptIn, request: Request, p: Principal = Depends(need("PLANT_RECEIPT")), db: Session = Depends(get_db)):
+def plant_receipt(body: ReceiptIn, request: Request, p: Principal = Depends(hht("PLANT_RECEIPT")), db: Session = Depends(get_db)):
     if not p.plant:
         raise HTTPException(400, "Plant user required")
     out = []

@@ -40,9 +40,12 @@ def setup():
         db.commit()
 
 
-def tok(c, u):
+def tok(c, u, hht=True):
     r = c.post("/api/v1/auth/login", json={"user_id": u, "password": "x"}); assert r.status_code == 200, r.text
-    return {"Authorization": f"Bearer {r.json()['token']}"}
+    h = {"Authorization": f"Bearer {r.json()['token']}"}
+    if hht:
+        h |= {"X-Device": "HHT", "X-Device-Id": "HHT-TEST"}
+    return h
 
 
 def ev(c, h, t, payload):
@@ -54,7 +57,13 @@ def ev(c, h, t, payload):
 
 with TestClient(app) as c:
     setup()
-    H, M, P = tok(c, "chn"), tok(c, "master"), tok(c, "pun")
+    H, M, P = tok(c, "chn"), tok(c, "master", hht=False), tok(c, "pun")
+    W = tok(c, "chn", hht=False)          # same user on the web
+    print("0. HHT-only policy")
+    r = c.post("/api/v1/sync/push", headers=W, json={"events": []})
+    check(r.status_code == 403 and "HHT" in r.text, "web cannot push scans")
+    r = c.post("/api/v1/moves", headers=W, json={"scanned": ["CHN-P001"], "to_zone": "PRODUCTION"})
+    check(r.status_code == 403, "web cannot move pallets")
     print("1. masters")
     b = c.post("/api/v1/blankets", headers=M, json={"plant_code": "CHN", "customer_code": "HMIL", "part_no": "WS-1", "blanket_no": "BL-9",
                                                     "po_number": "PO-123", "schedule_qty": 100}).json()
@@ -161,12 +170,47 @@ with TestClient(app) as c:
     check(e["status"] == "REJECTED" and "WMS" in e["result"], "flagged LPN blocked at dock")
     res = c.get("/api/v1/reservations", headers=H).json()
     check(len(res) >= 1, f"reservation control lists {len(res)} pick list(s)")
+    print("10b. customer API + signed QR label")
+    with SessionLocal() as db:
+        from app.security import hash_pw as _h
+        cu = db.query(models.Customer).filter_by(code="HMIL", plant_code="CHN").first(); cu.api_key_hash = _h("ais_testkey_123456"); cu.api_key_prefix = "ais_test"; db.commit()
+    K = {"X-API-Key": "ais_testkey_123456"}
+    r = c.post("/api/ext/v1/return-slip", headers=K, json={"pallets": ["CHN-P001"], "vehicle_no": "TN 09 AB 1111", "customer_challan_no": "DC-77"}).json()
+    check(r["qr_payload"].startswith("AIS1|RS|") and r["label_url"], f"customer slip {r['slip_no']} QR {r['qr_payload']}")
+    lab = c.get(r["label_url"]); check(lab.status_code == 200 and "<svg" in lab.text and "TN09AB1111" in lab.text, "label prints with QR")
+    check(c.get(r["label_url"][:-3] + "XXX").status_code == 403, "label link cannot be guessed")
+    bad = r["qr_payload"].replace("TN09AB1111", "TN09AB9999")
+    g = c.post(f"/api/v1/slips/{r['slip_no']}/gate-in", headers=H, json={"qr": bad})
+    check(g.status_code == 400 and "check code" in g.text, "altered label rejected at gate")
+    g = c.post(f"/api/v1/slips/{r['slip_no']}/gate-in", headers=H, json={"qr": r["qr_payload"], "vehicle_no": "TN09AB1111"})
+    check(g.status_code == 200 and g.json()["status"] == "IN_GATE", "genuine label accepted at IN gate")
     print("11. missed-scan register")
     ms = c.get("/api/v1/scan-misses", headers=H).json()
     pts = sorted({m["missed_point"] for m in ms})
     check(len(ms) >= 5, f"{len(ms)} missed scans recorded: {pts}")
     r = c.post(f"/api/v1/scan-misses/{ms[0]['id']}/resolve", headers=H, json={"resolution": "briefed security"}).json()
     check(r["resolved"], "missed scan resolved")
+    pp = c.get("/api/v1/reports/plant-position", headers=W).json()
+    check(pp["summary"]["own_total"] == 7 and pp["summary"]["at_customers"] >= 1, f"plant position: {pp['summary']}")
+    lv = c.get("/api/v1/reports/live", headers=W).json()
+    check(len(lv) > 10, f"live feed {len(lv)} rows")
+    print("12. user access by central admin only")
+    r = c.post("/api/v1/users", headers=W, json={"user_id": "x1", "full_name": "x", "plant_code": "CHN", "roles": ["YARD"], "password": "Abc@1234"})
+    check(r.status_code == 403, "plant user cannot create users")
+    with SessionLocal() as db:
+        u = models.User(user_id="cadm", full_name="central", plant_code=None, password_hash=hash_pw("x"), must_change_pw=False)
+        u.roles = [models.UserRole(role_code="CADMIN")]; db.add(u); db.commit()
+    A = tok(c, "cadm", hht=False)
+    r = c.post("/api/v1/users", headers=A, json={"user_id": "yard1", "full_name": "Yard op", "plant_code": "CHN", "roles": ["YARD"],
+                                               "password": "Abc@1234", "perms": ["YARD_SCAN", "MOVE_TO_PRODUCTION"]})
+    check(r.status_code == 200, "central admin creates user with exact movement rights")
+    with SessionLocal() as db:
+        u = db.query(models.User).filter_by(user_id="yard1").first(); u.must_change_pw = False; u.password_hash = hash_pw("x"); db.commit()
+    Y = tok(c, "yard1")
+    e = ev(c, Y, "PALLET_MOVE", {"scanned": "CHN-P007", "to_zone": "PRODUCTION"})
+    check(e["status"] in ("APPLIED", "EXCEPTION"), "allowed route Yard -> Production")
+    e = ev(c, Y, "PALLET_MOVE", {"scanned": "CHN-P007", "to_zone": "FGWH"})
+    check(e["status"] == "REJECTED" and "MOVE_TO_FGWH" in e["result"], "route not granted -> rejected")
     z = c.get("/api/v1/zones", headers=H).json()
     check("FGWH" in z["zones"], f"zone view: {z['zones']}")
 print(f"\nALL {ok_n} CHECKS PASSED")

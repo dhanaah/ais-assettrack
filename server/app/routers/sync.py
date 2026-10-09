@@ -16,12 +16,12 @@ Any other type is stored with status EXCEPTION for review (forward compatible).
 """
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, services, lpn as lpnsvc
 from ..db import get_db
-from ..security import current_user, Principal, need
+from ..security import current_user, Principal, need, require_hht
 from ..models import utcnow
 
 router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
@@ -60,7 +60,7 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                                            device_id=e.device_id, event_id=e.event_id)
             return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
         if t == "PALLET_MOVE":
-            p.require("INTERNAL_MOVE")
+            p.require_any("INTERNAL_MOVE", "MOVE_TO_" + str(pl.get("to_zone", "")).upper())
             tag, pal = services.resolve_tag(db, pl["scanned"])
             if not pal:
                 l = db.get(models.Lpn, pl["scanned"].strip())
@@ -154,7 +154,8 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
 
 
 @router.post("/push")
-def push(body: PushIn, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+def push(body: PushIn, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    require_hht(request)
     if not p.plant:
         raise HTTPException(400, "Only plant users push events")
     results = []

@@ -65,6 +65,7 @@ class User(Base):
     mobile: Mapped[str | None] = mapped_column(String(20))
     supervisor_pin_hash: Mapped[str | None] = mapped_column(String(100))
     supervisor_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
+    perms_override: Mapped[str | None] = mapped_column(Text)   # central admin's per-user access list (CSV); NULL = role defaults
     device_id: Mapped[str | None] = mapped_column(String(60))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_pw: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -15,8 +15,8 @@ export function GateIn({ onBack }) {
   const [msg, toast] = useToast(); const [last, setLast] = useState(null);
   const onScan = async (code) => {
     if (!needOnline(toast)) return;
-    const no = code.startsWith('RTS|') ? code.split('|')[1] : code;
-    try { const r = await api(`/slips/${no}/gate-in`, { method: 'POST' }); setLast(r); toast(`${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
+    const no = code.startsWith('AIS1|RS|') || code.startsWith('RTS|') ? code.split('|')[code.startsWith('AIS1|') ? 2 : 1] : code;
+    try { const r = await api(`/slips/${encodeURIComponent(no)}/gate-in`, { method: 'POST', body: { qr: code !== no ? code : null } }); setLast(r); toast(`${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
   return (<Screen><Header title="IN Gate" sub="Scan return slip QR → GCS inward" onBack={onBack} /><Page>

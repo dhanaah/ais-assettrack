@@ -51,7 +51,9 @@ export function slipText(slip, plant, cols = 32) {
   L.push(''); L.push('Security sign: ________    Driver: ________'); L.push('');
   return L.join('\n');
 }
-export const slipQr = (slip, plant) => `RTS|${slip.slip_no}|${plant?.code || ''}|${slip.customer_code}|${slip.declared_qty}`;
+// Same layout as the server label; HHT cannot sign offline, so the check code is '-' (server trusts its own HHT slips)
+const yymmddhhmm = (d = new Date()) => d.toISOString().replace(/[-T:]/g, '').slice(2, 12);
+export const slipQr = (slip, plant) => `AIS1|RS|${slip.slip_no}|${plant?.code || ''}|${slip.customer_code}|${slip.vehicle_no || ''}|${slip.declared_qty}|${yymmddhhmm()}|-`;
 
 export async function printSlip(slip, plant, copies = 2) {
   if (!BT) { return { printed: false, text: slipText(slip, plant), qr: slipQr(slip, plant) }; }

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 API_MIN_CLIENT = "1.0.0"          # HHT app must be >= this
 DEVELOPER = "Developed by DT"
 
@@ -26,6 +26,11 @@ JWT_ALGO = "HS256"
 TOKEN_HOURS = int(os.getenv("PALLET_TOKEN_HOURS", "12"))
 MAX_FAILED_LOGINS = 5
 LOCK_MINUTES = 30
+
+# Operations policy ---------------------------------------------------------
+# 1 = every physical transaction (scan, move, PDI, gate, return slip, confirm) must come from the HHT app.
+#     The web/server is for masters, uploads, reports, dashboard, monitoring, live view and printing.
+HHT_ONLY = os.getenv("PALLET_HHT_ONLY", "1") == "1"
 
 # Defaults -----------------------------------------------------------------
 DEFAULT_HOLDING_DAYS = 30

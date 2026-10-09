@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, services, integration, lpn as lpnsvc
 from ..db import get_db
-from ..security import current_user, need, Principal, audit, verify_supervisor_pin
+from ..security import current_user, need, hht, require_hht, Principal, audit, verify_supervisor_pin
 from ..models import utcnow
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
@@ -181,7 +181,7 @@ def reduce_qty(no: str, body: QtyIn, request: Request, p: Principal = Depends(ne
 
 
 @router.post("/picklists/{no}/confirm")
-def confirm_picklist(no: str, request: Request, p: Principal = Depends(need("DOCK_SCAN")), db: Session = Depends(get_db)):
+def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht("DOCK_SCAN")), db: Session = Depends(get_db)):
     """Pick List Control: scanned count must equal qty; freeze list -> READY."""
     k = db.get(models.PickList, no)
     if not k:
@@ -297,7 +297,7 @@ class GateOutIn(BaseModel):
 
 
 @router.post("/picklists/{no}/gate-out")
-def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(need("OUT_GATE_SCAN")), db: Session = Depends(get_db)):
+def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(hht("OUT_GATE_SCAN")), db: Session = Depends(get_db)):
     k = db.get(models.PickList, no)
     if not k:
         raise HTTPException(404, "Not found")
@@ -372,6 +372,7 @@ def get_slip(no: str, p: Principal = Depends(current_user), db: Session = Depend
 
 @router.post("/slips")
 def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    require_hht(request)
     if not p.plant:
         raise HTTPException(400, "Plant user required")
     mode = body.mode.upper()
@@ -424,11 +425,30 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
     return row(sl) | {"warnings": warnings}
 
 
+class GateInIn(BaseModel):
+    qr: str | None = None           # full scanned QR (AIS1|RS|...) - check code and vehicle verified
+    vehicle_no: str | None = None   # actual vehicle at gate (optional cross-check)
+
+
 @router.post("/slips/{no}/gate-in")
-def gate_in(no: str, request: Request, p: Principal = Depends(need("IN_GATE_SCAN")), db: Session = Depends(get_db)):
+def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principal = Depends(hht("IN_GATE_SCAN")), db: Session = Depends(get_db)):
+    if no.startswith("AIS1|") or no.startswith("RTS|"):
+        body = body or GateInIn(); body.qr = no
+    q = services.parse_slip_qr(body.qr) if body and body.qr else None
+    if q:
+        if q["error"]:
+            audit(db, p, "GATE_IN_QR_REJECTED", "slip", q.get("slip_no"), None, {"qr": body.qr}, request); db.commit()
+            raise HTTPException(400, q["error"] + " - HOLD VEHICLE")
+        no = q["slip_no"]
     sl = db.get(models.ReturnSlip, no)
     if not sl:
         raise HTTPException(404, "Slip not found - create Mode B slip")
+    if q and not q.get("signed") and sl.source == "EXT_API" and (body.qr or "").startswith("AIS1|"):
+        raise HTTPException(400, "Customer label without check code - not issued by AssetTrack - HOLD VEHICLE")
+    if q and q.get("slip_no") and q.get("plant") and (q["plant"] != sl.plant_code or q.get("customer") != sl.customer_code):
+        raise HTTPException(400, "QR does not match the slip record - HOLD VEHICLE")
+    if q and q.get("vehicle") and body.vehicle_no and q["vehicle"] != body.vehicle_no.upper().replace(" ", ""):
+        raise HTTPException(400, f"Vehicle mismatch: label {q['vehicle']} vs gate {body.vehicle_no} - HOLD VEHICLE")
     p.require_plant(sl.plant_code)
     if sl.status not in ("OPEN", "PENDING_VERIFICATION"):
         raise HTTPException(400, f"Slip is {sl.status}")
@@ -448,7 +468,7 @@ class CloseIn(BaseModel):
 
 
 @router.post("/slips/{no}/close")
-def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(need("RECONCILE_CLOSE")), db: Session = Depends(get_db)):
+def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(hht("RECONCILE_CLOSE")), db: Session = Depends(get_db)):
     sl = db.get(models.ReturnSlip, no)
     if not sl:
         raise HTTPException(404, "Not found")

@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## 1.5.0 (2026-10-09) — HHT-only operations, central access control, plant position, customer QR label
+- All physical transactions (scans, moves, PDI, gate in/out, return slips, confirm, damage) accepted only from the HHT app (PALLET_HHT_ONLY=1); web keeps masters, uploads, release, challan, approve, reports, live view
+- Users created / changed only by the central admin; per-user access rights (movement routes MOVE_TO_PRODUCTION/FGWH/PACKING/YARD and every scan) override role defaults
+- Plant-wise users and pallet lists (plant, own-only, loaded/empty, zone filters)
+- Plant Position report: own pallets at home by zone, at other plants, in transit, at customers (aging/overdue), damaged; other plants' pallets held here
+- Live Transactions page (auto refresh 10 s)
+- Customer API: signed QR return-slip label (AIS1|RS|... with server check code), printable 100x75 mm label link; IN gate rejects altered labels and vehicle mismatch
+- Transparent AIS logo / reversed header logo
 ## 1.4.0 (2026-10-09) — FG parts, PDI, WMS, internal movement, missed scans
 - Dispatch types: Direct customer / Stock transfer (EBS invoice fetched, printed on challan), Empty return to origin plant (EBS challan + e-way bill, no SO), Pallets only
 - Blanket order master (PO number, schedule qty, validity) controls every part release; open qty = schedule - released - pending

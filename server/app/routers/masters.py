@@ -94,16 +94,32 @@ def upsert_role(body: RoleIn, request: Request, p: Principal = Depends(need("INT
 
 
 # ---------------------------------------------------------------- users
+def _central_admin(p: Principal) -> bool:
+    return p.plant is None and (p.has("USER_ADMIN") or p.has("INTEGRATION_CONFIG"))
+
+
+@router.get("/perm-groups")
+def perm_groups(p: Principal = Depends(current_user)):
+    from ..security import PERM_GROUPS
+    return PERM_GROUPS
+
+
 @router.get("/users")
-def list_users(p: Principal = Depends(current_user), db: Session = Depends(get_db)):
-    if not (p.has("PLANT_USERS_ADMIN") or p.has("INTEGRATION_CONFIG")):
+def list_users(plant: str | None = None, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Plant-wise user list. Plant admins see their own plant (read only); central admin sees all."""
+    if not (p.has("PLANT_USERS_ADMIN") or p.has("INTEGRATION_CONFIG") or p.has("USER_ADMIN")):
         raise HTTPException(403, "Admin only")
+    from ..security import load_perms
     q = db.query(models.User).order_by(models.User.plant_code, models.User.user_id)
-    if p.plant:
-        q = q.filter(models.User.plant_code == p.plant)
+    pl = p.scope_plant(plant)
+    if pl:
+        q = q.filter(models.User.plant_code == pl)
     out = []
     for u in q.all():
-        d = row(u); d["roles"] = u.role_codes; d["has_pin"] = bool(u.supervisor_pin_hash); out.append(d)
+        d = row(u); d.pop("password_hash", None); d.pop("supervisor_pin_hash", None)
+        d["roles"] = u.role_codes; d["has_pin"] = bool(u.supervisor_pin_hash)
+        d["perms"] = sorted(load_perms(db, u)); d["custom_access"] = u.perms_override is not None
+        out.append(d)
     return out
 
 
@@ -119,12 +135,13 @@ class UserIn(BaseModel):
     device_id: str | None = None
     active: bool = True
     notes: str | None = None
+    perms: list[str] | None = None       # central admin: exact access for this user; None = role defaults
 
 
 @router.post("/users")
 def upsert_user(body: UserIn, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
-    if not (p.has("PLANT_USERS_ADMIN") or p.has("INTEGRATION_CONFIG")):
-        raise HTTPException(403, "Admin only")
+    if not _central_admin(p):
+        raise HTTPException(403, "Only the central admin can create users or change their plant / access")
     uid = body.user_id.strip().lower()
     roles = [r.upper() for r in body.roles]
     role_objs = {r.code: r for r in db.query(models.Role).filter(models.Role.code.in_(roles)).all()}
@@ -155,6 +172,14 @@ def upsert_user(body: UserIn, request: Request, p: Principal = Depends(current_u
     u.email = body.email; u.mobile = body.mobile; u.supervisor_allowed = body.supervisor_allowed
     u.device_id = body.device_id; u.active = body.active; u.notes = body.notes
     u.roles = [models.UserRole(role_code=r) for r in roles]
+    if body.perms is not None:
+        from ..security import PERMS
+        bad = [x for x in body.perms if x not in PERMS]
+        if bad:
+            raise HTTPException(400, f"Unknown permissions {bad}")
+        u.perms_override = ",".join(sorted(set(body.perms)))
+    else:
+        u.perms_override = None
     audit(db, p, "USER_UPSERT", "user", uid, old, body.model_dump(exclude={"password"}), request)
     db.commit()
     return {"ok": True, "user_id": uid}
@@ -238,12 +263,16 @@ def upsert_transporter(body: TransporterIn, request: Request, p: Principal = Dep
 # ---------------------------------------------------------------- pallets
 @router.get("/pallets")
 def list_pallets(plant: str | None = None, status: str | None = None, customer: str | None = None,
-                 q: str | None = None, limit: int = Query(500, le=5000), offset: int = 0,
+                 q: str | None = None, home_only: bool = False, load: str | None = None, zone: str | None = None, limit: int = Query(500, le=5000), offset: int = 0,
                  p: Principal = Depends(current_user), db: Session = Depends(get_db)):
     qry = db.query(models.Pallet)
     pl = p.scope_plant(plant)
     if pl:
-        qry = qry.filter(or_(models.Pallet.home_plant == pl, models.Pallet.location_plant == pl))
+        qry = qry.filter(models.Pallet.home_plant == pl) if home_only else qry.filter(or_(models.Pallet.home_plant == pl, models.Pallet.location_plant == pl))
+    if load:
+        qry = qry.filter(models.Pallet.load_state == load)
+    if zone:
+        qry = qry.filter(models.Pallet.zone == zone)
     if status:
         qry = qry.filter(models.Pallet.status == status)
     if customer:
@@ -332,6 +361,9 @@ def set_status(pallet_no: str, body: StatusIn, request: Request, p: Principal = 
         raise HTTPException(404, "Pallet not found")
     p.require_plant(pal.home_plant)
     to = body.status.upper()
+    if to != "DISCONTINUED":       # physical status changes are HHT transactions; discontinuing is a master action
+        from ..security import require_hht
+        require_hht(request)
     if to == "DISCONTINUED":
         p.require("DISCONTINUE_PALLET")
         from ..security import verify_supervisor_pin

@@ -9,6 +9,10 @@ Endpoints
   POST /api/ext/v1/return-slip                  -> create Mode A slip: pallets, vehicle, customer's challan
   GET  /api/ext/v1/return-slip/{slip_no}        -> status of a slip (IN_GATE / CLOSED / short list)
   POST /api/ext/v1/validate                     -> check a list of tags before loading (no state change)
+  GET  /api/ext/v1/return-slip/{slip_no}/label?t=  -> printable A6 / 100x75 mm label with signed QR (no API key in URL)
+
+QR on the label: AIS1|RS|<slip_no>|<plant>|<customer>|<vehicle>|<qty>|<yyMMddHHmm>|<check code>
+The check code is signed by the server; the AIS IN gate rejects altered labels.
 """
 import secrets
 from datetime import datetime
@@ -112,7 +116,8 @@ def _slip_out(db, sl):
     lines = db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no).all()
     return {"slip_no": sl.slip_no, "status": sl.status, "plant": sl.plant_code, "customer": sl.customer_code, "vehicle_no": sl.vehicle_no,
             "customer_challan_no": sl.customer_challan_no, "declared_qty": sl.declared_qty, "created_at": sl.created_at, "closed_at": sl.closed_at,
-            "qr_payload": f"RTS|{sl.slip_no}|{sl.plant_code}|{sl.customer_code}|{sl.declared_qty}",
+            "qr_payload": services.slip_qr(sl),
+            "label_url": f"/api/ext/v1/return-slip/{sl.slip_no}/label?t={services.label_token(sl.slip_no)}",
             "pallets": [{"pallet_no": l.pallet_no, "received": l.received, "exception": l.exception} for l in lines]}
 
 
@@ -122,6 +127,43 @@ def get_slip(slip_no: str, c: models.Customer = Depends(customer_auth), db: Sess
     if not sl or sl.customer_code != c.code or sl.plant_code != c.plant_code:
         raise HTTPException(404, "Slip not found")
     return _slip_out(db, sl)
+
+
+@router.get("/return-slip/{slip_no}/label")
+def slip_label(slip_no: str, t: str, db: Session = Depends(get_db)):
+    """Customer prints this (browser -> Print) and sticks it on the vehicle / hands it to the driver."""
+    from fastapi.responses import HTMLResponse
+    import hmac
+    if not hmac.compare_digest(t or "", services.label_token(slip_no)):
+        raise HTTPException(403, "Invalid label link")
+    sl = db.get(models.ReturnSlip, slip_no)
+    if not sl:
+        raise HTTPException(404, "Slip not found")
+    return HTMLResponse(slip_label_html(db, sl))
+
+
+def slip_label_html(db, sl) -> str:
+    import segno
+    qr = segno.make(services.slip_qr(sl), error="m").svg_inline(scale=4, border=2, omitsize=True)
+    cust = db.query(models.Customer).filter_by(code=sl.customer_code, plant_code=sl.plant_code).first()
+    plant = db.get(models.Plant, sl.plant_code)
+    lines = db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no, declared=True).all()
+    pallets = ", ".join(l.pallet_no for l in lines[:60]) + (f" … +{len(lines) - 60}" if len(lines) > 60 else "")
+    return f"""<!doctype html><html><head><meta charset="utf-8"><title>Return slip label {sl.slip_no}</title><style>
+@page{{size:100mm 75mm;margin:3mm}}body{{font-family:Arial,Helvetica,sans-serif;margin:0;color:#111}}
+.l{{width:94mm;height:69mm;border:1.5px solid #1e3a8a;border-radius:3mm;padding:2.5mm;box-sizing:border-box;display:grid;grid-template-columns:1fr 34mm;gap:2mm}}
+.h{{grid-column:1/3;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e3a8a;padding-bottom:1mm}}
+.h img{{height:11mm}}.t{{font-weight:800;font-size:10pt;color:#1e3a8a}}.k{{font-size:6.5pt;color:#555;text-transform:uppercase}}.v{{font-size:10pt;font-weight:700;margin-bottom:1mm}}
+.qr svg{{width:34mm;height:34mm;display:block}}.p{{grid-column:1/3;font-size:6.5pt;color:#333;max-height:9mm;overflow:hidden}}
+.btn{{position:fixed;top:8px;right:8px}}@media print{{.btn{{display:none}}}}</style></head><body>
+<button class="btn" onclick="window.print()">Print label</button>
+<div class="l"><div class="h"><img src="/static/icon-192.png" alt="AIS"><span class="t">PALLET RETURN SLIP</span><span class="k">AIS AssetTrack</span></div>
+<div><div class="k">Slip no</div><div class="v">{sl.slip_no}</div>
+<div class="k">Vehicle</div><div class="v">{sl.vehicle_no or '-'}</div>
+<div class="k">From</div><div class="v" style="font-size:8.5pt">{(cust.name if cust else sl.customer_code)}</div>
+<div class="k">To AIS plant · pallets</div><div class="v">{plant.name if plant else sl.plant_code} · {sl.declared_qty}</div>
+<div class="k">Customer DC · date</div><div class="v" style="font-size:8.5pt">{sl.customer_challan_no or '-'} · {sl.created_at:%d-%m-%Y %H:%M}</div></div>
+<div class="qr">{qr}</div><div class="p"><b>Pallets:</b> {pallets}</div></div></body></html>"""
 
 
 # ---------------------------------------------------------------- key management (internal)

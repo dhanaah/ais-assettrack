@@ -13,15 +13,27 @@ PERMS = [
     "TAG_REPLACE_REQUEST", "PLANT_USERS_ADMIN", "GLOBAL_MASTERS", "TAG_SERIES", "DISCONTINUE_PALLET",
     "INTEGRATION_CONFIG", "REPORTS_PLANT", "REPORTS_ALL", "AUDIT_LOG",
     "WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT",
+    "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN",
 ]
-NEW_PERMS = {"WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "PDI_CHECK", "INTERNAL_MOVE", "PLANT_RECEIPT", "CHALLAN_REQUEST"}   # added to existing roles on upgrade
+# What a central admin can switch on/off per user (grouped for the screen)
+PERM_GROUPS = {
+    "HHT - dispatch": ["DOCK_SCAN", "PDI_CHECK", "OUT_GATE_SCAN"],
+    "HHT - return": ["RETURN_SLIP_B", "IN_GATE_SCAN", "YARD_SCAN", "RECONCILE_CLOSE", "EMPTY_RETURN"],
+    "HHT - internal movement": ["MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "INTERNAL_MOVE", "PLANT_RECEIPT"],
+    "HHT - pallet care": ["DAMAGE_MARK", "TAG_REPLACE_REQUEST"],
+    "Web - documents": ["PICKLIST_CREATE", "CHALLAN_REQUEST", "LOGISTICS_APPROVE", "WMS_UPLOAD"],
+    "Web - masters & admin": ["GLOBAL_MASTERS", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "PLANT_USERS_ADMIN", "USER_ADMIN", "INTEGRATION_CONFIG"],
+    "Web - reports": ["REPORTS_PLANT", "REPORTS_ALL", "AUDIT_LOG"],
+}
+NEW_PERMS = {"WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "PDI_CHECK", "INTERNAL_MOVE", "PLANT_RECEIPT", "CHALLAN_REQUEST",
+             "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN"}   # added to existing roles on upgrade
 ROLE_SEED = {
     "SEC_IN":  ("Security - IN Gate", "PLANT", ["RETURN_SLIP_B", "IN_GATE_SCAN", "REPORTS_PLANT"]),
     "SEC_OUT": ("Security - Logistics / OUT Gate", "PLANT", ["OUT_GATE_SCAN", "REPORTS_PLANT"]),
     "YARD":    ("Pallet Yard In-charge", "PLANT", ["YARD_SCAN", "RECONCILE_CLOSE", "DAMAGE_MARK", "TAG_REPLACE_REQUEST", "EMPTY_RETURN", "INTERNAL_MOVE", "REPORTS_PLANT"]),
     "FGWH":    ("FG Warehouse", "PLANT", ["PICKLIST_CREATE", "DOCK_SCAN", "CHALLAN_REQUEST", "WMS_UPLOAD", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT", "REPORTS_PLANT"]),
-    "PROD":    ("Production", "PLANT", ["INTERNAL_MOVE", "REPORTS_PLANT"]),
-    "PACK":    ("Packing Section", "PLANT", ["INTERNAL_MOVE", "PLANT_RECEIPT", "REPORTS_PLANT"]),
+    "PROD":    ("Production", "PLANT", ["MOVE_TO_FGWH", "MOVE_TO_PACKING", "REPORTS_PLANT"]),
+    "PACK":    ("Packing Section", "PLANT", ["MOVE_TO_YARD", "PLANT_RECEIPT", "REPORTS_PLANT"]),
     "QA":      ("QA / PDI", "PLANT", ["PDI_CHECK", "DAMAGE_MARK", "REPORTS_PLANT"]),
     "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "REPORTS_PLANT"]),
     "PADMIN":  ("Plant Admin", "PLANT", ["PLANT_USERS_ADMIN", "REPORTS_PLANT", "AUDIT_LOG"]),
@@ -83,6 +95,8 @@ class Principal:
 
 
 def load_perms(db: Session, user: models.User) -> set[str]:
+    if user.perms_override is not None:          # central admin set this user's access explicitly
+        return {x.strip() for x in user.perms_override.split(",") if x.strip()}
     codes = user.role_codes
     if not codes:
         return set()
@@ -104,6 +118,29 @@ def current_user(request: Request, creds: HTTPAuthorizationCredentials = Depends
     if not user or not user.active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
     return Principal(user, load_perms(db, user))
+
+
+HHT_ONLY_MSG = ("Operations are allowed only from the HHT app. The web / server is for masters, uploads, "
+                "reports, dashboard, live view and challan printing.")
+
+
+def is_hht(request: Request) -> bool:
+    return (request.headers.get("x-device") or "").upper() == "HHT" and bool(request.headers.get("x-device-id"))
+
+
+def require_hht(request: Request):
+    if config.HHT_ONLY and not is_hht(request):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, HHT_ONLY_MSG)
+
+
+def hht(perm: str | None = None):
+    """Dependency: physical transaction -> HHT only (+ optional permission)."""
+    def dep(request: Request, p: "Principal" = Depends(current_user)) -> "Principal":
+        require_hht(request)
+        if perm:
+            p.require(perm)
+        return p
+    return dep
 
 
 def need(perm: str):
