@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Image } from 'react-native';
 import { S, Btn, Page, useToast, Toast, C, Footer } from '../ui/kit';
+import { Screen } from '../ui/kit';
 import { login, setServer, getServer, APP_VERSION } from '../lib/api';
 import { kv } from '../lib/db';
 
@@ -12,15 +13,15 @@ export default function Login({ onDone, deviceId }) {
     try { await setServer(srv); const r = await login(u.trim().toLowerCase(), p, deviceId); await kv.set('last_user', r.user_id); if (!r.plant) throw new Error('HHT login needs a plant user'); onDone(r); }
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
-  return (<View style={{ flex: 1, backgroundColor: C.bg }}><Page>
+  return (<Screen><Page>
     <View style={{ alignItems: 'center', marginTop: 60, marginBottom: 20 }}><Image source={require('../../assets/icon.png')} style={{ width: 110, height: 110, resizeMode: 'contain' }} /><Image source={require('../../assets/wordmark.png')} style={{ width: 260, height: 80, resizeMode: 'contain', marginBottom: 4 }} /><Text style={S.mute}>v{APP_VERSION}</Text></View>
     <View style={S.card}>
       <Text style={S.mute}>Server URL</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" placeholder="http://server:8001" />
       <Text style={S.mute}>User ID</Text><TextInput style={S.input} value={u} onChangeText={setU} autoCapitalize="none" />
       <Text style={S.mute}>Password</Text><TextInput style={S.input} value={p} onChangeText={setP} secureTextEntry onSubmitEditing={go} />
-      <Btn title={busy ? 'Signing in…' : 'Sign in'} onPress={go} disabled={busy} />
+      <Btn title={busy ? 'Signing in…' : 'Sign in'} icon="log-in-outline" onPress={go} disabled={busy} />
       <Text style={[S.mute, { marginTop: 10, textAlign: 'center' }]}>Device {deviceId}</Text>
     </View>
     <Footer />
-  </Page><Toast msg={msg} /></View>);
+  </Page><Toast msg={msg} /></Screen>);
 }

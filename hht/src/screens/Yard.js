@@ -1,7 +1,7 @@
 // Yard in-ward: scan slip → scan each pallet (accept other-plant checkbox, damaged) → close. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Switch, TextInput } from 'react-native';
-import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast } from '../ui/kit';
+import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen } from '../ui/kit';
 import { listSlips, getSlip, enqueue, addLocalScan, localScans, setPalletLocal, kv } from '../lib/db';
 import { validateYardScan } from '../lib/rules';
 import { logActivity } from '../lib/db';
@@ -32,18 +32,18 @@ export default function Yard({ onBack }) {
     catch (e) { toast(e.message, 'err'); }
   };
 
-  if (!slip) return (<View style={{ flex: 1 }}><Header title="Yard In-ward Scan" sub="Scan slip QR or pick from list" onBack={onBack} /><Page>
+  if (!slip) return (<Screen><Header title="Yard In-ward Scan" sub="Scan slip QR or pick from list" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onSlipScan} placeholder="Scan return slip QR" /></View>
     {slips.map(s => <TouchableOpacity key={s.slip_no} style={S.card} onPress={() => open(s)}><View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{s.slip_no}</Text><Pill s={s.status} /></View><Text style={S.mute}>Customer {s.customer} · mode {s.mode} · declared {s.qty}</Text></TouchableOpacity>)}
-    <Btn title="Refresh" secondary onPress={async () => { await syncNow(); setSlips(await listSlips()); }} /></Page><Toast msg={msg} /></View>);
+    <Btn title="Refresh" secondary icon="refresh" onPress={async () => { await syncNow(); setSlips(await listSlips()); }} /></Page><Toast msg={msg} /></Screen>);
 
-  return (<View style={{ flex: 1 }}><Header title={slip.slip_no} sub={`Customer ${slip.customer} · mode ${slip.mode} · declared ${slip.qty}`} onBack={() => setSlip(null)} />
+  return (<Screen><Header title={slip.slip_no} sub={`Customer ${slip.customer} · mode ${slip.mode} · declared ${slip.qty}`} onBack={() => setSlip(null)} />
     <View style={[S.pad, { paddingBottom: 0 }]}>
-      <View style={[S.card, { flexDirection: 'row', justifyContent: 'space-around' }]}>
-        <View style={{ alignItems: 'center' }}><Text style={S.big}>{scans.length}</Text><Text style={S.mute}>received</Text></View>
-        <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: short.length ? C.warn : C.ok }]}>{short.length}</Text><Text style={S.mute}>short</Text></View>
-        <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: extra.length ? C.amber : C.fg }]}>{extra.length}</Text><Text style={S.mute}>excess/other</Text></View>
-      </View>
+      <Glass><View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+        <Ring value={scans.length} label="received" color={C.ok} size={76} />
+        <Ring value={short.length} label="short" color={short.length ? C.warn : C.ok} size={76} />
+        <Ring value={extra.length} label="excess/other" color={extra.length ? C.amber : C.accent} size={76} />
+      </View></Glass>
       <View style={[S.row, { marginBottom: 8, justifyContent: 'space-between' }]}>
         <View style={S.row}><Switch value={accept} onValueChange={setAccept} /><Text>Accept other-plant pallet</Text></View>
         <View style={S.row}><Switch value={damaged} onValueChange={setDamaged} trackColor={{ true: C.warn }} /><Text>Damaged</Text></View>
@@ -53,6 +53,6 @@ export default function Yard({ onBack }) {
     <FlatList style={{ flex: 1, paddingHorizontal: 14, marginTop: 8 }} data={[...scans].reverse()} keyExtractor={x => String(x.id)} renderItem={({ item }) => (
       <View style={[S.card, { paddingVertical: 8, marginBottom: 6, flexDirection: 'row' }]}><Text style={{ flex: 1, fontWeight: '600' }}>{item.pallet_no}</Text>{!declared.includes(item.pallet_no) ? <Pill s="EXCEPTION" /> : null}</View>)}
       ListFooterComponent={short.length ? <View style={[S.card, { borderLeftWidth: 4, borderLeftColor: C.warn }]}><Text style={S.h2}>Not yet received</Text><Text style={S.mute}>{short.join('  ·  ')}</Text></View> : null} />
-    <View style={S.pad}><View style={S.row}><TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={pin} onChangeText={setPin} placeholder="Supervisor PIN (if exceptions)" secureTextEntry keyboardType="number-pad" /><Btn title="Reconcile & close" onPress={close} color={short.length || extra.length ? C.amber : C.ok} /></View></View>
-    <Toast msg={msg} /></View>);
+    <View style={S.pad}><View style={S.row}><TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={pin} onChangeText={setPin} placeholder="Supervisor PIN (if exceptions)" secureTextEntry keyboardType="number-pad" /><Btn title="Reconcile & close" icon="git-compare-outline" onPress={close} color={short.length || extra.length ? C.amber : C.ok} /></View></View>
+    <Toast msg={msg} /></Screen>);
 }

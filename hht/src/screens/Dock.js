@@ -1,7 +1,7 @@
 // Dock out-ward scan: pick list → scan each tag → Pick List Control → confirm (online). Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
-import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast } from '../ui/kit';
+import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen } from '../ui/kit';
 import { listPicklists, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal } from '../lib/db';
 import { validateDockScan } from '../lib/rules';
 import { logActivity } from '../lib/db';
@@ -33,20 +33,20 @@ export default function Dock({ onBack }) {
     catch (e) { toast(e.message, 'err'); }
   };
 
-  if (!pk) return (<View style={{ flex: 1 }}><Header title="Dock Out-ward Scan" sub="Select a pick list" onBack={onBack} /><Page>
+  if (!pk) return (<Screen><Header title="Dock Out-ward Scan" sub="Select a pick list" onBack={onBack} /><Page>
     {lists.length === 0 ? <Text style={S.mute}>No open pick lists in cache. Create one on the web app, then sync.</Text> : null}
     {lists.map(k => <TouchableOpacity key={k.picklist_no} style={S.card} onPress={() => open(k)}>
       <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{k.picklist_no}</Text><Pill s={k.status} /></View>
       <Text style={S.mute}>Customer {k.customer} · {k.type || 'any type'} · qty {k.qty} · scanned {k.scanned}</Text></TouchableOpacity>)}
-    <Btn title="Refresh" secondary onPress={async () => { await syncNow(); load(); }} /></Page><Toast msg={msg} /></View>);
+    <Btn title="Refresh" secondary icon="refresh" onPress={async () => { await syncNow(); load(); }} /></Page><Toast msg={msg} /></Screen>);
 
-  return (<View style={{ flex: 1 }}><Header title={pk.picklist_no} sub={`Customer ${pk.customer} · ${pk.type || 'any'}`} onBack={() => setPk(null)} />
+  return (<Screen><Header title={pk.picklist_no} sub={`Customer ${pk.customer} · ${pk.type || 'any'}`} onBack={() => setPk(null)} />
     <View style={[S.pad, { paddingBottom: 0 }]}>
-      <View style={[S.card, { alignItems: 'center' }]}><Text style={S.big}>{scans.length} / {pk.qty}</Text><Text style={S.mute}>pallets scanned</Text></View>
+      <Glass style={{ alignItems: 'center' }}><View style={{ alignItems: 'center' }}><Ring value={`${scans.length}/${pk.qty}`} label="pallets scanned" color={scans.length === pk.qty ? C.ok : C.accent} size={96} /></View></Glass>
       <ScanInput onScan={onScan} placeholder="Scan pallet tag" />
     </View>
     <FlatList style={{ flex: 1, paddingHorizontal: 14, marginTop: 8 }} data={scans} keyExtractor={x => x.pallet_no} renderItem={({ item, index }) => (
       <TouchableOpacity onLongPress={() => remove(item)} style={[S.card, { paddingVertical: 8, marginBottom: 6, flexDirection: 'row' }]}><Text style={{ flex: 1, fontWeight: '600' }}>{index + 1}. {item.pallet_no}</Text><Text style={S.mute}>{item.ts.slice(11, 19)}</Text></TouchableOpacity>)} />
-    <View style={S.pad}><Btn title="Confirm load list (Pick List Control)" onPress={confirm} color={scans.length === pk.qty ? C.ok : C.accent} /><Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Long-press a row to remove</Text></View>
-    <Toast msg={msg} /></View>);
+    <View style={S.pad}><Btn title="Confirm load list (Pick List Control)" icon="checkmark-circle-outline" onPress={confirm} color={scans.length === pk.qty ? C.ok : C.accent} /><Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Long-press a row to remove</Text></View>
+    <Toast msg={msg} /></Screen>);
 }

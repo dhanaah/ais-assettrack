@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Switch } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo } from '../ui/kit';
+import { Screen } from '../ui/kit';
 import { api, getServer, setServer } from '../lib/api';
 import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
@@ -17,10 +18,10 @@ export function GateIn({ onBack }) {
     try { const r = await api(`/slips/${no}/gate-in`, { method: 'POST' }); setLast(r); toast(`${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
-  return (<View style={{ flex: 1 }}><Header title="IN Gate" sub="Scan return slip QR → GCS inward" onBack={onBack} /><Page>
+  return (<Screen><Header title="IN Gate" sub="Scan return slip QR → GCS inward" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan return slip QR" /></View>
     {last ? <View style={S.card}><Text style={S.h2}>{last.slip_no} <Pill s={last.status} /></Text><Text style={S.mute}>Customer {last.customer_code} · vehicle {last.vehicle_no} · declared {last.declared_qty} · GCS {last.gcs_in_no || 'pending (retry queue)'}</Text></View> : null}
-    <Text style={S.mute}>No slip? Create one with "Return Slip (B1/B2)" first.</Text></Page><Toast msg={msg} /></View>);
+    <Text style={S.mute}>No slip? Create one with "Return Slip (B1/B2)" first.</Text></Page><Toast msg={msg} /></Screen>);
 }
 
 export function GateOut({ onBack }) {
@@ -36,13 +37,13 @@ export function GateOut({ onBack }) {
     try { const r = await api(`/picklists/${target.picklist_no}/gate-out`, { method: 'POST', body: { scanned: sc, manual_override: override, supervisor_pin: override ? pin : null } }); toast(`${r.picklist_no} DISPATCHED · ${r.qty} pallets to ${r.customer_code}`); logActivity(override ? 'GATE_OUT_OVERRIDE' : 'GATE_OUT', r.picklist_no, `${r.qty} pallets`); load(); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
-  return (<View style={{ flex: 1 }}><Header title="OUT Gate" sub="Scan GCS / challan QR" onBack={onBack} /><Page>
+  return (<Screen><Header title="OUT Gate" sub="Scan GCS / challan QR" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan GCS or challan QR" />
       <View style={[S.row, { marginTop: 8 }]}><Switch value={override} onValueChange={setOverride} trackColor={{ true: C.warn }} /><Text>Manual override (paper challan)</Text></View>
       {override ? <TextInput style={[S.input, { marginTop: 6 }]} placeholder="Supervisor PIN" value={pin} onChangeText={setPin} secureTextEntry keyboardType="number-pad" /> : null}</View>
     <Text style={S.h2}>Approved, waiting at gate</Text>
     {lists.map(k => <View key={k.picklist_no} style={S.card}><Text style={{ fontWeight: '700' }}>{k.vehicle_no} · {k.customer_code}</Text><Text style={S.mute}>{k.picklist_no} · challan {k.challan_no} · GCS {k.gcs_no || 'pending'} · {k.qty} pallets</Text></View>)}
-    <Btn title="Refresh" secondary onPress={load} /></Page><Toast msg={msg} /></View>);
+    <Btn title="Refresh" secondary onPress={load} /></Page><Toast msg={msg} /></Screen>);
 }
 
 export function Damage({ onBack }) {
@@ -53,28 +54,28 @@ export function Damage({ onBack }) {
     else { await enqueue('TAG_REPLACE_REQ', { scanned: code, remarks }, !sync.online); toast(`Tag replacement requested for ${pallet.pallet_no}`); }
     setRemarks(''); if (sync.online) syncNow().catch(() => {});
   };
-  return (<View style={{ flex: 1 }}><Header title="Damage / Tag issue" onBack={onBack} /><Page>
+  return (<Screen><Header title="Damage / Tag issue" onBack={onBack} /><Page>
     <View style={[S.row, { marginBottom: 8 }]}>{[['DAMAGE', 'Mark damaged'], ['TAG', 'Tag unreadable / lost']].map(([k, l]) => <TouchableOpacity key={k} onPress={() => setKind(k)} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: kind === k ? C.accent : undefined }]}><Text style={[S.btnSText, kind === k ? { color: '#fff' } : null]}>{l}</Text></TouchableOpacity>)}</View>
     <View style={S.card}><TextInput style={S.input} placeholder="Remarks" value={remarks} onChangeText={setRemarks} /><ScanInput onScan={onScan} placeholder={kind === 'TAG' ? 'Scan tag or type pallet no' : 'Scan pallet tag'} /></View>
-  </Page><Toast msg={msg} /></View>);
+  </Page><Toast msg={msg} /></Screen>);
 }
 
 export function Lookup({ onBack }) {
   const [p, setP] = useState(null); const [hist, setHist] = useState(null); const [msg, toast] = useToast();
   const onScan = async (code) => { const r = await resolveTag(code); setHist(null); if (!r.pallet) return toast('Not in local cache' + (r.tag ? ` (tag ${r.tag.tag} ${r.tag.status})` : ''), 'err'); setP(r.pallet);
     if (sync.online) { try { const h = await api('/pallets/' + r.pallet.pallet_no); setHist(h.history.slice(0, 15)); } catch { } } };
-  return (<View style={{ flex: 1 }}><Header title="Pallet Lookup" onBack={onBack} /><Page>
+  return (<Screen><Header title="Pallet Lookup" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onScan} /></View>
     {p ? <View style={S.card}><Text style={S.h1}>{p.pallet_no} <Pill s={p.status} /></Text><Text style={S.mute}>Home {p.home} · type {p.type} · tag {p.tag}</Text>{p.customer ? <Text style={S.mute}>At customer {p.customer}</Text> : null}{p.picklist ? <Text style={S.mute}>Pick list {p.picklist}</Text> : null}</View> : null}
     {hist ? <View style={S.card}><Text style={S.h2}>Recent history</Text>{hist.map(h => <Text key={h.id} style={[S.mute, { marginBottom: 3 }]}>{String(h.ts).slice(0, 16)} · {h.event_type} → {h.to_status || ''} {h.ref_doc || ''} {h.customer_code || ''} · {h.user_id}</Text>)}</View> : null}
-  </Page><Toast msg={msg} /></View>);
+  </Page><Toast msg={msg} /></Screen>);
 }
 
 export function Pending({ onBack }) {
   const [st, setSt] = useState({ ...sync }); const [ev, setEv] = useState([]); const [docs, setDocs] = useState([]); const [acts, setActs] = useState([]); const [tab, setTab] = useState('events');
   const load = async () => { setEv(await recentEvents(80)); setDocs(await pendingDocs()); setActs(await recentActivity(80)); };
   useEffect(() => { load(); return subscribe(s => { setSt(s); load(); }); }, []);
-  return (<View style={{ flex: 1 }}><Header title="Pending & Sync" onBack={onBack} /><Page>
+  return (<Screen><Header title="Pending & Sync" onBack={onBack} /><Page>
     <View style={[S.card, { flexDirection: 'row', justifyContent: 'space-around' }]}>
       <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: st.online ? C.ok : C.warn }]}>{st.online ? 'ON' : 'OFF'}</Text><Text style={S.mute}>network</Text></View>
       <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: st.pending ? C.amber : C.ok }]}>{st.pending}</Text><Text style={S.mute}>pending events</Text></View>
@@ -85,18 +86,18 @@ export function Pending({ onBack }) {
     <View style={[S.row, { marginBottom: 8 }]}>{[['events', 'Recent events'], ['activity', 'My activity']].map(([k, l]) => <TouchableOpacity key={k} onPress={() => setTab(k)} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: tab === k ? C.accent : undefined }]}><Text style={[S.btnSText, tab === k ? { color: '#fff' } : null]}>{l}</Text></TouchableOpacity>)}</View>
     {tab === 'activity' ? acts.map(a => <View key={a.id} style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}><View style={S.row}><Text style={{ flex: 1, fontWeight: '600' }}>{a.action}</Text><Text style={S.mute}>{a.sent ? '✓ sent' : 'pending'}</Text></View><Text style={S.mute}>{a.ts.slice(0, 19).replace('T', ' ')} · {a.ref || ''} {a.result ? '· ' + a.result : ''}</Text></View>) : null}
     {tab === 'events' ? ev.map(e => <View key={e.event_id} style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}><View style={S.row}><Text style={{ flex: 1, fontWeight: '600' }}>{e.event_type}</Text><Pill s={e.status} /></View><Text style={S.mute}>{e.local_ts.slice(0, 19).replace('T', ' ')} · {JSON.parse(e.payload).scanned || JSON.parse(e.payload).slip_no || ''} {e.result ? '· ' + e.result : ''}</Text></View>) : null}
-  </Page></View>);
+  </Page></Screen>);
 }
 
 export function Settings({ onBack, deviceId }) {
   const [srv, setSrv] = useState(getServer()); const [printers, setPrinters] = useState([]); const [sel, setSel] = useState(null); const [msg, toast] = useToast();
   useEffect(() => { kv.get('printer').then(setSel); }, []);
-  return (<View style={{ flex: 1 }}><Header title="Settings" onBack={onBack} /><Page>
+  return (<Screen><Header title="Settings" onBack={onBack} /><Page>
     <View style={S.card}><Text style={S.h2}>Server</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" /><Btn title="Save" secondary onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId}</Text></View>
     <View style={S.card}><Text style={S.h2}>Bluetooth printer {printerAvailable() ? '' : '(module not in this build)'}</Text><Text style={S.mute}>Selected: {sel || 'none'}</Text>
       <Btn title="List paired printers" secondary onPress={async () => { try { setPrinters(await listPaired()); } catch (e) { toast(e.message, 'err'); } }} />
       {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { try { await connect(p.address); setSel(p.address); toast('Connected ' + p.name); } catch (e) { toast(e.message, 'err'); } }} style={[S.btnS, { alignItems: 'flex-start' }]}><Text style={S.btnSText}>{p.name}  {p.address}</Text></TouchableOpacity>)}</View>
     <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done'); }} /></View>
     <Footer />
-  </Page><Toast msg={msg} /></View>);
+  </Page><Toast msg={msg} /></Screen>);
 }

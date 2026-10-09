@@ -1,0 +1,200 @@
+<title>AssetTrack HHT Screens</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@700&display=swap">
+<style>
+/* Layout: phone frames in a row mirroring the RN screens, then challan print formats */
+:root{--bg:#f3f4f2;--paper:#fff;--fg:#0f172a;--mute:#475569;--line:#d8dde2;--navy:#1e3a8a;--red:#dc2626;--ok:#059669;--amber:#d97706;--warn:#dc2626;--sky:#0369a1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15181a;--paper:#1e2224;--fg:#e8ebe9;--mute:#9aa49e;--line:#3a4144;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15181a;--paper:#1e2224;--fg:#e8ebe9;--mute:#9aa49e;--line:#3a4144;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:Inter,system-ui,sans-serif;padding-inline:16px;padding-block:20px;margin:0}
+h1{font-family:Outfit,sans-serif;font-size:26px;margin:0 0 4px}h2{font-family:Outfit,sans-serif;font-size:19px;margin:28px 0 10px}
+.sub{color:var(--mute);font-size:13px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.phone{width:300px;flex:0 0 300px;background:#0b1020;border-radius:30px;padding:10px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
+.scr{background:#eef2ff;border-radius:22px;overflow:hidden;height:600px;position:relative;display:flex;flex-direction:column;font-size:12px;color:#0f172a}
+.hdr{background:#1e3a8a;color:#fff;padding:26px 12px 10px;display:flex;align-items:center;gap:8px}.hdr b{font-size:14px;display:block}.hdr small{opacity:.85;font-size:10px}
+.bar{color:#fff;font-weight:700;font-size:10.5px;padding:4px 12px}.bar.ok{background:#059669}.bar.amber{background:#d97706}.bar.off{background:#dc2626}
+.body{padding:10px;flex:1;overflow:hidden}
+.card{background:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.7);border-radius:14px;padding:10px;margin-bottom:8px;box-shadow:0 4px 12px rgba(30,27,75,.08)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tile{background:rgba(255,255,255,.8);border-radius:14px;padding:9px;border-left:5px solid #0ea5e9;min-height:62px}.tile b{font-size:11.5px;display:block}.tile span{color:#475569;font-size:10px}
+.big{font-size:30px;font-weight:800;text-align:center}.mute{color:#475569;font-size:10.5px}
+.inp{background:#fff;border:1px solid #cbd5e1;border-radius:9px;padding:8px;font-size:13px;color:#64748b;display:flex;justify-content:space-between;align-items:center}
+.btn{background:#1e3a8a;color:#fff;border-radius:10px;padding:10px;text-align:center;font-weight:700;font-size:12.5px;margin-top:6px}.btn.ok{background:#059669}.btn.amber{background:#d97706}.btn.red{background:#dc2626}.btn.s{background:#fff;color:#1e3a8a;border:1px solid #1e3a8a}
+.li{display:flex;justify-content:space-between;background:rgba(255,255,255,.8);border-radius:10px;padding:7px 10px;margin-bottom:5px;font-weight:600;font-size:11.5px}.li span{color:#475569;font-weight:400}
+.pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700}.pill.ok{background:#d1fae5;color:#059669}.pill.amber{background:#fef3c7;color:#d97706}.pill.red{background:#fee2e2;color:#dc2626}.pill.sky{background:#e0f2fe;color:#0369a1}
+.toast{position:absolute;left:10px;right:10px;bottom:14px;background:rgba(5,150,105,.95);color:#fff;border-radius:10px;padding:9px;font-weight:600;font-size:12px}.toast.warn{background:rgba(217,119,6,.95)}.toast.err{background:rgba(220,38,38,.95)}
+.sw{display:inline-block;width:30px;height:16px;border-radius:9px;background:#cbd5e1;position:relative;vertical-align:middle;margin-right:5px}.sw.on{background:#1e3a8a}.sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff}.sw.on::after{left:16px}
+.cap{text-align:center;color:var(--mute);font-size:12px;margin-top:8px;width:300px}
+.logo{display:flex;align-items:center;gap:6px}.logo .d{width:26px;height:26px;background:#fff;border-radius:6px;display:grid;place-items:center;color:#dc2626;font-weight:900;font-size:9px}.logo .w{font-family:Outfit,sans-serif;font-weight:700;font-size:15px}.logo .w i{color:#f87171;font-style:normal}
+/* thermal slip */
+.thermal{width:300px;background:#fff;color:#111;font-family:"Courier New",monospace;font-size:11.5px;padding:14px 12px;border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.12);white-space:pre;line-height:1.35}
+.qr{width:96px;height:96px;margin:6px auto;background:
+ repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 12px),repeating-linear-gradient(0deg,#000 0 6px,#fff 6px 12px);background-blend-mode:difference;border:4px solid #fff;outline:1px solid #000}
+/* A4 challan */
+.a4{width:100%;max-width:760px;background:#fff;color:#111;border:1px solid var(--line);padding:22px 26px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+.a4 table{width:100%;border-collapse:collapse;font-size:11.5px}.a4 th,.a4 td{border:1px solid #333;padding:4px 6px;text-align:left;vertical-align:top}.a4 th{background:#eef2ff}
+.a4 .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a8a;padding-bottom:8px;margin-bottom:8px}
+.a4 .title{text-align:center;font-weight:800;font-size:15px;letter-spacing:1px;margin:6px 0}
+.a4 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.a4 .box{border:1px solid #333;padding:6px 8px}.a4 .box b{display:block;font-size:10.5px;color:#1e3a8a;letter-spacing:.5px}
+.a4 .sig{display:flex;justify-content:space-between;margin-top:28px;font-size:11px}.a4 .sig div{border-top:1px solid #333;padding-top:4px;width:30%;text-align:center}
+.note{font-size:12.5px;color:var(--mute);max-width:760px;line-height:1.5}
+@media (max-width:700px){.phone{flex:1 1 100%;max-width:300px}}
+
+.scr{background:linear-gradient(135deg,#e0e7ff,#ecfeff 50%,#fdf2f8)!important;position:relative}
+.scr::before{content:"";position:absolute;top:-60px;left:-50px;width:200px;height:200px;border-radius:50%;background:rgba(99,102,241,.18)}
+.scr::after{content:"";position:absolute;top:200px;right:-70px;width:190px;height:190px;border-radius:50%;background:rgba(14,165,233,.16)}
+.hdr{background:linear-gradient(90deg,#1e3a8a,#7c2d8f,#dc2626)!important;border-radius:0 0 16px 16px;box-shadow:0 6px 16px rgba(49,46,129,.3);position:relative;z-index:1}
+.card,.tile,.li{background:rgba(255,255,255,.62)!important;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.85)!important;box-shadow:0 8px 16px rgba(49,46,129,.12)!important;border-radius:16px!important;position:relative;z-index:1}
+.tile{border-left:none!important;padding-top:8px}.tile b{margin-top:4px}
+.tile .ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;color:#fff;font-size:15px;margin-bottom:5px;box-shadow:0 4px 8px rgba(0,0,0,.2)}
+.btn{background:linear-gradient(90deg,#1e3a8a,#dc2626)!important;border-radius:12px!important;box-shadow:0 6px 12px rgba(124,45,143,.35)}.btn.ok{background:linear-gradient(90deg,#059669,#10b981)!important}.btn.amber{background:linear-gradient(90deg,#d97706,#f59e0b)!important}.btn.red{background:linear-gradient(90deg,#dc2626,#f43f5e)!important}.btn.s{background:rgba(255,255,255,.75)!important;color:#1e3a8a!important;box-shadow:none}
+.bar{border-radius:999px;margin:8px 10px 0;display:inline-block;position:relative;z-index:1}
+.ring{width:74px;height:74px;border-radius:50%;border:6px solid #1e3a8a;display:grid;place-items:center;font-size:22px;font-weight:800;color:#1e3a8a;background:rgba(255,255,255,.7);margin:0 auto}
+.inp{border-radius:12px;border:1.5px solid rgba(30,58,138,.35)}
+</style>
+
+<h1>AIS AssetTrack — HHT screens &amp; challan formats</h1>
+<div class="sub">Mock-ups rendered from the app's actual styles (v1.4.0 glassmorphism). Rugged HHT or phone, portrait.</div>
+
+<h2>1. Home · Dock out-ward scan · Yard in-ward scan</h2>
+<div class="row">
+ <div><div class="phone"><div class="scr">
+  <div class="hdr"><div class="logo"><img src="/home/claude/ais-assettrack/hht/assets/icon.png" style="width:26px;height:26px;border-radius:6px;background:#fff"><span style="background:#fff;border-radius:5px;padding:1px 5px;display:inline-flex"><img src="/home/claude/ais-assettrack/hht/assets/wordmark.png" style="height:18px"></span></div><div style="flex:1"><small>R. Kumar · CHN · FGWH, SEC_OUT</small></div><small>Logout</small></div>
+  <div class="bar ok">ONLINE · 0 pending · last sync 14:32</div>
+  <div class="body"><div class="tiles">
+   <div class="tile"><div class="ic" style="background:#0ea5e9">▣</div><b>Dock Out-ward Scan</b><span>Scan pallets to a pick list</span></div>
+   <div class="tile"><div class="ic" style="background:#6366f1">⇥</div><b>OUT Gate</b><span>Scan GCS / challan QR</span></div>
+   <div class="tile"><div class="ic" style="background:#a855f7">▤</div><b>Return Slip (B1 / B2)</b><span>Create slip at IN gate</span></div>
+   <div class="tile"><div class="ic" style="background:#c026d3">⇤</div><b>IN Gate</b><span>Scan return slip QR</span></div>
+   <div class="tile"><div class="ic" style="background:#10b981">≋</div><b>Yard In-ward Scan</b><span>Receive pallets, reconcile</span></div>
+   <div class="tile"><div class="ic" style="background:#f59e0b">⚠</div><b>Damage / Tag issue</b><span>Mark damaged, request tag</span></div>
+   <div class="tile"><div class="ic" style="background:#64748b">⌕</div><b>Pallet Lookup</b><span>Status of any tag</span></div>
+   <div class="tile"><div class="ic" style="background:#ec4899">☁</div><b>Pending &amp; Sync</b><span>Outbox, last sync, errors</span></div>
+  </div><div class="mute" style="text-align:center;margin-top:14px">Settings · Printer · Full resync<br>Developed by DT</div></div>
+ </div></div><div class="cap">Home — tiles appear by role permission; status bar shows network and outbox</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="hdr"><div><b>‹ CHN-PL-000014</b><small>Customer 10234 HMIL · A-FRAME-L</small></div></div>
+  <div class="bar ok">ONLINE · 0 pending</div>
+  <div class="body">
+   <div class="card"><div class="ring">7/10</div><div class="mute" style="text-align:center;margin-top:4px">pallets scanned</div></div>
+   <div class="inp"><span>Scan pallet tag ▌</span><span>⌨ 📷</span></div>
+   <div style="margin-top:8px">
+    <div class="li">7. CHN-000142<span>14:31:08</span></div><div class="li">6. CHN-000139<span>14:30:51</span></div><div class="li">5. CHN-000127<span>14:30:40</span></div><div class="li">4. CHN-000125<span>14:30:22</span></div><div class="li">3. CHN-000118<span>14:29:58</span></div><div class="li">2. CHN-000104<span>14:29:41</span></div><div class="li">1. CHN-000101<span>14:29:12</span></div>
+   </div>
+   <div class="btn">Confirm load list (Pick List Control)</div><div class="mute" style="text-align:center">Long-press a row to remove</div>
+  </div>
+  <div class="toast err">CHN-000150 is ALLOCATED (CHN-PL-000012)</div>
+ </div></div><div class="cap">Dock scan — count vs pick-list qty; rule failures beep and show in red; Confirm enabled only when count matches</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="hdr"><div><b>‹ CHN-RTS-000031</b><small>Customer 10234 · mode A · declared 12</small></div></div>
+  <div class="bar amber">OFFLINE · 3 pending since 14:40</div>
+  <div class="body">
+   <div class="card" style="display:flex;justify-content:space-around;text-align:center"><div><div class="ring" style="width:60px;height:60px;border-color:#059669;color:#059669;font-size:18px">10</div><div class="mute">received</div></div><div><div class="ring" style="width:60px;height:60px;border-color:#dc2626;color:#dc2626;font-size:18px">2</div><div class="mute">short</div></div><div><div class="ring" style="width:60px;height:60px;border-color:#d97706;color:#d97706;font-size:18px">1</div><div class="mute">excess/other</div></div></div>
+   <div style="display:flex;justify-content:space-between;margin:4px 0 8px;font-size:11px"><span><i class="sw on"></i>Accept other-plant</span><span><i class="sw"></i>Damaged</span></div>
+   <div class="inp"><span>Scan pallet tag ▌</span><span>⌨ 📷</span></div>
+   <div style="margin-top:8px"><div class="li">AAU-000077 <span class="pill red">EXCEPTION</span></div><div class="li">CHN-000142<span></span></div><div class="li">CHN-000139<span></span></div><div class="li">CHN-000127<span></span></div></div>
+   <div class="card" style="border-left:4px solid #dc2626"><b style="font-size:11.5px">Not yet received</b><div class="mute">CHN-000104 · CHN-000118</div></div>
+   <div style="display:flex;gap:6px"><div class="inp" style="flex:1">Supervisor PIN</div><div class="btn amber" style="margin:0">Reconcile &amp; close</div></div>
+  </div>
+  <div class="toast warn">AAU-000077 HELD for AAU</div>
+ </div></div><div class="cap">Yard scan — three-way reconcile (ledger / slip / scan); works offline, close needs server + PIN when exceptions exist</div></div>
+</div>
+
+<h2>2. Return slip (gate, B1) · Pending &amp; Sync · OUT Gate</h2>
+<div class="row">
+ <div><div class="phone"><div class="scr">
+  <div class="hdr"><div><b>‹ Hyundai Motor India</b><small>Return slip at IN gate</small></div></div>
+  <div class="bar ok">ONLINE · 0 pending</div>
+  <div class="body">
+   <div style="display:flex;gap:6px;margin-bottom:8px"><div class="btn" style="flex:1;margin:0;padding:7px">B1 · scan each pallet</div><div class="btn s" style="flex:1;margin:0;padding:7px">B2 · quantity only</div></div>
+   <div class="card"><div class="inp" style="margin-bottom:6px;color:#0f172a">TN 01 AB 1234</div><div class="inp" style="margin-bottom:6px;color:#0f172a">HMIL/RC/778</div><div class="inp">Driver name / mobile</div></div>
+   <div class="card"><b style="font-size:11.5px">Pallets scanned: 3</b><div class="inp" style="margin-top:6px"><span>Scan tag ▌</span><span>⌨ 📷</span></div>
+    <div class="mute" style="margin-top:6px">1. CHN-000101 &nbsp;&nbsp; <span style="color:#dc2626">✕</span><br>2. CHN-000104 &nbsp;&nbsp; <span style="color:#dc2626">✕</span><br>3. CHN-000118 <span style="color:#d97706">ledger shows AVAILABLE</span> <span style="color:#dc2626">✕</span></div></div>
+   <div class="btn red">Create slip &amp; print</div>
+  </div>
+ </div></div><div class="cap">Return slip — security scans accessible pallets (B1) or enters qty (B2); prints 2 copies with QR on the Bluetooth printer</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="hdr"><div><b>‹ Pending &amp; Sync</b></div></div>
+  <div class="bar off">OFFLINE · 14 pending since 10:42</div>
+  <div class="body">
+   <div class="card" style="display:flex;justify-content:space-around;text-align:center"><div><div class="big" style="color:#dc2626">OFF</div><div class="mute">network</div></div><div><div class="big" style="color:#d97706">14</div><div class="mute">pending events</div></div><div><div class="big" style="font-size:15px;margin-top:9px">10:41:55</div><div class="mute">last sync</div></div></div>
+   <div class="card" style="border-left:4px solid #dc2626;color:#dc2626">Server unreachable</div>
+   <div class="btn">Sync now</div>
+   <div class="card"><b style="font-size:11.5px">Offline documents waiting</b><div class="mute">RETURN_SLIP RTS-CHN-HHT03-00017</div></div>
+   <div class="li">PALLET_SCAN_YARD <span class="pill amber">PENDING</span></div><div class="li">PALLET_SCAN_YARD <span class="pill amber">PENDING</span></div><div class="li">PALLET_SCAN_DOCK <span class="pill ok">APPLIED</span></div><div class="li">PALLET_SCAN_DOCK <span class="pill red">REJECTED</span></div>
+   <div class="mute">10:38 · 100150 · Pick list quantity already reached</div>
+  </div>
+ </div></div><div class="cap">Pending &amp; Sync — every scan is queued locally first; rejected events keep the server's reason</div></div>
+
+ <div><div class="phone"><div class="scr">
+  <div class="hdr"><div><b>‹ OUT Gate</b><small>Scan GCS / challan QR</small></div></div>
+  <div class="bar ok">ONLINE · 0 pending</div>
+  <div class="body">
+   <div class="card"><div class="inp"><span>Scan GCS or challan QR ▌</span><span>⌨ 📷</span></div><div style="margin-top:8px;font-size:11px"><i class="sw"></i>Manual override (paper challan)</div></div>
+   <b style="font-size:12px">Approved, waiting at gate</b>
+   <div class="card"><b style="font-size:12px">TN01AB1234 · 10234</b><div class="mute">CHN-PL-000014 · challan CHN/26/00412 · GCS GCS-O-CHN-55421 · 10 pallets</div></div>
+   <div class="card"><b style="font-size:12px">TN22CD9087 · 10551</b><div class="mute">CHN-PL-000015 · challan CHN/26/00413 · GCS pending · 6 pallets</div></div>
+   <div class="btn s">Refresh</div>
+  </div>
+  <div class="toast">CHN-PL-000014 DISPATCHED · 10 pallets to 10234</div>
+ </div></div><div class="cap">OUT gate — QR must match an approved vehicle; mismatch = hold; override needs supervisor PIN and is logged</div></div>
+</div>
+
+<h2>3. Challan — thermal print from HHT (3") and A4 returnable challan from server</h2>
+<div class="row">
+ <div><div class="thermal">        AIS GLASS
+   PALLET CHALLAN (RETURNABLE)
+<div class="qr"></div>--------------------------------
+Challan : CHN/26/00412
+Date    : 08-10-2026 14:35
+PickList: CHN-PL-000014
+SO No   : 7781402
+Customer: 10234 HMIL - IKT
+Vehicle : TN01AB1234
+Transp. : TR001 Sri Balaji
+--------------------------------
+ 1. CHN-000101   A-FRAME-L
+ 2. CHN-000104   A-FRAME-L
+ 3. CHN-000118   A-FRAME-L
+ 4. CHN-000125   A-FRAME-L
+ 5. CHN-000127   A-FRAME-L
+ 6. CHN-000139   A-FRAME-L
+ 7. CHN-000142   A-FRAME-L
+ 8. CHN-000150   A-FRAME-L
+ 9. CHN-000163   A-FRAME-L
+10. CHN-000171   A-FRAME-L
+--------------------------------
+TOTAL PALLETS : 10
+Returnable within 45 days.
+Property of Asahi India Glass Ltd.
+
+Logistics: ________  Driver: ________
+
+AIS AssetTrack · Developed by DT
+</div><div class="cap">3" thermal copy (ESC/POS) — QR = CHL|challan|picklist|qty; scanned at OUT gate and by customer</div></div>
+
+ <div class="a4">
+  <div class="top"><div><div style="font-weight:900;color:#dc2626;font-size:16px">AIS <span style="color:#1e3a8a">Asahi India Glass Ltd.</span></div><div>Chennai Plant · Sriperumbudur, Kanchipuram, TN 602105<br>GSTIN 33AAACA1234A1Z5</div></div>
+   <div style="text-align:right"><div style="font-weight:800;color:#1e3a8a">Asset<span style="color:#dc2626">Track</span></div><div style="width:70px;height:70px;margin-left:auto;background:repeating-linear-gradient(90deg,#000 0 5px,transparent 5px 10px),repeating-linear-gradient(0deg,#000 0 5px,#fff 5px 10px);background-blend-mode:difference;outline:1px solid #000"></div></div></div>
+  <div class="title">DELIVERY CHALLAN — RETURNABLE PALLETS (Rule 55, CGST Rules)</div>
+  <div class="grid">
+   <div class="box"><b>CHALLAN NO / DATE</b>CHN/26/00412 · 08-10-2026 14:35</div>
+   <div class="box"><b>PICK LIST / SO</b>CHN-PL-000014 · SO 7781402</div>
+   <div class="box"><b>CONSIGNEE</b>Hyundai Motor India Ltd (10234)<br>Irungattukottai, Sriperumbudur · GSTIN 33AAACH1234B1Z9</div>
+   <div class="box"><b>TRANSPORT</b>Vehicle TN01AB1234 · Sri Balaji Logistics (TR001)<br>Driver: M. Selvam · 98111 22233</div>
+  </div>
+  <table><tr><th>#</th><th>Pallet No</th><th>Tag</th><th>Type</th><th>HSN</th><th>Qty</th><th>Approx value ₹</th></tr>
+   <tr><td>1</td><td>CHN-000101</td><td>100101</td><td>A-FRAME-L 2400×1200×1800</td><td>7326</td><td>1</td><td>18,500</td></tr>
+   <tr><td>2</td><td>CHN-000104</td><td>100104</td><td>A-FRAME-L</td><td>7326</td><td>1</td><td>18,500</td></tr>
+   <tr><td>3</td><td>CHN-000118</td><td>100118</td><td>A-FRAME-L</td><td>7326</td><td>1</td><td>18,500</td></tr>
+   <tr><td colspan="4" style="text-align:center;color:#666">… 4 – 9 …</td><td></td><td></td><td></td></tr>
+   <tr><td>10</td><td>CHN-000171</td><td>100171</td><td>A-FRAME-L</td><td>7326</td><td>1</td><td>18,500</td></tr>
+   <tr><th colspan="5" style="text-align:right">TOTAL</th><th>10</th><th>1,85,000</th></tr></table>
+  <div style="margin-top:8px;font-size:11px"><b>Purpose:</b> Supply of returnable packing material (pallets) for transport of finished glass against invoice no. CHN/INV/26/08815. Not a sale. Pallets to be returned within <b>45 days</b>; overdue / damaged pallets chargeable as per agreement. Returnable within the meaning of Sec. 143 / Rule 55.</div>
+  <div class="sig"><div>Prepared by (FGWH)</div><div>Approved by (Logistics)</div><div>Received by (Customer / Driver)</div></div>
+  <div style="font-size:10px;color:#666;margin-top:10px">AIS AssetTrack · Developed by DT · Printed 08-10-2026 14:36 by chn.fgwh · 2 copies (Customer / Transporter) + e-copy to customer mail</div>
+ </div>
+</div>
+<p class="note">Challan source switch: in <b>APP</b> mode the server numbers the challan (plant series) and renders this A4 PDF plus the thermal copy; in <b>ORACLE</b> mode the EBS challan number is pulled and printed in the same formats with the Oracle number. HSN/value fields come from the Pallet-type master (to be added to the template as Pallet_Types sheet).</p>
