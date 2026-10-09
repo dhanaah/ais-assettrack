@@ -20,6 +20,6 @@ echo --- git
 git --version 2^>^&1
 echo --- ANDROID_HOME=%ANDROID_HOME%
 echo --- IP
-ipconfig ^| findstr /i "IPv4"
+ipconfig | findstr /i "IPv4"
 echo === end ===
 ) > check_pc.log 2>&1

@@ -1,11 +1,13 @@
 @echo off
-rem One-time: create virtual env + install server dependencies (no admin rights needed)
+rem One-time: create virtual env + install server dependencies (no admin rights needed). Log: server_setup.log
 call "%~dp0_common.bat"
 cd /d "%ROOT%\server"
-if not exist .venv ( echo Creating virtual environment... & %PYTHON% -m venv .venv )
+set LOG=%~dp0server_setup.log
+echo === server setup %date% %time% === > "%LOG%"
+if not exist .venv ( echo Creating virtual environment... & %PYTHON% -m venv .venv >> "%LOG%" 2>&1 )
 call .venv\Scripts\activate.bat
-python -m pip install --upgrade pip >nul
-pip install -r requirements.txt
-echo.
-echo Server setup done. Next: server_run.bat
-pause
+echo Installing libraries, please wait 1-3 minutes...
+python -m pip install --upgrade pip >> "%LOG%" 2>&1
+pip install -r requirements.txt >> "%LOG%" 2>&1
+if errorlevel 1 ( echo SETUP FAILED - see server_setup.log & echo RESULT=FAILED >> "%LOG%" ) else ( echo Server setup done. Next: server_run.bat & echo RESULT=OK >> "%LOG%" )
+timeout /t 5
