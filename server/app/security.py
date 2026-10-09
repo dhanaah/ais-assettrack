@@ -12,16 +12,20 @@ PERMS = [
     "RETURN_SLIP_B", "IN_GATE_SCAN", "YARD_SCAN", "RECONCILE_CLOSE", "DAMAGE_MARK", "PDI_CHECK",
     "TAG_REPLACE_REQUEST", "PLANT_USERS_ADMIN", "GLOBAL_MASTERS", "TAG_SERIES", "DISCONTINUE_PALLET",
     "INTEGRATION_CONFIG", "REPORTS_PLANT", "REPORTS_ALL", "AUDIT_LOG",
+    "WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT",
 ]
+NEW_PERMS = {"WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "PDI_CHECK", "INTERNAL_MOVE", "PLANT_RECEIPT", "CHALLAN_REQUEST"}   # added to existing roles on upgrade
 ROLE_SEED = {
     "SEC_IN":  ("Security - IN Gate", "PLANT", ["RETURN_SLIP_B", "IN_GATE_SCAN", "REPORTS_PLANT"]),
     "SEC_OUT": ("Security - Logistics / OUT Gate", "PLANT", ["OUT_GATE_SCAN", "REPORTS_PLANT"]),
-    "YARD":    ("Pallet Yard In-charge", "PLANT", ["YARD_SCAN", "RECONCILE_CLOSE", "DAMAGE_MARK", "TAG_REPLACE_REQUEST", "REPORTS_PLANT"]),
-    "FGWH":    ("FG Warehouse", "PLANT", ["PICKLIST_CREATE", "DOCK_SCAN", "CHALLAN_REQUEST", "REPORTS_PLANT"]),
+    "YARD":    ("Pallet Yard In-charge", "PLANT", ["YARD_SCAN", "RECONCILE_CLOSE", "DAMAGE_MARK", "TAG_REPLACE_REQUEST", "EMPTY_RETURN", "INTERNAL_MOVE", "REPORTS_PLANT"]),
+    "FGWH":    ("FG Warehouse", "PLANT", ["PICKLIST_CREATE", "DOCK_SCAN", "CHALLAN_REQUEST", "WMS_UPLOAD", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT", "REPORTS_PLANT"]),
+    "PROD":    ("Production", "PLANT", ["INTERNAL_MOVE", "REPORTS_PLANT"]),
+    "PACK":    ("Packing Section", "PLANT", ["INTERNAL_MOVE", "PLANT_RECEIPT", "REPORTS_PLANT"]),
     "QA":      ("QA / PDI", "PLANT", ["PDI_CHECK", "DAMAGE_MARK", "REPORTS_PLANT"]),
-    "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "REPORTS_PLANT"]),
+    "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "REPORTS_PLANT"]),
     "PADMIN":  ("Plant Admin", "PLANT", ["PLANT_USERS_ADMIN", "REPORTS_PLANT", "AUDIT_LOG"]),
-    "MASTER":  ("Master Maintenance (central)", "ALL", ["GLOBAL_MASTERS", "TAG_SERIES", "DISCONTINUE_PALLET", "REPORTS_ALL"]),
+    "MASTER":  ("Master Maintenance (central)", "ALL", ["GLOBAL_MASTERS", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "REPORTS_ALL"]),
     "CADMIN":  ("Central Admin", "ALL", PERMS),
     "MGMT":    ("Management (view only)", "ALL", ["REPORTS_ALL"]),
 }
@@ -62,6 +66,10 @@ class Principal:
     def require(self, perm: str):
         if perm not in self.perms:
             raise HTTPException(status.HTTP_403_FORBIDDEN, f"Permission {perm} required")
+
+    def require_any(self, *perms: str):
+        if not any(x in self.perms for x in perms):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, f"Permission {' / '.join(perms)} required")
 
     def require_plant(self, plant_code: str | None):
         if not self.can_see_plant(plant_code):

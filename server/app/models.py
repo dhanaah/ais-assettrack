@@ -33,6 +33,9 @@ class Plant(Base):
     ebs_org_id: Mapped[str | None] = mapped_column(String(20))
     gcs_endpoint: Mapped[str | None] = mapped_column(String(200))
     holding_days_default: Mapped[int] = mapped_column(Integer, default=30)
+    wms_stale_hours: Mapped[int | None] = mapped_column(Integer, default=4)          # block release if WMS stock older
+    pdi_subinv: Mapped[str | None] = mapped_column(String(20))                       # LPNs wait here for PDI
+    reject_subinv: Mapped[str | None] = mapped_column(String(20))                    # PDI rejected LPNs go here
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(String(250))
 
@@ -164,6 +167,11 @@ class Pallet(Base):
     dispatch_date: Mapped[datetime | None] = mapped_column(DateTime)
     challan_ref: Mapped[str | None] = mapped_column(String(40))
     picklist_no: Mapped[str | None] = mapped_column(String(40))
+    load_state: Mapped[str | None] = mapped_column(String(6), default="EMPTY", index=True)    # LOADED | EMPTY
+    load_ref: Mapped[str | None] = mapped_column(String(60))      # what it carries: part / LPN count / source doc
+    load_changed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    zone: Mapped[str | None] = mapped_column(String(12), default="YARD", index=True)   # YARD PRODUCTION FGWH PACKING (in-plant)
+    zone_at: Mapped[datetime | None] = mapped_column(DateTime)
     purchase_date: Mapped[datetime | None] = mapped_column(DateTime)
     discontinued_at: Mapped[datetime | None] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -208,7 +216,19 @@ class PickList(Base):
     pallet_type: Mapped[str | None] = mapped_column(String(30))
     qty: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="DRAFT", index=True)
-    # DRAFT SO_PENDING OPEN READY CHALLANED APPROVED DISPATCHED CANCELLED
+    # OPEN -> (scan) -> PDI_PENDING -> PDI_TXN_PENDING -> SO_PENDING -> READY -> CHALLANED -> APPROVED -> DISPATCHED | CANCELLED
+    # EMPTY_RETURN: OPEN -> READY -> CHALLANED -> APPROVED -> DISPATCHED (no PDI / SO)
+    dispatch_type: Mapped[str] = mapped_column(String(15), default="PALLET_ONLY")   # CUSTOMER STOCK_TRANSFER EMPTY_RETURN PALLET_ONLY
+    to_plant: Mapped[str | None] = mapped_column(String(10))           # stock transfer / empty return destination
+    blanket_id: Mapped[int | None] = mapped_column(Integer)
+    part_no: Mapped[str | None] = mapped_column(String(40))
+    part_qty: Mapped[int | None] = mapped_column(Integer)
+    po_number: Mapped[str | None] = mapped_column(String(40))
+    invoice_no: Mapped[str | None] = mapped_column(String(40))
+    invoice_date: Mapped[datetime | None] = mapped_column(DateTime)
+    ewaybill_no: Mapped[str | None] = mapped_column(String(20))
+    pdi_by: Mapped[str | None] = mapped_column(String(40))
+    pdi_at: Mapped[datetime | None] = mapped_column(DateTime)
     so_number: Mapped[str | None] = mapped_column(String(40))
     challan_no: Mapped[str | None] = mapped_column(String(40))
     vehicle_no: Mapped[str | None] = mapped_column(String(20))
@@ -262,6 +282,142 @@ class ReturnSlipLine(Base):
     exception: Mapped[str | None] = mapped_column(String(20))       # SHORT EXCESS CROSS_CUSTOMER UNKNOWN DAMAGED FOREIGN
     resolved: Mapped[bool] = mapped_column(Boolean, default=False)
     __table_args__ = (UniqueConstraint("slip_no", "pallet_no", name="uq_rs_pallet"),)
+
+
+# ---------------------------------------------------------------- parts: blanket, LPN, WMS stock, sub-inventory
+class BlanketOrder(Base):
+    """Customer blanket PO = master data for SO: controls PO number and schedule qty per part."""
+    __tablename__ = "blanket_orders"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plant_code: Mapped[str] = mapped_column(ForeignKey("plants.code"), index=True)
+    customer_code: Mapped[str] = mapped_column(String(20), index=True)
+    part_no: Mapped[str] = mapped_column(String(40), index=True)
+    customer_part_no: Mapped[str | None] = mapped_column(String(40))
+    blanket_no: Mapped[str] = mapped_column(String(40))
+    po_number: Mapped[str] = mapped_column(String(40))
+    schedule_qty: Mapped[int] = mapped_column(Integer, default=0)
+    released_qty: Mapped[int] = mapped_column(Integer, default=0)       # qty on SOs pushed to EBS
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime)
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime)
+    dispatch_type: Mapped[str] = mapped_column(String(15), default="CUSTOMER")   # CUSTOMER | STOCK_TRANSFER
+    to_plant: Mapped[str | None] = mapped_column(String(10))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(String(250))
+    __table_args__ = (UniqueConstraint("plant_code", "customer_code", "part_no", "po_number", name="uq_blanket"),)
+
+
+class SubInvRule(Base):
+    """After PDI OK, LPN moves to the sub-inventory set for customer + part (blank = any)."""
+    __tablename__ = "subinv_rules"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plant_code: Mapped[str] = mapped_column(ForeignKey("plants.code"), index=True)
+    customer_code: Mapped[str | None] = mapped_column(String(20))
+    part_no: Mapped[str | None] = mapped_column(String(40))
+    ok_subinv: Mapped[str] = mapped_column(String(20))
+    ok_locator: Mapped[str | None] = mapped_column(String(40))
+    reject_subinv: Mapped[str | None] = mapped_column(String(20))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Lpn(Base):
+    """FG LPN from WMS. Status is owned by AssetTrack once picked; WMS upload never overrides an in-process LPN."""
+    __tablename__ = "lpns"
+    lpn_no: Mapped[str] = mapped_column(String(40), primary_key=True)
+    plant_code: Mapped[str] = mapped_column(ForeignKey("plants.code"), index=True)
+    part_no: Mapped[str] = mapped_column(String(40), index=True)
+    part_desc: Mapped[str | None] = mapped_column(String(120))
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    subinventory: Mapped[str | None] = mapped_column(String(20))
+    locator: Mapped[str | None] = mapped_column(String(40))
+    pallet_no: Mapped[str | None] = mapped_column(String(30), index=True)
+    status: Mapped[str] = mapped_column(String(15), default="AVAILABLE", index=True)
+    # AVAILABLE RESERVED PICKED PDI_OK REJECTED DISPATCHED MISSING
+    reserved_for: Mapped[str | None] = mapped_column(String(40), index=True)    # pick list no
+    reserved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    picklist_no: Mapped[str | None] = mapped_column(String(40), index=True)
+    txn_state: Mapped[str | None] = mapped_column(String(12))                 # PENDING SENT CONFIRMED FAILED
+    wms_batch: Mapped[str | None] = mapped_column(String(30))
+    wms_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
+    wms_missing: Mapped[bool] = mapped_column(Boolean, default=False)        # in-process LPN absent from latest WMS stock
+    wms_subinv: Mapped[str | None] = mapped_column(String(20))                # sub-inv as per latest WMS upload
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class PickListLpn(Base):
+    __tablename__ = "picklist_lpns"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    picklist_no: Mapped[str] = mapped_column(ForeignKey("picklists.picklist_no"), index=True)
+    lpn_no: Mapped[str] = mapped_column(String(40), index=True)
+    pallet_no: Mapped[str | None] = mapped_column(String(30))
+    part_no: Mapped[str | None] = mapped_column(String(40))
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    pdi_result: Mapped[str | None] = mapped_column(String(10))                # OK REJECT
+    pdi_remarks: Mapped[str | None] = mapped_column(String(200))
+    scanned_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    user_id: Mapped[str | None] = mapped_column(String(40))
+    __table_args__ = (UniqueConstraint("picklist_no", "lpn_no", name="uq_pl_lpn"),)
+
+
+class LpnTxn(Base):
+    """Sub-inventory transfer sent to EBS. CONFIRMED only after (1) EBS accepted AND (2) EBS on-hand verified."""
+    __tablename__ = "lpn_txns"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lpn_no: Mapped[str] = mapped_column(String(40), index=True)
+    plant_code: Mapped[str] = mapped_column(String(10), index=True)
+    picklist_no: Mapped[str | None] = mapped_column(String(40), index=True)
+    reason: Mapped[str] = mapped_column(String(15))                           # PDI_OK PDI_REJECT
+    from_subinv: Mapped[str | None] = mapped_column(String(20))
+    to_subinv: Mapped[str] = mapped_column(String(20))
+    to_locator: Mapped[str | None] = mapped_column(String(40))
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(12), default="PENDING", index=True)   # PENDING SENT CONFIRMED FAILED
+    ebs_txn_id: Mapped[str | None] = mapped_column(String(40))
+    ack_at: Mapped[datetime | None] = mapped_column(DateTime)                # confirmation 1: EBS accepted
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime)           # confirmation 2: EBS on-hand shows LPN in to_subinv
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str | None] = mapped_column(String(300))
+    created_by: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ScanMiss(Base):
+    """A scan point was skipped; detected at the next scan point. Alert + record (+ safe auto-correct)."""
+    __tablename__ = "scan_misses"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    plant_code: Mapped[str | None] = mapped_column(String(10), index=True)
+    pallet_no: Mapped[str | None] = mapped_column(String(30), index=True)
+    lpn_no: Mapped[str | None] = mapped_column(String(40))
+    detected_at: Mapped[str] = mapped_column(String(20))           # scan point that found it: DOCK YARD RETURN_SLIP PDI EMPTY_RETURN
+    missed_point: Mapped[str] = mapped_column(String(30))          # e.g. YARD_IN, RETURN_SLIP, OUT_GATE, DOCK_SCAN
+    found_status: Mapped[str | None] = mapped_column(String(15))
+    expected_status: Mapped[str | None] = mapped_column(String(40))
+    last_ref: Mapped[str | None] = mapped_column(String(40))       # last known document
+    current_ref: Mapped[str | None] = mapped_column(String(40))    # document at the detecting scan
+    action: Mapped[str] = mapped_column(String(15))                # AUTO_CORRECTED | BLOCKED | ALERT
+    message: Mapped[str | None] = mapped_column(String(300))
+    user_id: Mapped[str | None] = mapped_column(String(40), index=True)
+    device_id: Mapped[str | None] = mapped_column(String(60))
+    responsible_role: Mapped[str | None] = mapped_column(String(10))   # who should have scanned
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(40))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    resolution: Mapped[str | None] = mapped_column(String(250))
+
+
+class WmsUpload(Base):
+    __tablename__ = "wms_uploads"
+    batch_id: Mapped[str] = mapped_column(String(30), primary_key=True)
+    plant_code: Mapped[str] = mapped_column(String(10), index=True)
+    source: Mapped[str] = mapped_column(String(10))                           # EXCEL API
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    rows: Mapped[int] = mapped_column(Integer, default=0)
+    new_lpns: Mapped[int] = mapped_column(Integer, default=0)
+    updated: Mapped[int] = mapped_column(Integer, default=0)
+    missing: Mapped[int] = mapped_column(Integer, default=0)
+    protected: Mapped[int] = mapped_column(Integer, default=0)               # in-process LPNs left untouched
+    user_id: Mapped[str | None] = mapped_column(String(40))
+    summary: Mapped[str | None] = mapped_column(Text)
 
 
 # ---------------------------------------------------------------- sync / events / audit

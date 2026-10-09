@@ -32,3 +32,27 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def add_missing_columns():
+    """Light auto-migration: adds new nullable columns to existing tables after an upgrade (SQLite + SQL Server).
+    Existing data is never touched."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for t in Base.metadata.sorted_tables:
+            if not insp.has_table(t.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(t.name)}
+            for col in t.columns:
+                if col.name in have:
+                    continue
+                ctype = col.type.compile(dialect=engine.dialect)
+                default = ""
+                d = col.default.arg if col.default is not None and not callable(col.default.arg) else None
+                if d is not None:
+                    default = f" DEFAULT {int(d) if isinstance(d, bool) else (repr(d) if isinstance(d, str) else d)}"
+                    if engine.dialect.name == "mssql":
+                        default += " WITH VALUES"
+                kw = "ADD" if engine.dialect.name == "mssql" else "ADD COLUMN"
+                conn.execute(text(f'ALTER TABLE {t.name} {kw} {col.name} {ctype}{default}'))

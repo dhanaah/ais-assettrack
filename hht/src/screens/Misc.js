@@ -5,7 +5,7 @@ import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisL
 import { Screen, applyTheme, T } from '../ui/kit';
 import { THEMES, THEME_KEYS } from '../ui/theme';
 import { api, getServer, setServer } from '../lib/api';
-import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity } from '../lib/db';
+import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity, getLpn, lpnsOnPallet } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
 import { listPaired, connect, printerAvailable } from '../lib/printer';
 
@@ -62,12 +62,14 @@ export function Damage({ onBack }) {
 }
 
 export function Lookup({ onBack }) {
-  const [p, setP] = useState(null); const [hist, setHist] = useState(null); const [msg, toast] = useToast();
-  const onScan = async (code) => { const r = await resolveTag(code); setHist(null); if (!r.pallet) return toast('Not in local cache' + (r.tag ? ` (tag ${r.tag.tag} ${r.tag.status})` : ''), 'err'); setP(r.pallet);
+  const [p, setP] = useState(null); const [hist, setHist] = useState(null); const [lp, setLp] = useState([]); const [msg, toast] = useToast();
+  const onScan = async (code) => { let r = await resolveTag(code); setHist(null);
+    if (!r.pallet) { const l = await getLpn(code); if (l && l.pallet) r = await resolveTag(l.pallet); else if (l) return toast(`LPN ${l.lpn}: ${l.part} × ${l.qty} · ${l.status} · no pallet linked`, 'warn'); }
+    if (!r.pallet) return toast('Not in local cache' + (r.tag ? ` (tag ${r.tag.tag} ${r.tag.status})` : ''), 'err'); setP(r.pallet); setLp(await lpnsOnPallet(r.pallet.pallet_no));
     if (sync.online) { try { const h = await api('/pallets/' + r.pallet.pallet_no); setHist(h.history.slice(0, 15)); } catch { } } };
   return (<Screen><Header title="Pallet Lookup" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onScan} /></View>
-    {p ? <View style={S.card}><Text style={S.h1}>{p.pallet_no} <Pill s={p.status} /></Text><Text style={S.mute}>Home {p.home} · type {p.type} · tag {p.tag}</Text>{p.customer ? <Text style={S.mute}>At customer {p.customer}</Text> : null}{p.picklist ? <Text style={S.mute}>Pick list {p.picklist}</Text> : null}</View> : null}
+    {p ? <View style={S.card}><Text style={S.h1}>{p.pallet_no} <Pill s={p.status} /></Text><View style={[S.row, { marginVertical: 4 }]}><Pill s={p.load || 'EMPTY'} /><Text style={S.mute}>  zone {p.zone || '-'}{p.load_ref ? ' · ' + p.load_ref : ''}</Text></View><Text style={S.mute}>Home {p.home} · type {p.type} · tag {p.tag}</Text>{lp.map(l => <Text key={l.lpn} style={S.mute}>• LPN {l.lpn} · {l.part} × {l.qty} · {l.status}</Text>)}{p.customer ? <Text style={S.mute}>At customer {p.customer}</Text> : null}{p.picklist ? <Text style={S.mute}>Pick list {p.picklist}</Text> : null}</View> : null}
     {hist ? <View style={S.card}><Text style={S.h2}>Recent history</Text>{hist.map(h => <Text key={h.id} style={[S.mute, { marginBottom: 3 }]}>{String(h.ts).slice(0, 16)} · {h.event_type} → {h.to_status || ''} {h.ref_doc || ''} {h.customer_code || ''} · {h.user_id}</Text>)}</View> : null}
   </Page><Toast msg={msg} /></Screen>);
 }

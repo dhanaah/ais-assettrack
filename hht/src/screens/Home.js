@@ -5,13 +5,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 const TILES = [
-  ['dock', 'Dock Out-ward Scan', 'Scan pallets to a pick list', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline'],
+  ['dock', 'Dock Out-ward Scan', 'LPN or pallet to a pick list', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline'],
+  ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', ['#14b8a6', '#0f766e'], 'shield-checkmark-outline'],
+  ['move', 'Internal Movement', 'Yard · Production · FGWH · Packing', 'INTERNAL_MOVE', ['#22c55e', '#15803d'], 'swap-horizontal-outline'],
+  ['receipt', 'Other-plant Receipt', 'Loaded pallets at FGWH / Packing', 'PLANT_RECEIPT', ['#8b5cf6', '#6d28d9'], 'download-outline'],
   ['gateout', 'OUT Gate', 'Scan GCS / challan QR', 'OUT_GATE_SCAN', ['#6366f1', '#4338ca'], 'exit-outline'],
   ['slip', 'Return Slip (B1 / B2)', 'Create slip at IN gate', 'RETURN_SLIP_B', ['#a855f7', '#7e22ce'], 'document-text-outline'],
   ['gatein', 'IN Gate', 'Scan return slip QR', 'IN_GATE_SCAN', ['#c026d3', '#a21caf'], 'enter-outline'],
   ['yard', 'Yard In-ward Scan', 'Receive pallets, reconcile', 'YARD_SCAN', ['#10b981', '#047857'], 'layers-outline'],
   ['damage', 'Damage / Tag issue', 'Mark damaged, request tag', 'DAMAGE_MARK', ['#f59e0b', '#d97706'], 'warning-outline'],
-  ['lookup', 'Pallet Lookup', 'Status of any tag', null, ['#64748b', '#334155'], 'search-outline'],
+  ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, ['#64748b', '#334155'], 'search-outline'],
+  ['misses', 'Missed Scans', 'Open scan alerts', null, ['#ef4444', '#b91c1c'], 'alert-circle-outline'],
   ['pending', 'Pending & Sync', 'Outbox, last sync, errors', null, ['#ec4899', '#be185d'], 'cloud-upload-outline'],
 ];
 

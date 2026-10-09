@@ -83,6 +83,9 @@ async def import_masters(request: Request, file: UploadFile = File(...), p: Prin
             obj.accept_other_plant_default = yn(r.get("Accept_Other_Plant_Default")); obj.ebs_org_id = s(r.get("EBS_Org_ID"))
             obj.gcs_endpoint = s(r.get("GCS_Endpoint")); obj.holding_days_default = i(r.get("Holding_Limit_Days_Default")) or 30
             obj.active = yn(r.get("Active")) if r.get("Active") not in (None, "") else True; obj.notes = s(r.get("Notes"))
+            if r.get("WMS_Stale_Hours") not in (None, ""):
+                obj.wms_stale_hours = i(r.get("WMS_Stale_Hours"))
+            obj.pdi_subinv = s(r.get("PDI_SubInv")) or obj.pdi_subinv; obj.reject_subinv = s(r.get("Reject_SubInv")) or obj.reject_subinv
             res("1_Plants", "inserted" if new else "updated")
         db.flush()
     plants = {x.code for x in db.query(models.Plant).all()}
@@ -208,6 +211,41 @@ async def import_masters(request: Request, file: UploadFile = File(...), p: Prin
                 db.add(models.TagHistory(pallet_no=no, old_tag=pal.current_tag, new_tag=tg, reason="IMPORT", user_id=p.user_id))
                 pal.current_tag = tg
             res("6_Pallets", "inserted" if new else "updated")
+
+    # 8 Blanket orders (SO master: PO number + schedule qty per customer part)
+    if "8_Blanket_Orders" in wb.sheetnames:
+        for r in rows_of(wb["8_Blanket_Orders"]):
+            pl, cu, pn, po = s(r.get("Plant_Code")), s(r.get("Customer_Code")), s(r.get("Part_No")), s(r.get("PO_Number"))
+            if not (pl and cu and pn and po):
+                continue
+            pl = pl.upper()
+            if pl not in plants:
+                errors.append(f"8_Blanket_Orders {pn}: plant {pl} unknown"); res("8_Blanket_Orders", "errors"); continue
+            b = db.query(models.BlanketOrder).filter_by(plant_code=pl, customer_code=cu, part_no=pn, po_number=po).first(); new = b is None
+            if new:
+                b = models.BlanketOrder(plant_code=pl, customer_code=cu, part_no=pn, po_number=po, released_qty=0); db.add(b)
+            b.blanket_no = s(r.get("Blanket_No")) or po; b.customer_part_no = s(r.get("Customer_Part_No"))
+            sq = i(r.get("Schedule_Qty")) or 0
+            if sq < (b.released_qty or 0):
+                errors.append(f"8_Blanket_Orders {pn}/{po}: schedule {sq} below released {b.released_qty}"); res("8_Blanket_Orders", "errors"); continue
+            b.schedule_qty = sq; b.valid_from = d(r.get("Valid_From")); b.valid_to = d(r.get("Valid_To"))
+            b.dispatch_type = (s(r.get("Dispatch_Type")) or "CUSTOMER").upper(); b.to_plant = (s(r.get("To_Plant")) or "").upper() or None
+            b.active = yn(r.get("Active")) if r.get("Active") not in (None, "") else True; b.notes = s(r.get("Notes"))
+            res("8_Blanket_Orders", "inserted" if new else "updated")
+
+    # 9 Sub-inventory rules (PDI OK -> customer/part sub-inventory; reject sub-inventory)
+    if "9_SubInv_Rules" in wb.sheetnames:
+        for r in rows_of(wb["9_SubInv_Rules"]):
+            pl, ok = s(r.get("Plant_Code")), s(r.get("OK_SubInv"))
+            if not (pl and ok):
+                continue
+            pl = pl.upper(); cu = s(r.get("Customer_Code")); pn = s(r.get("Part_No"))
+            x = db.query(models.SubInvRule).filter_by(plant_code=pl, customer_code=cu, part_no=pn).first(); new = x is None
+            if new:
+                x = models.SubInvRule(plant_code=pl, customer_code=cu, part_no=pn); db.add(x)
+            x.ok_subinv = ok; x.ok_locator = s(r.get("OK_Locator")); x.reject_subinv = s(r.get("Reject_SubInv"))
+            x.active = yn(r.get("Active")) if r.get("Active") not in (None, "") else True
+            res("9_SubInv_Rules", "inserted" if new else "updated")
 
     audit(db, p, "IMPORT_MASTERS", "file", file.filename, None, {"summary": log, "errors": errors[:50]}, request)
     db.commit()

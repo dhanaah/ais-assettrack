@@ -68,19 +68,43 @@ def challan(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
         pal = db.get(models.Pallet, l.pallet_no)
         rows += f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{pal.current_tag if pal else ''}</td><td>{(pal.pallet_type if pal else '') or ''} {(pal.size if pal else '') or ''}</td><td>1</td></tr>"
     hold = (cust.holding_limit_days if cust and cust.holding_limit_days else plant.holding_days_default)
+    dt = k.dispatch_type or "PALLET_ONLY"
+    lpn_rows = db.query(models.PickListLpn).filter(models.PickListLpn.picklist_no == no,
+                                                   (models.PickListLpn.pdi_result == "OK") | models.PickListLpn.pdi_result.is_(None)).all()
+    lpn_by = {}
+    for r in lpn_rows:
+        lpn_by.setdefault(r.pallet_no, []).append(r)
+    if lpn_rows:
+        rows = ""
+        for i, l in enumerate(lines, 1):
+            pal = db.get(models.Pallet, l.pallet_no)
+            ls = lpn_by.get(l.pallet_no, [])
+            rows += (f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{pal.current_tag if pal else ''}</td>"
+                     f"<td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in ls)}</td><td>{sum(x.qty for x in ls)}</td></tr>")
+    to_plant = db.get(models.Plant, k.to_plant) if k.to_plant else None
+    if dt == "EMPTY_RETURN":
+        title, consignee = "DELIVERY CHALLAN — RETURN OF EMPTY RETURNABLE PALLETS", f"{to_plant.name if to_plant else k.to_plant} ({k.to_plant})<br>{(to_plant.address or '') if to_plant else ''}<br>GSTIN {(to_plant.gstin or '') if to_plant else ''}"
+        purpose = f"Return of empty returnable pallets (owned by AIS {k.to_plant}) after consumption of material. Not a sale."
+    else:
+        title = "DELIVERY CHALLAN — RETURNABLE PALLETS (Rule 55, CGST Rules)" + (" · STOCK TRANSFER" if dt == "STOCK_TRANSFER" else "")
+        consignee = (f"{to_plant.name} ({k.to_plant})<br>GSTIN {to_plant.gstin or ''}" if dt == "STOCK_TRANSFER" and to_plant else
+                     f"{cust.name if cust else k.customer_code} ({k.customer_code})<br>{(cust.ship_to or '') if cust else ''} {(cust.city or '') if cust else ''}<br>GSTIN {(cust.gstin or '') if cust else ''}")
+        purpose = (f"Supply of returnable packing material (pallets) for transport of finished glass. Not a sale. "
+                   f"Pallets to be returned within <b>{hold} days</b>; overdue or damaged pallets are chargeable as per agreement.")
     html = f"""<!doctype html><html><head><meta charset="utf-8"><title>Challan {k.challan_no}</title><style>{CSS}</style></head><body>
     <button class="btn" onclick="window.print()">Print / Save PDF</button>
-    {_head(plant, 'DELIVERY CHALLAN — RETURNABLE PALLETS (Rule 55, CGST Rules)', f'CHL|{k.challan_no}|{k.picklist_no}|{len(lines)}')}
+    {_head(plant, title, f'CHL|{k.challan_no}|{k.picklist_no}|{len(lines)}')}
     <div class="grid">
       <div class="box"><b>CHALLAN NO / DATE</b>{k.challan_no} · {k.updated_at:%d-%m-%Y %H:%M}</div>
-      <div class="box"><b>PICK LIST / SO</b>{k.picklist_no} · SO {k.so_number or 'pending'}</div>
-      <div class="box"><b>CONSIGNEE</b>{cust.name if cust else k.customer_code} ({k.customer_code})<br>{(cust.ship_to or '') if cust else ''} {(cust.city or '') if cust else ''}<br>GSTIN {(cust.gstin or '') if cust else ''}</div>
+      <div class="box"><b>PICK LIST / SO</b>{k.picklist_no} · {('SO ' + (k.so_number or 'pending')) if dt != 'EMPTY_RETURN' else 'Empty return'}{f' · PO {k.po_number}' if k.po_number else ''}</div>
+      <div class="box"><b>CONSIGNEE</b>{consignee}</div>
       <div class="box"><b>TRANSPORT</b>Vehicle {k.vehicle_no or '—'} · {tr.name if tr else (k.transporter_code or '')}<br>GCS {k.gcs_no or '—'}</div>
+      <div class="box"><b>INVOICE</b>{(k.invoice_no + ' · ' + (k.invoice_date.strftime('%d-%m-%Y') if k.invoice_date else '')) if k.invoice_no else '—'}</div>
+      <div class="box"><b>E-WAY BILL</b>{k.ewaybill_no or ('with invoice' if k.invoice_no else '—')}</div>
     </div>
-    <table><tr><th>#</th><th>Pallet No</th><th>Tag</th><th>Type / size</th><th>Qty</th></tr>{rows}
-    <tr><th colspan="4" style="text-align:right">TOTAL PALLETS</th><th>{len(lines)}</th></tr></table>
-    <div style="margin-top:8px;font-size:11px"><b>Purpose:</b> Supply of returnable packing material (pallets) for transport of finished glass. Not a sale.
-    Pallets to be returned within <b>{hold} days</b>; overdue or damaged pallets are chargeable as per agreement.</div>
+    <table><tr><th>#</th><th>Pallet No</th><th>Tag</th><th>{'LPN · part × qty' if lpn_rows else 'Type / size'}</th><th>Qty</th></tr>{rows}
+    <tr><th colspan="4" style="text-align:right">TOTAL PALLETS {len(lines)}{f' · PART {k.part_no} QTY' if lpn_rows else ''}</th><th>{sum(x.qty for x in lpn_rows) if lpn_rows else len(lines)}</th></tr></table>
+    <div style="margin-top:8px;font-size:11px"><b>Purpose:</b> {purpose}</div>
     <div class="sig"><div>Prepared by (FG Warehouse)</div><div>Approved by (Logistics)</div><div>Received by (Customer / Driver)</div></div>
     <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {p.user_id}</div></body></html>"""
     return HTMLResponse(html)

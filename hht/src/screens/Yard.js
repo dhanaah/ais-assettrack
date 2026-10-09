@@ -18,7 +18,7 @@ export default function Yard({ onBack }) {
     if (!v.ok) { logActivity('SCAN_REJECTED_LOCAL', slip.slip_no, v.msg, { scanned: code }); return toast(v.msg, v.dup ? 'warn' : 'err'); }
     const pno = v.pallet ? v.pallet.pallet_no : code;
     await addLocalScan(slip.slip_no, pno);
-    if (v.pallet) await setPalletLocal(pno, { status: v.exception === 'FOREIGN' ? 'HELD' : damaged ? 'DAMAGED' : 'AVAILABLE', customer: null });
+    if (v.pallet) await setPalletLocal(pno, { status: v.exception === 'FOREIGN' ? 'HELD' : damaged ? 'DAMAGED' : 'AVAILABLE', customer: null, zone: 'YARD', load: 'EMPTY' });
     await enqueue('PALLET_SCAN_YARD', { slip_no: slip.slip_no, scanned: code, accept_foreign: accept, damaged }, !sync.online); logActivity(sync.online ? 'SCAN_YARD' : 'SCAN_YARD_OFFLINE', slip.slip_no, v.msg, { accept, damaged });
     setScans(await localScans(slip.slip_no)); toast(v.msg + (damaged ? ' (DAMAGED)' : ''), v.exception ? 'warn' : undefined); setDamaged(false);
     if (sync.online) syncNow().catch(() => {});

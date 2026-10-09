@@ -5,13 +5,22 @@ let db;
 export async function openDb() {
   if (db) return db;
   db = await SQLite.openDatabaseAsync('pallet_hht.db');
+  // v2 (app 1.5): cache tables gained columns - cache only, so drop & rebuild, then a full pull refills them
+  const ver = await db.getFirstAsync("SELECT v FROM kv WHERE k='schema'").catch(() => null);
+  if (!ver || JSON.parse(ver.v) < 2) {
+    await db.execAsync(`DROP TABLE IF EXISTS pallets; DROP TABLE IF EXISTS picklists; CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+      DELETE FROM kv WHERE k='last_pull'; INSERT OR REPLACE INTO kv(k,v) VALUES('schema','2');`);
+  }
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
-    CREATE TABLE IF NOT EXISTS pallets (pallet_no TEXT PRIMARY KEY, tag TEXT, home TEXT, type TEXT, status TEXT, customer TEXT, picklist TEXT);
+    CREATE TABLE IF NOT EXISTS pallets (pallet_no TEXT PRIMARY KEY, tag TEXT, home TEXT, type TEXT, status TEXT, customer TEXT, picklist TEXT, zone TEXT, load TEXT, load_ref TEXT, location TEXT);
+    CREATE TABLE IF NOT EXISTS lpns (lpn TEXT PRIMARY KEY, part TEXT, qty INTEGER, pallet TEXT, status TEXT, reserved_for TEXT, picklist TEXT);
+    CREATE INDEX IF NOT EXISTS ix_lpns_pallet ON lpns(pallet);
+    CREATE TABLE IF NOT EXISTS local_lpn_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT, lpn TEXT, pallet TEXT, qty INTEGER, ts TEXT);
     CREATE INDEX IF NOT EXISTS ix_pallets_tag ON pallets(tag);
     CREATE TABLE IF NOT EXISTS tags (tag TEXT PRIMARY KEY, pallet TEXT, status TEXT);
-    CREATE TABLE IF NOT EXISTS picklists (picklist_no TEXT PRIMARY KEY, customer TEXT, type TEXT, qty INTEGER, status TEXT, scanned INTEGER);
+    CREATE TABLE IF NOT EXISTS picklists (picklist_no TEXT PRIMARY KEY, customer TEXT, type TEXT, qty INTEGER, status TEXT, scanned INTEGER, dispatch_type TEXT, part_no TEXT, part_qty INTEGER, to_plant TEXT, picked_qty INTEGER);
     CREATE TABLE IF NOT EXISTS slips (slip_no TEXT PRIMARY KEY, customer TEXT, mode TEXT, qty INTEGER, status TEXT, pallets TEXT);
     CREATE TABLE IF NOT EXISTS customers (code TEXT PRIMARY KEY, name TEXT, return_mode TEXT);
     CREATE TABLE IF NOT EXISTS outbox (
@@ -34,11 +43,12 @@ export const kv = {
 export async function applyPull(data) {
   const d = await openDb();
   await d.withTransactionAsync(async () => {
-    if (data.full) { await d.execAsync('DELETE FROM pallets; DELETE FROM tags; DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;'); }
-    for (const p of data.pallets) await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist);
+    if (data.full) { await d.execAsync('DELETE FROM pallets; DELETE FROM tags; DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers; DELETE FROM lpns;'); }
+    for (const p of data.pallets) await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist, p.zone || 'YARD', p.load || 'EMPTY', p.load_ref || null, p.location || null);
+    for (const l of (data.lpns || [])) await d.runAsync('INSERT OR REPLACE INTO lpns VALUES(?,?,?,?,?,?,?)', l.lpn, l.part, l.qty, l.pallet, l.status, l.reserved_for, l.picklist);
     for (const t of data.tags) await d.runAsync('INSERT OR REPLACE INTO tags VALUES(?,?,?)', t.tag, t.pallet, t.status);
     await d.execAsync('DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;');
-    for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned);
+    for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned, k.dispatch_type || 'PALLET_ONLY', k.part_no, k.part_qty, k.to_plant, k.picked_qty || 0);
     for (const s of data.slips) await d.runAsync('INSERT OR REPLACE INTO slips VALUES(?,?,?,?,?,?)', s.slip_no, s.customer, s.mode, s.qty, s.status, JSON.stringify(s.pallets));
     for (const c of data.customers) await d.runAsync('INSERT OR REPLACE INTO customers VALUES(?,?,?)', c.code, c.name, c.return_mode);
   });
@@ -53,11 +63,21 @@ export async function resolveTag(scanned) {
   if (!p) { const t = await d.getFirstAsync('SELECT * FROM tags WHERE tag=?', s); if (t && t.pallet) p = await d.getFirstAsync('SELECT * FROM pallets WHERE pallet_no=?', t.pallet); if (!p && t) return { tag: t, pallet: null }; }
   return { tag: null, pallet: p || null };
 }
+export const getLpn = async (s) => (await openDb()).getFirstAsync('SELECT * FROM lpns WHERE lpn=?', String(s).trim());
+export const lpnsOnPallet = async (pallet) => (await openDb()).getAllAsync("SELECT * FROM lpns WHERE pallet=? AND status IN ('AVAILABLE','RESERVED','PICKED','PDI_OK')", pallet);
+export const setLpnLocal = async (lpn, fields) => {
+  const d = await openDb(); const sets = Object.keys(fields).map(k => `${k}=?`).join(',');
+  await d.runAsync(`UPDATE lpns SET ${sets} WHERE lpn=?`, ...Object.values(fields), lpn);
+};
+export const addLpnScan = async (ref, lpn, pallet, qty) => (await openDb()).runAsync('INSERT INTO local_lpn_scans(ref,lpn,pallet,qty,ts) VALUES(?,?,?,?,?)', ref, lpn, pallet, qty, new Date().toISOString());
+export const lpnScans = async (ref) => (await openDb()).getAllAsync('SELECT * FROM local_lpn_scans WHERE ref=? ORDER BY id', ref);
+export const removeLpnScans = async (ref, { lpn, pallet }) => lpn ? (await openDb()).runAsync('DELETE FROM local_lpn_scans WHERE ref=? AND lpn=?', ref, lpn) : (await openDb()).runAsync('DELETE FROM local_lpn_scans WHERE ref=? AND pallet=?', ref, pallet);
+export const eventResult = async (event_id) => (await openDb()).getFirstAsync('SELECT status, result FROM outbox WHERE event_id=?', event_id);
 export const setPalletLocal = async (pallet_no, fields) => {
   const d = await openDb(); const sets = Object.keys(fields).map(k => `${k}=?`).join(',');
   await d.runAsync(`UPDATE pallets SET ${sets} WHERE pallet_no=?`, ...Object.values(fields), pallet_no);
 };
-export const listPicklists = async () => (await openDb()).getAllAsync("SELECT * FROM picklists WHERE status IN ('OPEN','SO_PENDING','READY') ORDER BY picklist_no DESC");
+export const listPicklists = async (statuses = ['OPEN', 'SO_PENDING', 'READY']) => (await openDb()).getAllAsync(`SELECT * FROM picklists WHERE status IN (${statuses.map(() => '?').join(',')}) ORDER BY picklist_no DESC`, ...statuses);
 export const listSlips = async () => (await openDb()).getAllAsync("SELECT * FROM slips ORDER BY slip_no DESC");
 export const listCustomers = async () => (await openDb()).getAllAsync('SELECT * FROM customers ORDER BY name');
 export const getPicklist = async (no) => (await openDb()).getFirstAsync('SELECT * FROM picklists WHERE picklist_no=?', no);

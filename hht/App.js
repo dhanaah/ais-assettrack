@@ -14,6 +14,7 @@ import Dock from './src/screens/Dock';
 import Yard from './src/screens/Yard';
 import ReturnSlip from './src/screens/ReturnSlip';
 import { GateIn, GateOut, Damage, Lookup, Pending, Settings } from './src/screens/Misc';
+import { Move, Receipt, Pdi, Misses } from './src/screens/Movement';
 
 export default function App() {
   useKeepAwake();
@@ -43,6 +44,7 @@ export default function App() {
     home: <Home me={me} sync={sync} nav={go} onLogout={logout} />,
     dock: <Dock onBack={back} />, yard: <Yard onBack={back} />, slip: <ReturnSlip onBack={back} deviceId={deviceId} />,
     gatein: <GateIn onBack={back} />, gateout: <GateOut onBack={back} />, damage: <Damage onBack={back} />, lookup: <Lookup onBack={back} />,
+    move: <Move onBack={back} />, receipt: <Receipt onBack={back} />, pdi: <Pdi onBack={back} />, misses: <Misses onBack={back} />,
     pending: <Pending onBack={back} />, settings: <Settings onBack={back} deviceId={deviceId} onTheme={setThemeKey} />,
   };
   return <React.Fragment key={themeKey}><StatusBar style="light" />{screens[screen] || screens.home}</React.Fragment>;

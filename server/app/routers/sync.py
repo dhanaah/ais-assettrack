@@ -6,7 +6,12 @@ Event types handled in Phase 1/2:
   PALLET_SCAN_YARD   {slip_no, scanned, accept_foreign, damaged} -> AVAILABLE / HELD / DAMAGED + slip line
   DAMAGE_MARK        {scanned, remarks}                -> DAMAGED
   TAG_REPLACE_REQ    {scanned, remarks}                -> logged only
+  PALLET_MOVE        {scanned, to_zone, load?}         -> in-plant move YARD/PRODUCTION/FGWH/PACKING
+  PLANT_RECEIPT      {scanned, zone}                   -> other-plant loaded pallet received at FGWH/PACKING
+  PDI_MARK           {picklist_no, scanned, result, remarks} -> LPN PDI OK / REJECT
   HEARTBEAT          {pending}                         -> device status
+Dock scan accepts LPN or pallet (optional second scan `pallet`). Missed scans found on the way are recorded
+(scan_misses) and returned as EXCEPTION with the alert text so the HHT shows it.
 Any other type is stored with status EXCEPTION for review (forward compatible).
 """
 import json
@@ -14,7 +19,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from .. import models, services
+from .. import models, services, lpn as lpnsvc
 from ..db import get_db
 from ..security import current_user, Principal, need
 from ..models import utcnow
@@ -44,32 +49,42 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
     try:
         if t == "HEARTBEAT":
             return "APPLIED", "ok"
-        if t == "PALLET_SCAN_DOCK":
+        if t in ("PALLET_SCAN_DOCK", "PALLET_UNSCAN_DOCK"):
             p.require("DOCK_SCAN")
             pk = db.get(models.PickList, pl["picklist_no"])
             if not pk or pk.plant_code != plant:
                 raise services.RuleError("Pick list not found for this plant")
-            if pk.status not in ("OPEN", "SO_PENDING"):
-                raise services.RuleError(f"Pick list is {pk.status}")
-            pal = services.validate_scan_for_dispatch(db, pl["scanned"], plant)
-            if db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
-                raise services.RuleError("Pick list quantity already reached")
-            services.move(db, pal, "ALLOCATED", event_type="DOCK_SCAN", user_id=p.user_id, device_id=e.device_id,
-                          event_id=e.event_id, plant=plant, ref=pk.picklist_no)
-            pal.picklist_no = pk.picklist_no
-            db.add(models.PickListLine(picklist_no=pk.picklist_no, pallet_no=pal.pallet_no, user_id=p.user_id, device_id=e.device_id))
-            return "APPLIED", pal.pallet_no
-        if t == "PALLET_UNSCAN_DOCK":
-            p.require("DOCK_SCAN")
+            if t == "PALLET_UNSCAN_DOCK":
+                return "APPLIED", lpnsvc.dock_unscan(db, pk, pl["scanned"], plant, user_id=p.user_id, device_id=e.device_id, event_id=e.event_id)
+            msg, alerts = lpnsvc.dock_scan(db, pk, pl["scanned"], plant, pallet_scan=pl.get("pallet"), user_id=p.user_id,
+                                           device_id=e.device_id, event_id=e.event_id)
+            return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
+        if t == "PALLET_MOVE":
+            p.require("INTERNAL_MOVE")
             tag, pal = services.resolve_tag(db, pl["scanned"])
-            if not pal or pal.picklist_no != pl["picklist_no"] or pal.status != "ALLOCATED":
-                raise services.RuleError("Pallet not on this pick list")
+            if not pal:
+                l = db.get(models.Lpn, pl["scanned"].strip())
+                pal = db.get(models.Pallet, l.pallet_no) if l and l.pallet_no else None
+            if not pal:
+                raise services.RuleError(f"Unknown pallet / LPN {pl['scanned']}")
+            msg, alerts = lpnsvc.internal_move(db, pal, pl["to_zone"], plant, load=pl.get("load"), user_id=p.user_id,
+                                               device_id=e.device_id, event_id=e.event_id, remarks=pl.get("remarks"))
+            return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
+        if t == "PLANT_RECEIPT":
+            p.require("PLANT_RECEIPT")
+            tag, pal = services.resolve_tag(db, pl["scanned"])
+            if not pal:
+                raise services.RuleError(f"Unknown pallet {pl['scanned']}")
+            msg, alerts = lpnsvc.receive_from_plant(db, pal, pl.get("zone", "FGWH"), plant, user_id=p.user_id, device_id=e.device_id,
+                                                    event_id=e.event_id, ref=pl.get("ref"))
+            return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
+        if t == "PDI_MARK":
+            p.require("PDI_CHECK")
             pk = db.get(models.PickList, pl["picklist_no"])
-            if pk.status not in ("OPEN", "SO_PENDING"):
-                raise services.RuleError(f"Pick list is {pk.status}; cannot remove")
-            db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no, pallet_no=pal.pallet_no).delete()
-            services.move(db, pal, "AVAILABLE", event_type="DOCK_UNSCAN", user_id=p.user_id, device_id=e.device_id, event_id=e.event_id, plant=plant, ref=pk.picklist_no)
-            return "APPLIED", pal.pallet_no
+            if not pk or pk.plant_code != plant:
+                raise services.RuleError("Pick list not found for this plant")
+            msg, alerts = lpnsvc.pdi_mark(db, pk, pl["scanned"], pl.get("result", "OK"), pl.get("remarks"), p.user_id, e.device_id)
+            return ("EXCEPTION" if alerts else "APPLIED"), msg
         if t == "PALLET_SCAN_YARD":
             p.require("YARD_SCAN")
             slip = db.get(models.ReturnSlip, pl["slip_no"]) if pl.get("slip_no") else None
@@ -80,14 +95,23 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                 if slip:
                     db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pl["scanned"], declared=False, received=True, exception="UNKNOWN"))
                 return "EXCEPTION", f"Unknown tag {pl['scanned']} quarantined"
+            if pal.home_plant != plant and pal.status in ("AT_CUSTOMER", "IN_TRANSIT") and pal.customer_code == plant:
+                raise services.RuleError(f"{pal.pallet_no} is loaded material from {pal.home_plant} - receive at FGWH / Packing, not Yard")
+            live = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["PICKED", "PDI_OK"])).count()
+            if live and pal.status == "ALLOCATED":
+                raise services.RuleError(f"{pal.pallet_no} is LOADED on {pal.picklist_no} - Pallet Yard takes empty pallets only")
+            alert, block = lpnsvc.check_yard(db, pal, plant, slip, user_id=p.user_id, device_id=e.device_id)
+            if block:
+                return "EXCEPTION", "⚠ " + alert
             if pal.home_plant != plant:
                 if not pl.get("accept_foreign"):
                     raise services.RuleError(f"Foreign pallet {pal.pallet_no} ({pal.home_plant}) - not accepted")
                 services.move(db, pal, "HELD", event_type="YARD_SCAN_FOREIGN", user_id=p.user_id, device_id=e.device_id,
                               event_id=e.event_id, plant=plant, ref=slip.slip_no if slip else None, force=True)
+                lpnsvc.set_zone(pal, "YARD"); lpnsvc.set_load(db, pal, "EMPTY")
                 if slip:
                     db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pal.pallet_no, declared=False, received=True, exception="FOREIGN"))
-                return "EXCEPTION", f"{pal.pallet_no} HELD for {pal.home_plant}"
+                return "EXCEPTION", f"{pal.pallet_no} HELD for {pal.home_plant}" + (f" | ⚠ {alert}" if alert else "")
             exc = None
             if slip:
                 line = db.query(models.ReturnSlipLine).filter_by(slip_no=slip.slip_no, pallet_no=pal.pallet_no).first()
@@ -101,9 +125,12 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
             to = "DAMAGED" if pl.get("damaged") else "AVAILABLE"
             services.move(db, pal, to, event_type="YARD_SCAN", user_id=p.user_id, device_id=e.device_id, event_id=e.event_id,
                           plant=plant, ref=slip.slip_no if slip else None, remarks=pl.get("remarks"), force=pal.status in ("AVAILABLE", "ALLOCATED"))
+            lpnsvc.set_zone(pal, "YARD"); lpnsvc.set_load(db, pal, "EMPTY")
+            for l in db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED"])).all():
+                l.pallet_no = None
             if pl.get("damaged") and slip:
                 db.query(models.ReturnSlipLine).filter_by(slip_no=slip.slip_no, pallet_no=pal.pallet_no).update({"exception": "DAMAGED"})
-            return ("EXCEPTION" if exc or pl.get("damaged") else "APPLIED"), f"{pal.pallet_no} {to}" + (f" ({exc})" if exc else "")
+            return ("EXCEPTION" if exc or alert or pl.get("damaged") else "APPLIED"), f"{pal.pallet_no} {to}" + (f" ({exc})" if exc else "") + (f" | ⚠ {alert}" if alert else "")
         if t == "DAMAGE_MARK":
             p.require("DAMAGE_MARK")
             tag, pal = services.resolve_tag(db, pl["scanned"])
@@ -167,19 +194,29 @@ def pull(since: datetime | None = None, p: Principal = Depends(current_user), db
     if since:
         pq = pq.filter(models.Pallet.updated_at >= since)
     pallets = [{"pallet_no": x.pallet_no, "tag": x.current_tag, "home": x.home_plant, "type": x.pallet_type, "status": x.status,
-                "customer": x.customer_code, "picklist": x.picklist_no} for x in pq.all()]
+                "customer": x.customer_code, "picklist": x.picklist_no, "zone": x.zone, "load": x.load_state, "load_ref": x.load_ref,
+                "location": x.location_plant} for x in pq.all()]
+    lq = db.query(models.Lpn).filter(models.Lpn.plant_code == p.plant, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED", "PDI_OK"]))
+    if since:
+        lq = lq.filter(models.Lpn.updated_at >= since)
+    lpns = [{"lpn": l.lpn_no, "part": l.part_no, "qty": l.qty, "pallet": l.pallet_no, "status": l.status, "reserved_for": l.reserved_for,
+             "picklist": l.picklist_no} for l in lq.all()]
     tags = [] if since else [{"tag": t.tag_no, "pallet": t.pallet_no, "status": t.status} for t in db.query(models.Tag).filter_by(plant_code=p.plant).all()]
     picklists = [{"picklist_no": k.picklist_no, "customer": k.customer_code, "type": k.pallet_type, "qty": k.qty, "status": k.status,
+                  "dispatch_type": k.dispatch_type, "part_no": k.part_no, "part_qty": k.part_qty, "to_plant": k.to_plant,
+                  "picked_qty": lpnsvc.picked_qty(db, k.picklist_no),
                   "scanned": db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count()}
-                 for k in db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.status.in_(["OPEN", "SO_PENDING", "READY"])).all()]
+                 for k in db.query(models.PickList).filter(models.PickList.plant_code == p.plant,
+                                                           models.PickList.status.in_(["OPEN", "SO_PENDING", "READY", "PDI_PENDING", "PDI_TXN_PENDING"])).all()]
     slips = [{"slip_no": sl.slip_no, "customer": sl.customer_code, "mode": sl.mode, "qty": sl.declared_qty, "status": sl.status,
               "pallets": [l.pallet_no for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no, declared=True).all()]}
              for sl in db.query(models.ReturnSlip).filter(models.ReturnSlip.plant_code == p.plant, models.ReturnSlip.status != "CLOSED").all()]
     customers = [{"code": c.code, "name": c.name, "return_mode": c.return_mode} for c in db.query(models.Customer).filter_by(plant_code=p.plant, active=True).all()]
     plant = db.get(models.Plant, p.plant)
     return {"server_time": utcnow().isoformat(), "full": since is None, "plant": {"code": plant.code, "name": plant.name,
-            "accept_other_plant_default": plant.accept_other_plant_default, "challan_source": plant.challan_source},
-            "pallets": pallets, "tags": tags, "picklists": picklists, "slips": slips, "customers": customers}
+            "accept_other_plant_default": plant.accept_other_plant_default, "challan_source": plant.challan_source,
+            "wms": lpnsvc.wms_status(db, p.plant)},
+            "pallets": pallets, "lpns": lpns, "tags": tags, "picklists": picklists, "slips": slips, "customers": customers}
 
 
 @router.get("/monitor")

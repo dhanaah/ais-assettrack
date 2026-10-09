@@ -9,9 +9,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from . import config, models, integration
-from .db import engine, Base, SessionLocal
-from .security import ROLE_SEED, hash_pw
-from .routers import auth, masters, imports, sync, documents, reports, external, prints, activity
+from .db import engine, Base, SessionLocal, add_missing_columns
+from .security import ROLE_SEED, NEW_PERMS, hash_pw
+from .routers import auth, masters, imports, sync, documents, reports, external, prints, activity, parts
 from .activity import ActivityMiddleware
 
 log = logging.getLogger("pallet")
@@ -23,6 +23,11 @@ def seed(db: Session):
         if not r:
             r = models.Role(code=code, name=name, scope=scope); db.add(r)
             r.permissions = [models.RolePermission(role_code=code, perm=x) for x in perms]
+        else:   # upgrade: add permissions introduced in newer versions (never removes admin edits)
+            have = {x.perm for x in r.permissions}
+            for x in perms:
+                if x not in have and x in NEW_PERMS:
+                    r.permissions.append(models.RolePermission(role_code=code, perm=x))
     if db.query(models.User).count() == 0:
         u = models.User(user_id=config.BOOTSTRAP_ADMIN_USER, full_name="Central Admin", password_hash=hash_pw(config.BOOTSTRAP_ADMIN_PASS),
                         plant_code=None, supervisor_allowed=True, must_change_pw=True)
@@ -35,6 +40,7 @@ def seed(db: Session):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    add_missing_columns()
     with SessionLocal() as db:
         seed(db)
     yield
@@ -42,7 +48,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=config.APP_NAME, version=config.APP_VERSION, lifespan=lifespan,
               description=f"{config.DEVELOPER} · Returnable pallet asset tracking for AIS Glass")
-for r in (auth, masters, imports, sync, documents, reports, external, prints, activity):
+for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts):
     app.include_router(r.router)
 app.include_router(external.admin)
 app.add_middleware(ActivityMiddleware)

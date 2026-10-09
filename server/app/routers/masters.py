@@ -40,6 +40,9 @@ class PlantIn(BaseModel):
     ebs_org_id: str | None = None
     gcs_endpoint: str | None = None
     holding_days_default: int = 30
+    wms_stale_hours: int | None = 4
+    pdi_subinv: str | None = None
+    reject_subinv: str | None = None
     active: bool = True
     notes: str | None = None
 

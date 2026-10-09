@@ -3,7 +3,7 @@ EBS SO posting and GCS calls are stubs behind integration.py; they queue for ret
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from .. import models, services, integration
+from .. import models, services, integration, lpn as lpnsvc
 from ..db import get_db
 from ..security import current_user, need, Principal, audit, verify_supervisor_pin
 from ..models import utcnow
@@ -17,8 +17,12 @@ def row(o):
 
 # ---------------------------------------------------------------- pick lists
 class PickListIn(BaseModel):
-    customer_code: str
-    qty: int
+    customer_code: str | None = None
+    qty: int                           # pallets
+    dispatch_type: str = "CUSTOMER"    # CUSTOMER | STOCK_TRANSFER | EMPTY_RETURN | PALLET_ONLY
+    blanket_id: int | None = None      # CUSTOMER / STOCK_TRANSFER: blanket order is the SO master
+    part_qty: int | None = None
+    to_plant: str | None = None        # EMPTY_RETURN destination (pallet home plant)
     pallet_type: str | None = None
     transporter_code: str | None = None
     picklist_no: str | None = None     # device-generated number allowed (offline)
@@ -50,34 +54,105 @@ def get_picklist(no: str, p: Principal = Depends(current_user), db: Session = De
 
 
 @router.post("/picklists")
-def create_picklist(body: PickListIn, request: Request, p: Principal = Depends(need("PICKLIST_CREATE")), db: Session = Depends(get_db)):
+def create_picklist(body: PickListIn, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Release. Part dispatch: WMS stock must be fresh, blanket controls PO + schedule, LPNs reserved FIFO.
+    SO is NOT pushed here - only after PDI passes and sub-inventory transfers are confirmed."""
     if not p.plant:
         raise HTTPException(400, "Plant user required")
-    cust = db.query(models.Customer).filter_by(code=body.customer_code, plant_code=p.plant, active=True).first()
-    if not cust:
-        raise HTTPException(400, "Customer not mapped to this plant")
+    dt = (body.dispatch_type or "CUSTOMER").upper()
     if body.qty <= 0:
-        raise HTTPException(400, "Qty must be > 0")
-    avail = db.query(models.Pallet).filter_by(home_plant=p.plant, status="AVAILABLE")
-    if body.pallet_type:
-        avail = avail.filter_by(pallet_type=body.pallet_type)
-    n_av = avail.count()
-    if n_av < body.qty:
-        raise HTTPException(400, f"Only {n_av} pallets available" + (f" of type {body.pallet_type}" if body.pallet_type else ""))
-    no = body.picklist_no or services.doc_number(db, p.plant, "PL")
+        raise HTTPException(400, "Pallet qty must be > 0")
+    no = body.picklist_no or services.doc_number(db, p.plant, "RT" if dt == "EMPTY_RETURN" else "PL")
     if db.get(models.PickList, no):
         raise HTTPException(400, "Pick list number exists")
-    k = models.PickList(picklist_no=no, plant_code=p.plant, customer_code=cust.code, transporter_code=body.transporter_code,
-                        pallet_type=body.pallet_type, qty=body.qty, created_by=p.user_id, remarks=body.remarks, status="SO_PENDING")
-    db.add(k); db.flush()
-    ok, so, msg = integration.post_sale_order(db, k)
-    if ok:
-        k.so_number = so; k.status = "OPEN"
-    else:
-        integration.queue_retry(db, "EBS_SO", k.picklist_no, msg)
-    audit(db, p, "PICKLIST_CREATE", "picklist", no, None, body.model_dump(), request)
+    try:
+        if dt == "EMPTY_RETURN":
+            p.require("EMPTY_RETURN")
+            to = (body.to_plant or "").upper()
+            if not db.get(models.Plant, to) or to == p.plant:
+                raise services.RuleError("Select the origin (home) plant of the pallets")
+            n = db.query(models.Pallet).filter(models.Pallet.home_plant == to, models.Pallet.location_plant == p.plant,
+                                               models.Pallet.status.in_(["HELD", "IN_WIP"])).count()
+            if n < body.qty:
+                raise services.RuleError(f"Only {n} pallets of {to} held here")
+            k = models.PickList(picklist_no=no, plant_code=p.plant, customer_code=to, to_plant=to, dispatch_type=dt, qty=body.qty,
+                                transporter_code=body.transporter_code, created_by=p.user_id, remarks=body.remarks, status="OPEN")
+            db.add(k)
+            audit(db, p, "EMPTY_RETURN_CREATE", "picklist", no, None, body.model_dump(), request)
+            db.commit()
+            return row(k)
+        p.require("PICKLIST_CREATE")
+        if dt == "PALLET_ONLY":
+            cust = db.query(models.Customer).filter_by(code=body.customer_code, plant_code=p.plant, active=True).first()
+            if not cust:
+                raise services.RuleError("Customer not mapped to this plant")
+            avail = db.query(models.Pallet).filter_by(home_plant=p.plant, status="AVAILABLE")
+            if body.pallet_type:
+                avail = avail.filter_by(pallet_type=body.pallet_type)
+            if avail.count() < body.qty:
+                raise services.RuleError(f"Only {avail.count()} pallets available")
+            k = models.PickList(picklist_no=no, plant_code=p.plant, customer_code=cust.code, transporter_code=body.transporter_code, dispatch_type=dt,
+                                pallet_type=body.pallet_type, qty=body.qty, created_by=p.user_id, remarks=body.remarks, status="SO_PENDING")
+            db.add(k); db.flush()
+            ok, so, msg = integration.post_sale_order(db, k)
+            if ok:
+                k.so_number = so; k.status = "OPEN"
+            else:
+                integration.queue_retry(db, "EBS_SO", k.picklist_no, msg)
+            audit(db, p, "PICKLIST_CREATE", "picklist", no, None, body.model_dump(), request)
+            db.commit()
+            return row(k) | {"so_message": msg}
+        if dt not in lpnsvc.PART_TYPES:
+            raise services.RuleError("dispatch_type must be CUSTOMER, STOCK_TRANSFER, EMPTY_RETURN or PALLET_ONLY")
+        lpnsvc.require_fresh_wms(db, p.plant)
+        bo = db.get(models.BlanketOrder, body.blanket_id) if body.blanket_id else None
+        if not bo:
+            raise services.RuleError("Select the blanket order (part / PO)")
+        if not body.part_qty or body.part_qty <= 0:
+            raise services.RuleError("Part qty must be > 0")
+        if bo.dispatch_type != dt:
+            raise services.RuleError(f"Blanket {bo.blanket_no} is for {bo.dispatch_type}")
+        lpnsvc.validate_blanket(db, bo, p.plant, bo.customer_code, body.part_qty)
+        if dt == "CUSTOMER" and not db.query(models.Customer).filter_by(code=bo.customer_code, plant_code=p.plant, active=True).first():
+            raise services.RuleError("Customer not mapped to this plant")
+        avail = db.query(models.Pallet).filter_by(home_plant=p.plant, status="AVAILABLE").count()
+        if avail < body.qty:
+            raise services.RuleError(f"Only {avail} pallets available")
+        k = models.PickList(picklist_no=no, plant_code=p.plant, customer_code=bo.customer_code, transporter_code=body.transporter_code,
+                            dispatch_type=dt, to_plant=bo.to_plant if dt == "STOCK_TRANSFER" else None, blanket_id=bo.id,
+                            part_no=bo.part_no, part_qty=body.part_qty, po_number=bo.po_number, pallet_type=body.pallet_type,
+                            qty=body.qty, created_by=p.user_id, remarks=body.remarks, status="OPEN")
+        db.add(k); db.flush()
+        reserved = lpnsvc.reserve(db, k)
+    except services.RuleError as ex:
+        db.rollback()
+        raise HTTPException(400, str(ex))
+    audit(db, p, "PICKLIST_CREATE", "picklist", no, None, body.model_dump() | {"reserved": reserved}, request)
     db.commit()
-    return row(k) | {"so_message": msg}
+    return row(k) | {"reserved_lpns": reserved}
+
+
+@router.post("/picklists/{no}/cancel")
+def cancel_picklist(no: str, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    k = db.get(models.PickList, no)
+    if not k:
+        raise HTTPException(404, "Not found")
+    p.require_plant(k.plant_code)
+    p.require_any("PICKLIST_CREATE", "EMPTY_RETURN")
+    if k.status not in ("OPEN", "SO_PENDING", "PDI_PENDING"):
+        raise HTTPException(400, f"Cannot cancel at {k.status}" + (" - SO already in EBS, cancel there first" if k.so_number else ""))
+    for line in db.query(models.PickListLine).filter_by(picklist_no=no).all():
+        pal = db.get(models.Pallet, line.pallet_no)
+        if pal and pal.status == "ALLOCATED":
+            services.move(db, pal, "HELD" if pal.home_plant != k.plant_code else "AVAILABLE", event_type="PICKLIST_CANCEL",
+                          user_id=p.user_id, plant=k.plant_code, ref=no, force=True)
+    for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all():
+        db.delete(r)
+    n = lpnsvc.release_reservations(db, no, only_unpicked=False)
+    k.status = "CANCELLED"
+    audit(db, p, "PICKLIST_CANCEL", "picklist", no, None, {"released_lpns": n}, request)
+    db.commit()
+    return row(k)
 
 
 class QtyIn(BaseModel):
@@ -115,6 +190,17 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(need("DOC
     if k.status not in ("OPEN", "SO_PENDING"):
         raise HTTPException(400, f"Pick list is {k.status}")
     scanned = db.query(models.PickListLine).filter_by(picklist_no=no).count()
+    if k.dispatch_type in lpnsvc.PART_TYPES:
+        got = lpnsvc.picked_qty(db, no)
+        if got != k.part_qty:
+            raise HTTPException(400, f"Pick List Control failed: part {k.part_no} picked {got} vs {k.part_qty}")
+        if scanned < 1 or scanned > k.qty:
+            raise HTTPException(400, f"Pick List Control failed: {scanned} pallets vs planned {k.qty}")
+        k.qty = scanned
+        k.status = "PDI_PENDING"            # QA / PDI next; SO goes to EBS only after PDI
+        audit(db, p, "PICKLIST_CONFIRM", "picklist", no, request=request)
+        db.commit()
+        return row(k)
     if scanned != k.qty:
         raise HTTPException(400, f"Pick List Control failed: scanned {scanned} vs qty {k.qty}")
     if k.status == "SO_PENDING":
@@ -136,6 +222,28 @@ def challan(no: str, request: Request, p: Principal = Depends(need("CHALLAN_REQU
     if k.challan_no:
         raise HTTPException(400, f"Challan Control: already challaned ({k.challan_no})")
     plant = db.get(models.Plant, k.plant_code)
+    if k.dispatch_type == "EMPTY_RETURN":     # only a challan (no SO / invoice); EBS generates challan + e-way bill
+        pallets = [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=no).all()]
+        ok, cno, ewb, msg = integration.create_return_challan(db, k, pallets)
+        if not ok:
+            raise HTTPException(502, f"EBS return challan / e-way bill failed: {msg}")
+        k.challan_no, k.ewaybill_no, k.status = cno, ewb, "CHALLANED"
+        for pn in pallets:
+            pal = db.get(models.Pallet, pn)
+            if pal:
+                pal.challan_ref = cno
+        audit(db, p, "RETURN_CHALLAN_CREATE", "picklist", no, None, {"challan_no": cno, "ewaybill": ewb}, request)
+        db.commit()
+        return row(k) | {"source": "ORACLE"}
+    if k.dispatch_type in lpnsvc.PART_TYPES:   # challan goes with the EBS invoice
+        if not k.so_number:
+            raise HTTPException(400, "SO not yet created in EBS")
+        if not k.invoice_no:
+            ok, inv, invdt, msg = integration.fetch_invoice(db, k)
+            if not ok:
+                db.commit()
+                raise HTTPException(409, f"{msg} - raise the invoice in EBS, then press Challan again")
+            k.invoice_no, k.invoice_date = inv, invdt
     cust = db.query(models.Customer).filter_by(code=k.customer_code, plant_code=k.plant_code).first()
     source = (cust.challan_source_override if cust and cust.challan_source_override else plant.challan_source).upper()
     if source == "ORACLE":
@@ -204,7 +312,21 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
             raise HTTPException(403, "Supervisor PIN required for manual override")
     for l in db.query(models.PickListLine).filter_by(picklist_no=no).all():
         pal = db.get(models.Pallet, l.pallet_no)
-        services.move(db, pal, "AT_CUSTOMER", event_type="GATE_OUT", user_id=p.user_id, plant=None, customer=k.customer_code, ref=k.challan_no)
+        if k.dispatch_type == "EMPTY_RETURN":
+            services.move(db, pal, "IN_TRANSIT", event_type="GATE_OUT_EMPTY_RETURN", user_id=p.user_id, plant=None, ref=k.challan_no, force=True)
+            pal.location_plant = None; pal.customer_code = k.to_plant; pal.challan_ref = k.challan_no
+            lpnsvc.set_load(db, pal, "EMPTY"); lpnsvc.set_zone(pal, None)
+            continue
+        dest = k.to_plant if k.dispatch_type == "STOCK_TRANSFER" else k.customer_code
+        services.move(db, pal, "AT_CUSTOMER", event_type="GATE_OUT", user_id=p.user_id, plant=None, customer=dest, ref=k.challan_no)
+        lpnsvc.set_zone(pal, None)
+        if k.dispatch_type in lpnsvc.PART_TYPES:
+            lpns = db.query(models.PickListLpn).filter_by(picklist_no=no, pallet_no=pal.pallet_no).all()
+            for r in lpns:
+                x = db.get(models.Lpn, r.lpn_no)
+                if x:
+                    x.status, x.reserved_for = "DISPATCHED", None
+            lpnsvc.set_load(db, pal, "LOADED", f"{k.part_no} x{sum(r.qty for r in lpns)} inv {k.invoice_no or ''}")
     k.status = "DISPATCHED"
     if k.gcs_no:
         integration.approve_gcs_outward(db, k)
@@ -281,9 +403,15 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
                 warnings.append(f"{scv}: unknown tag, listed as declared"); pno = scv
             else:
                 pno = pal.pallet_no
-                if pal.customer_code != cust.code or pal.status != "AT_CUSTOMER":
+                miss = lpnsvc.check_return_slip(db, pal, p.plant, no, cust.code, user_id=p.user_id)
+                if miss:
+                    warnings.append(miss)
+                    services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_MISSED_DISPATCH", user_id=p.user_id, ref=no, customer=cust.code, force=True)
+                    lpnsvc.set_load(db, pal, "EMPTY")
+                elif pal.customer_code != cust.code or pal.status != "AT_CUSTOMER":
                     warnings.append(f"{pno}: ledger shows {pal.status} {pal.customer_code or ''}")
                 else:
+                    lpnsvc.set_load(db, pal, "EMPTY")
                     services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP", user_id=p.user_id, ref=no, customer=cust.code)
             if pno in seen:
                 continue

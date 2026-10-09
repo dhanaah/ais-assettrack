@@ -16,6 +16,11 @@ from .models import utcnow
 MODE = os.getenv("PALLET_INTEGRATION_MODE", "STUB").upper()
 EBS_SO_URL = os.getenv("PALLET_EBS_SO_URL", "")
 EBS_CHALLAN_URL = os.getenv("PALLET_EBS_CHALLAN_URL", "")
+EBS_SUBINV_URL = os.getenv("PALLET_EBS_SUBINV_URL", "")        # POST sub-inventory transfer of an LPN
+EBS_ONHAND_URL = os.getenv("PALLET_EBS_ONHAND_URL", "")        # GET  ?lpn=  -> {subinventory, qty}   (2nd confirmation)
+EBS_INVOICE_URL = os.getenv("PALLET_EBS_INVOICE_URL", "")      # GET  ?so=   -> {invoice_no, invoice_date}
+EBS_RETURN_CHALLAN_URL = os.getenv("PALLET_EBS_RETURN_CHALLAN_URL", "")   # POST empty-pallet challan -> {challan_no, ewaybill_no}
+EBS_WMS_STOCK_URL = os.getenv("PALLET_EBS_WMS_STOCK_URL", "")  # GET  ?org=   -> [{lpn, part_no, qty, subinventory, locator, pallet_no}]
 EBS_AUTH = os.getenv("PALLET_EBS_AUTH", "")          # "user:pass"
 TIMEOUT = int(os.getenv("PALLET_INTEGRATION_TIMEOUT", "20"))
 
@@ -56,6 +61,14 @@ def queue_retry(db: Session, kind: str, ref: str, error: str):
     q.last_error = (error or "")[:500]
 
 
+def _http_get(url, params):
+    import httpx
+    auth = tuple(EBS_AUTH.split(":", 1)) if EBS_AUTH else None
+    r = httpx.get(url, params=params, auth=auth, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
 def _http_post(url, payload):
     import httpx
     auth = tuple(EBS_AUTH.split(":", 1)) if EBS_AUTH else None
@@ -66,8 +79,20 @@ def _http_post(url, payload):
 
 # ---------------------------------------------------------------- Oracle EBS
 def post_sale_order(db: Session, pk) -> tuple[bool, str | None, str]:
-    payload = {"org_id": None, "customer": pk.customer_code, "item": pk.pallet_type or "PALLET", "qty": pk.qty,
-               "picklist_no": pk.picklist_no, "returnable": True}
+    from . import models
+    if pk.part_no:      # FG part dispatch: blanket order is the master for PO / schedule
+        bo = db.get(models.BlanketOrder, pk.blanket_id) if pk.blanket_id else None
+        lpns = db.query(models.PickListLpn).filter(models.PickListLpn.picklist_no == pk.picklist_no,
+                                                   models.PickListLpn.pdi_result == "OK").all()
+        plant = db.get(models.Plant, pk.plant_code)
+        payload = {"org_id": plant.ebs_org_id if plant else None, "order_type": "INTERNAL" if pk.dispatch_type == "STOCK_TRANSFER" else "STANDARD",
+                   "customer": pk.customer_code, "to_plant": pk.to_plant, "blanket_no": bo.blanket_no if bo else None,
+                   "po_number": pk.po_number, "item": pk.part_no, "customer_item": bo.customer_part_no if bo else None,
+                   "qty": pk.part_qty, "picklist_no": pk.picklist_no, "lpns": [{"lpn": l.lpn_no, "qty": l.qty} for l in lpns],
+                   "pallets": pk.qty}
+    else:
+        payload = {"org_id": None, "customer": pk.customer_code, "item": pk.pallet_type or "PALLET", "qty": pk.qty,
+                   "picklist_no": pk.picklist_no, "returnable": True}
     if MODE == "OFF":
         _log(db, "EBS", "SO_CREATE", pk.picklist_no, False, "integration OFF", payload); return False, None, "EBS unavailable (OFF) - queued"
     if MODE == "STUB":
@@ -93,6 +118,102 @@ def create_oracle_challan(db: Session, pk) -> tuple[bool, str | None, str]:
         c = str(resp.get("challan_no")); _log(db, "EBS", "CHALLAN", pk.picklist_no, True, "ok", payload, resp); return True, c, "ok"
     except Exception as e:
         _log(db, "EBS", "CHALLAN", pk.picklist_no, False, str(e), payload); return False, None, str(e)
+
+
+def subinv_transfer(db: Session, t) -> tuple[bool, str | None, str]:
+    """Confirmation 1: EBS accepts the LPN sub-inventory transfer and returns its transaction id."""
+    payload = {"lpn": t.lpn_no, "org": t.plant_code, "from_subinv": t.from_subinv, "to_subinv": t.to_subinv,
+               "to_locator": t.to_locator, "qty": t.qty, "reason": t.reason, "ref": t.picklist_no}
+    if MODE == "OFF":
+        _log(db, "EBS", "SUBINV_XFER", t.lpn_no, False, "OFF", payload); return False, None, "EBS unavailable - queued"
+    if MODE == "STUB":
+        tid = f"MTL{t.id or 0:07d}"
+        _log(db, "EBS", "SUBINV_XFER", t.lpn_no, True, "stub", payload, {"txn_id": tid}); return True, tid, "stub"
+    try:
+        resp = _http_post(EBS_SUBINV_URL, payload)
+        if str(resp.get("status", "S")).upper() not in ("S", "SUCCESS", "OK"):
+            raise RuntimeError(resp.get("message") or f"EBS status {resp.get('status')}")
+        tid = str(resp.get("txn_id") or resp.get("TRANSACTION_ID"))
+        _log(db, "EBS", "SUBINV_XFER", t.lpn_no, True, "ok", payload, resp); return True, tid, "ok"
+    except Exception as e:
+        _log(db, "EBS", "SUBINV_XFER", t.lpn_no, False, str(e), payload); return False, None, str(e)
+
+
+def verify_lpn_onhand(db: Session, t) -> tuple[bool, str | None, str]:
+    """Confirmation 2: read back EBS on-hand and check the LPN really sits in the target sub-inventory."""
+    if MODE == "OFF":
+        _log(db, "EBS", "ONHAND_VERIFY", t.lpn_no, False, "OFF"); return False, None, "EBS unavailable"
+    if MODE == "STUB":
+        _log(db, "EBS", "ONHAND_VERIFY", t.lpn_no, True, "stub", None, {"subinventory": t.to_subinv}); return True, t.to_subinv, "stub"
+    try:
+        resp = _http_get(EBS_ONHAND_URL, {"lpn": t.lpn_no, "org": t.plant_code})
+        sub = str(resp.get("subinventory") or resp.get("SUBINVENTORY_CODE") or "")
+        ok = sub.upper() == (t.to_subinv or "").upper()
+        _log(db, "EBS", "ONHAND_VERIFY", t.lpn_no, ok, "ok" if ok else f"EBS shows {sub}", None, resp)
+        return ok, sub, "ok" if ok else f"EBS on-hand shows {sub or 'nothing'}, expected {t.to_subinv}"
+    except Exception as e:
+        _log(db, "EBS", "ONHAND_VERIFY", t.lpn_no, False, str(e)); return False, None, str(e)
+
+
+def fetch_invoice(db: Session, pk) -> tuple[bool, str | None, datetime | None, str]:
+    if MODE == "OFF":
+        _log(db, "EBS", "INVOICE_FETCH", pk.picklist_no, False, "OFF"); return False, None, None, "EBS unavailable"
+    if MODE == "STUB":
+        inv = f"INV{pk.plant_code}{int(utcnow().timestamp()) % 1_000_000:06d}"
+        _log(db, "EBS", "INVOICE_FETCH", pk.picklist_no, True, "stub", {"so": pk.so_number}, {"invoice_no": inv}); return True, inv, utcnow(), "stub"
+    try:
+        resp = _http_get(EBS_INVOICE_URL, {"so": pk.so_number})
+        inv = resp.get("invoice_no") or resp.get("TRX_NUMBER")
+        if not inv:
+            _log(db, "EBS", "INVOICE_FETCH", pk.picklist_no, False, "not yet invoiced", {"so": pk.so_number}, resp)
+            return False, None, None, f"Invoice not yet generated in EBS for SO {pk.so_number}"
+        dt = resp.get("invoice_date") or resp.get("TRX_DATE")
+        dt = datetime.fromisoformat(str(dt)[:19]) if dt else utcnow()
+        _log(db, "EBS", "INVOICE_FETCH", pk.picklist_no, True, "ok", {"so": pk.so_number}, resp); return True, str(inv), dt, "ok"
+    except Exception as e:
+        _log(db, "EBS", "INVOICE_FETCH", pk.picklist_no, False, str(e)); return False, None, None, str(e)
+
+
+def create_return_challan(db: Session, pk, pallets: list) -> tuple[bool, str | None, str | None, str]:
+    """Empty pallets back to origin plant: EBS creates the delivery challan AND the e-way bill."""
+    from . import models
+    fp, tp = db.get(models.Plant, pk.plant_code), db.get(models.Plant, pk.to_plant)
+    payload = {"from_org": fp.ebs_org_id if fp else pk.plant_code, "to_org": tp.ebs_org_id if tp else pk.to_plant,
+               "from_gstin": fp.gstin if fp else None, "to_gstin": tp.gstin if tp else None, "picklist_no": pk.picklist_no,
+               "vehicle": pk.vehicle_no, "transporter": pk.transporter_code, "qty": len(pallets), "pallets": pallets,
+               "purpose": "RETURN OF EMPTY RETURNABLE PALLETS", "ewaybill": True}
+    if MODE == "OFF":
+        _log(db, "EBS", "RETURN_CHALLAN", pk.picklist_no, False, "OFF", payload); return False, None, None, "EBS unavailable"
+    if MODE == "STUB":
+        n = int(utcnow().timestamp()) % 100000
+        c, ewb = f"ORC-RT-{pk.plant_code}-{n:05d}", f"{n:012d}"[-12:]
+        _log(db, "EBS", "RETURN_CHALLAN", pk.picklist_no, True, "stub", payload, {"challan_no": c, "ewaybill_no": ewb}); return True, c, ewb, "stub"
+    try:
+        resp = _http_post(EBS_RETURN_CHALLAN_URL, payload)
+        c, ewb = resp.get("challan_no"), resp.get("ewaybill_no") or resp.get("EWB_NO")
+        if not c or not ewb:
+            raise RuntimeError(resp.get("message") or "EBS did not return challan / e-way bill number")
+        _log(db, "EBS", "RETURN_CHALLAN", pk.picklist_no, True, "ok", payload, resp); return True, str(c), str(ewb), "ok"
+    except Exception as e:
+        _log(db, "EBS", "RETURN_CHALLAN", pk.picklist_no, False, str(e), payload); return False, None, None, str(e)
+
+
+def pull_wms_stock(db: Session, plant_code: str) -> tuple[bool, list | None, str]:
+    from . import models
+    pl = db.get(models.Plant, plant_code)
+    if MODE == "OFF":
+        _log(db, "EBS", "WMS_PULL", plant_code, False, "OFF"); return False, None, "EBS unavailable - upload the WMS Excel instead"
+    if MODE == "STUB":   # stub: EBS returns what we already hold (keeps test data stable)
+        rows = [{"lpn": l.lpn_no, "part_no": l.part_no, "qty": l.qty, "subinventory": l.wms_subinv or l.subinventory, "locator": l.locator,
+                 "pallet_no": l.pallet_no, "desc": l.part_desc}
+                for l in db.query(models.Lpn).filter(models.Lpn.plant_code == plant_code, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED", "PDI_OK"])).all()]
+        _log(db, "EBS", "WMS_PULL", plant_code, True, f"stub {len(rows)} rows"); return True, rows, "stub"
+    try:
+        resp = _http_get(EBS_WMS_STOCK_URL, {"org": pl.ebs_org_id if pl else plant_code})
+        rows = resp if isinstance(resp, list) else resp.get("rows", [])
+        _log(db, "EBS", "WMS_PULL", plant_code, True, f"{len(rows)} rows"); return True, rows, "ok"
+    except Exception as e:
+        _log(db, "EBS", "WMS_PULL", plant_code, False, str(e)); return False, None, str(e)
 
 
 # ---------------------------------------------------------------- GCS
@@ -154,6 +275,8 @@ def close_gcs_inward(db: Session, sl, received: int):
 def run_retries(db: Session, max_attempts: int = 50) -> dict:
     from . import models
     done = failed = 0
+    from . import lpn as lpnsvc
+    lpnsvc.process_pending_txns(db)
     for q in db.query(RetryQueue).filter_by(status="PENDING").all():
         q.attempts += 1
         ok = False; msg = ""
@@ -162,7 +285,7 @@ def run_retries(db: Session, max_attempts: int = 50) -> dict:
             if pk and pk.status == "SO_PENDING":
                 ok, so, msg = post_sale_order(db, pk)
                 if ok:
-                    pk.so_number = so; pk.status = "OPEN"
+                    lpnsvc.on_so_created(db, pk, so)
             else:
                 ok = True
         elif q.kind == "GCS_OUT":

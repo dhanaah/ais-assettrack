@@ -2,7 +2,7 @@
 // Runs every 60 s when online and immediately after each scan when online. Developed by DT
 import NetInfo from '@react-native-community/netinfo';
 import { api, APP_VERSION, hasToken } from './api';
-import { pendingEvents, markEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
+import { eventResult, pendingEvents, markEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
 
 export const state = { online: false, syncing: false, pending: 0, lastSync: null, lastError: null, serverVersion: null };
 const listeners = new Set();
@@ -57,6 +57,18 @@ export async function syncNow({ full = false } = {}) {
     state.lastError = e.message; logActivity('SYNC_ERROR', null, e.message); state.online = !e.offline && state.online;
     if (e.status === 401) state.lastError = 'LOGIN';
   } finally { state.syncing = false; state.pending = await pendingCount(); emit(); }
+}
+
+/** Send one queued event now (when online) and return the server verdict so missed-scan alerts show at once. */
+export async function pushAndResult(event_id) {
+  if (!state.online) return { status: 'PENDING', result: 'saved offline - will sync' };
+  for (let i = 0; i < 3; i++) {
+    await syncNow().catch(() => {});
+    const r = await eventResult(event_id);
+    if (r && r.status !== 'PENDING') return r;
+    await new Promise(res => setTimeout(res, 700));
+  }
+  return { status: 'PENDING', result: 'queued' };
 }
 
 let timer;

@@ -1,52 +1,82 @@
-// Dock out-ward scan: pick list → scan each tag → Pick List Control → confirm (online). Developed by DT
+// Dock out-ward scan. Part pick list: scan LPN (fetches its pallet) or pallet (fetches all its LPNs), any order.
+// Empty return: scan other-plant empty pallets. Pick List Control -> confirm (online). Missed-scan alerts shown at once. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
-import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen } from '../ui/kit';
-import { listPicklists, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal } from '../lib/db';
-import { validateDockScan } from '../lib/rules';
-import { logActivity } from '../lib/db';
+import { S, C, Btn, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen, Page } from '../ui/kit';
+import { listPicklists, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity } from '../lib/db';
+import { validateDockScan2 } from '../lib/rules';
 import { api } from '../lib/api';
-import { state as sync, syncNow } from '../lib/sync';
+import { state as sync, syncNow, pushAndResult } from '../lib/sync';
+
+const isPart = (k) => ['CUSTOMER', 'STOCK_TRANSFER'].includes(k?.dispatch_type);
+const label = (k) => k.dispatch_type === 'EMPTY_RETURN' ? `Empty return → ${k.to_plant}` : isPart(k) ? `${k.customer} · ${k.part_no} × ${k.part_qty}` : `Customer ${k.customer} · pallets only`;
 
 export default function Dock({ onBack }) {
-  const [lists, setLists] = useState([]); const [pk, setPk] = useState(null); const [scans, setScans] = useState([]); const [msg, toast] = useToast();
-  const load = async () => setLists(await listPicklists());
+  const [lists, setLists] = useState([]); const [pk, setPk] = useState(null); const [scans, setScans] = useState([]); const [lpns, setLpns] = useState([]);
+  const [waitLpn, setWaitLpn] = useState(null); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
+  const load = async () => setLists(await listPicklists(['OPEN']));
   useEffect(() => { load(); }, []);
-  const open = async (k) => { setPk(k); setScans(await localScans(k.picklist_no)); };
+  const refresh = async (k = pk) => { setScans(await localScans(k.picklist_no)); setLpns(await lpnScans(k.picklist_no)); };
+  const open = async (k) => { setPk(k); setWaitLpn(null); setAlert(null); await refresh(k); };
 
   const onScan = async (code) => {
-    const v = await validateDockScan(pk.picklist_no, code);
-    if (!v.ok) { toast(v.msg, v.dup ? 'warn' : 'err'); logActivity('SCAN_REJECTED_LOCAL', pk.picklist_no, v.msg, { scanned: code }); return; }
-    await addLocalScan(pk.picklist_no, v.pallet.pallet_no);
-    await setPalletLocal(v.pallet.pallet_no, { status: 'ALLOCATED', picklist: pk.picklist_no });
-    await enqueue('PALLET_SCAN_DOCK', { picklist_no: pk.picklist_no, scanned: code }, !sync.online); logActivity(sync.online ? 'SCAN_DOCK' : 'SCAN_DOCK_OFFLINE', pk.picklist_no, v.pallet.pallet_no);
-    setScans(await localScans(pk.picklist_no)); toast(`${v.pallet.pallet_no}  ${v.count}/${v.qty}`);
-    if (sync.online) syncNow().catch(() => {});
+    let first = code, second = null;
+    if (waitLpn) { first = waitLpn.lpn; second = code; }
+    const v = await validateDockScan2(pk.picklist_no, first, second);
+    if (!v.ok) {
+      if (v.needPallet) { setWaitLpn(v.lpn); return toast(v.msg, 'warn'); }
+      setWaitLpn(null); toast(v.msg, v.dup ? 'warn' : 'err'); logActivity('SCAN_REJECTED_LOCAL', pk.picklist_no, v.msg, { scanned: code }); return;
+    }
+    setWaitLpn(null);
+    if (!(await localScans(pk.picklist_no)).some(x => x.pallet_no === v.pallet.pallet_no)) await addLocalScan(pk.picklist_no, v.pallet.pallet_no);
+    await setPalletLocal(v.pallet.pallet_no, { status: 'ALLOCATED', picklist: pk.picklist_no, load: pk.dispatch_type === 'EMPTY_RETURN' ? 'EMPTY' : (v.lpns.length ? 'LOADED' : v.pallet.load) });
+    for (const l of v.lpns) { await addLpnScan(pk.picklist_no, l.lpn, v.pallet.pallet_no, l.qty); await setLpnLocal(l.lpn, { status: 'PICKED', picklist: pk.picklist_no, pallet: v.pallet.pallet_no }); }
+    const payload = { picklist_no: pk.picklist_no, scanned: first }; if (second) payload.pallet = second;
+    const id = await enqueue('PALLET_SCAN_DOCK', payload, !sync.online);
+    logActivity(sync.online ? 'SCAN_DOCK' : 'SCAN_DOCK_OFFLINE', pk.picklist_no, v.pallet.pallet_no, { lpns: v.lpns.map(l => l.lpn) });
+    await refresh();
+    toast(v.lpns.length ? `${v.pallet.pallet_no}: ${v.lpns.map(l => l.lpn).join(', ')}` : v.pallet.pallet_no, v.warn.length ? 'warn' : 'ok');
+    if (v.warn.length) setAlert(v.warn.join('\n'));
+    const r = await pushAndResult(id);
+    if (r.status === 'REJECTED') { setAlert('Server rejected: ' + r.result); toast(r.result, 'err'); await syncNow({ full: true }).catch(() => {}); await refresh(); }
+    else if (r.status === 'EXCEPTION') setAlert(r.result);
   };
-  const remove = (p) => Alert.alert('Remove pallet', p.pallet_no + ' from this list?', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => {
-    await removeLocalScan(pk.picklist_no, p.pallet_no); await setPalletLocal(p.pallet_no, { status: 'AVAILABLE', picklist: null });
-    await enqueue('PALLET_UNSCAN_DOCK', { picklist_no: pk.picklist_no, scanned: p.pallet_no }, !sync.online); setScans(await localScans(pk.picklist_no)); } }]);
+  const remove = (item, isLpn) => Alert.alert('Remove', (isLpn ? 'LPN ' + item.lpn : 'Pallet ' + item.pallet_no + ' and its LPNs') + ' from this list?', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => {
+    if (isLpn) { await removeLpnScans(pk.picklist_no, { lpn: item.lpn }); await setLpnLocal(item.lpn, { status: 'RESERVED', picklist: null }); }
+    else { await removeLocalScan(pk.picklist_no, item.pallet_no); await removeLpnScans(pk.picklist_no, { pallet: item.pallet_no }); await setPalletLocal(item.pallet_no, { status: pk.dispatch_type === 'EMPTY_RETURN' ? 'HELD' : 'AVAILABLE', picklist: null }); }
+    await enqueue('PALLET_UNSCAN_DOCK', { picklist_no: pk.picklist_no, scanned: isLpn ? item.lpn : item.pallet_no }, !sync.online); await refresh(); if (sync.online) syncNow().catch(() => {}); } }]);
+  const picked = lpns.reduce((a, x) => a + (x.qty || 0), 0);
+  const complete = isPart(pk) ? picked === pk?.part_qty && scans.length > 0 : scans.length === pk?.qty;
   const confirm = async () => {
-    if (scans.length !== pk.qty) return toast(`Pick List Control: ${scans.length} scanned vs qty ${pk.qty}`, 'err');
+    if (!complete) return toast(isPart(pk) ? `Pick List Control: part ${picked} vs ${pk.part_qty}` : `Pick List Control: ${scans.length} scanned vs qty ${pk.qty}`, 'err');
     if (!sync.online) return toast('Confirm needs the server (offline). Scans are saved; confirm when online.', 'warn');
-    try { await syncNow(); const r = await api(`/picklists/${pk.picklist_no}/confirm`, { method: 'POST' }); toast(`${pk.picklist_no} is ${r.status}`); logActivity('PICKLIST_CONFIRM', pk.picklist_no, r.status); setPk(null); await syncNow(); load(); }
+    try { await syncNow(); const r = await api(`/picklists/${pk.picklist_no}/confirm`, { method: 'POST' }); toast(`${pk.picklist_no} is ${r.status}${r.status === 'PDI_PENDING' ? ' → QA / PDI next' : ''}`); logActivity('PICKLIST_CONFIRM', pk.picklist_no, r.status); setPk(null); await syncNow(); load(); }
     catch (e) { toast(e.message, 'err'); }
   };
 
   if (!pk) return (<Screen><Header title="Dock Out-ward Scan" sub="Select a pick list" onBack={onBack} /><Page>
-    {lists.length === 0 ? <Text style={S.mute}>No open pick lists in cache. Create one on the web app, then sync.</Text> : null}
+    {lists.length === 0 ? <Text style={S.mute}>No open pick lists in cache. Release one on the web app, then sync.</Text> : null}
     {lists.map(k => <TouchableOpacity key={k.picklist_no} style={S.card} onPress={() => open(k)}>
-      <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{k.picklist_no}</Text><Pill s={k.status} /></View>
-      <Text style={S.mute}>Customer {k.customer} · {k.type || 'any type'} · qty {k.qty} · scanned {k.scanned}</Text></TouchableOpacity>)}
+      <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{k.picklist_no}</Text><Pill s={k.dispatch_type || 'PALLET_ONLY'} /></View>
+      <Text style={S.mute}>{label(k)} · pallets {k.scanned}/{k.qty}{isPart(k) ? ` · picked ${k.picked_qty}` : ''}</Text></TouchableOpacity>)}
     <Btn title="Refresh" secondary icon="refresh" onPress={async () => { await syncNow(); load(); }} /></Page><Toast msg={msg} /></Screen>);
 
-  return (<Screen><Header title={pk.picklist_no} sub={`Customer ${pk.customer} · ${pk.type || 'any'}`} onBack={() => setPk(null)} />
+  const byPallet = scans.map(p => ({ ...p, lpns: lpns.filter(l => l.pallet === p.pallet_no) }));
+  return (<Screen><Header title={pk.picklist_no} sub={label(pk)} onBack={() => setPk(null)} />
     <View style={[S.pad, { paddingBottom: 0 }]}>
-      <Glass style={{ alignItems: 'center' }}><View style={{ alignItems: 'center' }}><Ring value={`${scans.length}/${pk.qty}`} label="pallets scanned" color={scans.length === pk.qty ? C.ok : C.accent} size={96} /></View></Glass>
-      <ScanInput onScan={onScan} placeholder="Scan pallet tag" />
+      <Glass style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+        {isPart(pk) ? <Ring value={`${picked}/${pk.part_qty}`} label={`${pk.part_no} picked`} color={picked === pk.part_qty ? C.ok : C.accent} size={92} /> : null}
+        <Ring value={`${scans.length}/${pk.qty}`} label="pallets" color={complete ? C.ok : C.accent} size={92} />
+      </Glass>
+      {waitLpn ? <Text style={{ color: C.amber, fontWeight: '700', marginTop: 6 }}>LPN {waitLpn.lpn} waiting → scan its PALLET</Text> : null}
+      {alert ? <TouchableOpacity onPress={() => setAlert(null)} style={{ backgroundColor: C.warn, borderRadius: 12, padding: 10, marginTop: 6 }}><Text style={{ color: '#fff', fontWeight: '700' }}>⚠ {alert}</Text><Text style={{ color: '#fff', fontSize: 11 }}>tap to dismiss · recorded in Missed Scans</Text></TouchableOpacity> : null}
+      <ScanInput onScan={onScan} placeholder={pk.dispatch_type === 'EMPTY_RETURN' ? 'Scan empty pallet' : isPart(pk) ? 'Scan LPN or pallet' : 'Scan pallet tag'} />
     </View>
-    <FlatList style={{ flex: 1, paddingHorizontal: 14, marginTop: 8 }} data={scans} keyExtractor={x => x.pallet_no} renderItem={({ item, index }) => (
-      <TouchableOpacity onLongPress={() => remove(item)} style={[S.card, { paddingVertical: 8, marginBottom: 6, flexDirection: 'row' }]}><Text style={{ flex: 1, fontWeight: '600' }}>{index + 1}. {item.pallet_no}</Text><Text style={S.mute}>{item.ts.slice(11, 19)}</Text></TouchableOpacity>)} />
-    <View style={S.pad}><Btn title="Confirm load list (Pick List Control)" icon="checkmark-circle-outline" onPress={confirm} color={scans.length === pk.qty ? C.ok : C.accent} /><Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Long-press a row to remove</Text></View>
+    <FlatList style={{ flex: 1, paddingHorizontal: 14, marginTop: 8 }} data={byPallet} keyExtractor={x => x.pallet_no} renderItem={({ item, index }) => (
+      <View style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}>
+        <TouchableOpacity onLongPress={() => remove(item, false)} style={{ flexDirection: 'row' }}><Text style={{ flex: 1, fontWeight: '700' }}>{index + 1}. {item.pallet_no}</Text><Text style={S.mute}>{item.ts.slice(11, 19)}</Text></TouchableOpacity>
+        {item.lpns.map(l => <TouchableOpacity key={l.lpn} onLongPress={() => remove(l, true)}><Text style={[S.mute, { marginLeft: 14 }]}>• {l.lpn} × {l.qty}</Text></TouchableOpacity>)}
+      </View>)} />
+    <View style={S.pad}><Btn title={isPart(pk) ? 'Confirm → send to PDI' : 'Confirm load list (Pick List Control)'} icon="checkmark-circle-outline" onPress={confirm} color={complete ? C.ok : C.accent} /><Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Long-press a pallet or LPN to remove</Text></View>
     <Toast msg={msg} /></Screen>);
 }
