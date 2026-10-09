@@ -25,7 +25,7 @@ Developed by DT · React Native / Expo · works on rugged Android HHTs (keyboard
 Slip QR payload: `RTS|slip_no|plant|customer|qty`. Challan QR: `CHL|challan_no|picklist_no|qty`.
 
 ## Bluetooth printing
-`react-native-bluetooth-escpos-printer` (ESC/POS 2"/3"). Pair the printer in Android Bluetooth settings, then Settings → List paired printers → tap to select. Without the native module (Expo Go) the slip text is shown on screen instead.
+Optional native module `react-native-bluetooth-escpos-printer` (ESC/POS 2"/3"). It is not in the default build (keeps CI green); add it with `npm i react-native-bluetooth-escpos-printer` before `expo prebuild` when a printer is in use — the app detects it automatically and falls back to on-screen slips without it. Pair the printer in Android Bluetooth settings, then Settings → List paired printers → tap to select. Without the native module (Expo Go) the slip text is shown on screen instead.
 
 ## Build
 ```
