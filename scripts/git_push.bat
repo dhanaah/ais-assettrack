@@ -1,6 +1,7 @@
 @echo off
+set "HERE=%~dp0"
 rem Commit everything and push to GitHub (CI then builds the APK). Usage: git_push.bat "message"
-call "%~dp0_common.bat"
+call "%HERE%_common.bat"
 cd /d "%ROOT%"
 set MSG=%~1
 if "%MSG%"=="" set /p MSG=Commit message: 

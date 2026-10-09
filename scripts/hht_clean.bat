@@ -1,6 +1,7 @@
 @echo off
+set "HERE=%~dp0"
 rem Remove generated native project + caches (fixes most "weird build" problems). Re-run hht_build_apk.bat after.
-call "%~dp0_common.bat"
+call "%HERE%_common.bat"
 cd /d "%ROOT%\hht"
 rmdir /s /q android 2>nul
 rmdir /s /q .expo 2>nul

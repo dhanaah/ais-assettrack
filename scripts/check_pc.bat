@@ -1,6 +1,7 @@
 @echo off
+set "HERE=%~dp0"
 rem Writes what is installed on this PC to check_pc.log (used during setup). Developed by DT
-cd /d "%~dp0"
+cd /d "%HERE%"
 (
 echo === AIS AssetTrack PC check %date% %time% ===
 echo --- python

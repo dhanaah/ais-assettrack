@@ -1,8 +1,9 @@
 @echo off
+set "HERE=%~dp0"
 rem One-time: create virtual env + install server dependencies (no admin rights needed). Log: server_setup.log
-call "%~dp0_common.bat"
+call "%HERE%_common.bat"
 cd /d "%ROOT%\server"
-set LOG=%~dp0server_setup.log
+set LOG=%HERE%server_setup.log
 echo === server setup %date% %time% === > "%LOG%"
 if not exist .venv ( echo Creating virtual environment... & %PYTHON% -m venv .venv >> "%LOG%" 2>&1 )
 call .venv\Scripts\activate.bat

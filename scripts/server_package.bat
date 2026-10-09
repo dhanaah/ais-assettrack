@@ -1,6 +1,7 @@
 @echo off
+set "HERE=%~dp0"
 rem Zip the server for deployment to IIS (excludes venv, db, logs)
-call "%~dp0_common.bat"
+call "%HERE%_common.bat"
 cd /d "%ROOT%"
 for /f "tokens=2 delims==\"" %%v in ('findstr /c:"APP_VERSION" server\app\config.py') do set VER=%%v
 set OUT=%ROOT%\AIS_AssetTrack_Server_v%VER%.zip

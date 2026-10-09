@@ -1,6 +1,7 @@
 @echo off
+set "HERE=%~dp0"
 rem Build a release APK locally (JDK 17 + Android SDK + ANDROID_HOME required). Output copied to ROOT\dist
-call "%~dp0_common.bat"
+call "%HERE%_common.bat"
 cd /d "%ROOT%\hht"
 if "%ANDROID_HOME%"=="" if "%ANDROID_SDK_ROOT%"=="" ( echo ANDROID_HOME is not set. Install Android Studio / SDK and set ANDROID_HOME. & pause & exit /b 1 )
 if not exist android ( echo Generating native project... & call npx expo prebuild -p android --no-install )

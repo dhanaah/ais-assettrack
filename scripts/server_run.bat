@@ -1,6 +1,7 @@
 @echo off
+set "HERE=%~dp0"
 rem Run the server (dev, SQLite, auto-reload on code change). Ctrl+C to stop.
-call "%~dp0_common.bat"
+call "%HERE%_common.bat"
 cd /d "%ROOT%\server"
 if not exist .venv ( echo Run server_setup.bat first. & pause & exit /b 1 )
 call .venv\Scripts\activate.bat
