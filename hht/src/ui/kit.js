@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Vibration, ScrollView, Image } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { THEMES } from './theme';
 
@@ -45,11 +44,10 @@ export const Btn = ({ title, onPress, secondary, color, disabled, icon }) => sec
     <LinearGradient colors={gradFor(color)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ ...StyleSheet.absoluteFillObject }} />
     <View style={S.row}>{icon ? <Ionicons name={icon} size={17} color="#fff" /> : null}<Text style={S.btnText}>{title}</Text></View></TouchableOpacity>);
 
-/** Glass card: frosted blur + translucent white; use for highlighted panels (counters, scan box). */
+/** Glass card: translucent frosted panel (no native blur module needed); use for highlighted panels. */
 export const Glass = ({ children, style, tint = 'light' }) => (
   <View style={[S.card, { padding: 0, backgroundColor: 'transparent' }, style]}>
-    {T.blur ? <BlurView intensity={T.blur} tint={T.blurTint} style={{ ...StyleSheet.absoluteFillObject }} /> : null}
-    <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: T.blur ? (T.dark ? 'rgba(17,24,39,0.55)' : 'rgba(255,255,255,0.55)') : C.card }} />
+    <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: T.blur ? (T.dark ? 'rgba(17,24,39,0.66)' : 'rgba(255,255,255,0.66)') : C.card }} />
     <View style={{ padding: 14 }}>{children}</View></View>);
 
 /** Counter with a coloured ring — for "7 / 10", received / short / excess. */
