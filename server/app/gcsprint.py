@@ -138,7 +138,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                 txt(mid, top - 30 * mm, "(Outward Non Returnable)", 11, align="c")
             else:
                 txt(mid, top - 9 * mm, "Finished Goods Materials Gate Pass  (continued)", 11, True, align="c")
-                txt(mid, top - 15 * mm, f"Vehicle {pk.vehicle_no or '—'}   ·   To M/s {to_name}"[:70], 8.5, align="c")
+                txt(mid, top - 15 * mm, f"Vehicle {pk.vehicle_no or '—'}{(' (' + pk.vehicle_type + ')') if pk.vehicle_type else ''}   ·   To M/s {to_name}"[:80], 8.5, align="c")
             qs = qw - 5 * mm
             c.drawImage(ImageReader(io.BytesIO(qbytes)), x0 + tw - 1.5 * mm - qw + 2.5 * mm, top - 2.5 * mm - qs, qs, qs)
             if first:
@@ -168,7 +168,9 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                     txt(x0 + 150 * mm, yy, str(rightc[k][1])[:22].upper() if k == 1 else str(rightc[k][1])[:22], 10, True)
                 yy -= 5.6 * mm
             txt(x0 + 5 * mm, yy, "Pallets Loaded:", 9.5, color=(0.25, 0.25, 0.25))
-            txt(x0 + 42 * mm, yy, f"{len(lines)}  (returnable, scanned by AssetTrack HHT)", 10, True)
+            txt(x0 + 42 * mm, yy, f"{len(lines)}  (returnable)", 10, True)
+            txt(x0 + 118 * mm, yy, "Vehicle Type:", 9.5, color=(0.25, 0.25, 0.25))
+            txt(x0 + 150 * mm, yy, (pk.vehicle_type or "")[:22], 10, True)
             return y - h - 4 * mm
 
         def table_head(y):

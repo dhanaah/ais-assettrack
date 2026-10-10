@@ -22,6 +22,7 @@ _lock = threading.Lock()
 FIELDS = {
     "gcs_no": ["gcs_no", "gcs no", "gcs number", "gcs", "gate pass no", "gate pass number", "gatepass number", "gate pass", "gatepass no", "gp no"],
     "vehicle_no": ["vehicle_no", "vehicle no", "vehicle", "truck no", "truck", "lorry no"],
+    "vehicle_type": ["vehicle_type", "vehicle type", "truck type", "vehicle size", "vehicle model", "type of vehicle"],
     "customer_code": ["customer_code", "customer code", "customer", "consignee code", "ship to code", "ship_to"],
     "customer_name": ["customer_name", "customer name", "to m s", "to", "consignee", "ship to"],
     "customer_location": ["customer_location", "customer location", "cust location", "location", "ship to location", "delivery location",
@@ -225,6 +226,7 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
     pk.transporter_name = str(f.get("transporter") or pk.transporter_name or "")[:60] or None
     pk.gcs_remarks = str(f.get("remarks") or pk.gcs_remarks or "")[:120] or None
     pk.gr_lr_no = str(f.get("gr_lr_no") or pk.gr_lr_no or "")[:40] or None
+    pk.vehicle_type = str(f.get("vehicle_type") or pk.vehicle_type or "")[:30] or None
     pk.sales_type = str(f.get("sales_type") or pk.sales_type or "")[:30] or None
     pk.ewaybill_no = str(f.get("ewaybill_no") or pk.ewaybill_no or "")[:20] or None
     pk.transporter_code = str(f.get("transporter") or pk.transporter_code or "")[:20] or None

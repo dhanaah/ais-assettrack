@@ -23,8 +23,8 @@ Every finished loading prints the GCS PDF (QR + challan number + security sign).
 
 GCS CSV ON THE FTP (one row per invoice line - same headings as the ERP gate pass)
 -------------------------------------------------------------------------------
-GatePass Number,Date,Time,To M/s,Customer Code,Location,Vehicle No,Transporter,Remarks,GR/LR No,Sales Type,Inv No,Inv Date,Item Code,Cust Part No,No of Case,Qty/Case,Act Qty,Line Amount,Pallet Type,PDI By,PDI Login,Shift Supervisor,Supervisor Login
-FGCHN2627/12678,07/10/2026,22:33:08,"Asahi India Glass Ltd, Varale",VARALE,Pune,TN31CE4390,ARC Enterprises,PUNE AIR,,Stock Transfer,604334208,07/10/2026,SF.M13.RDLZAZ18180000,,3,12,36,51794.59,RW,Ravi Kumar,ravi.k,Suresh Babu,suresh.b
-FGCHN2627/12678,07/10/2026,22:33:08,"Asahi India Glass Ltd, Varale",VARALE,Pune,TN31CE4390,ARC Enterprises,PUNE AIR,,Stock Transfer,604334208,07/10/2026,SF.M16.FDRZCZ18180000,,12,10,120,171786.29,RW,,,,
+GatePass Number,Date,Time,To M/s,Customer Code,Location,Vehicle No,Vehicle Type,Transporter,Remarks,GR/LR No,Sales Type,Inv No,Inv Date,Item Code,Cust Part No,No of Case,Qty/Case,Act Qty,Line Amount,Pallet Type,PDI By,PDI Login,Shift Supervisor,Supervisor Login
+FGCHN2627/12678,07/10/2026,22:33:08,"Asahi India Glass Ltd, Varale",VARALE,Pune,TN31CE4390,32 FT MXL,ARC Enterprises,PUNE AIR,,Stock Transfer,604334208,07/10/2026,SF.M13.RDLZAZ18180000,,3,12,36,51794.59,RW,Ravi Kumar,ravi.k,Suresh Babu,suresh.b
+FGCHN2627/12678,07/10/2026,22:33:08,"Asahi India Glass Ltd, Varale",VARALE,Pune,TN31CE4390,32 FT MXL,ARC Enterprises,PUNE AIR,,Stock Transfer,604334208,07/10/2026,SF.M16.FDRZCZ18180000,,12,10,120,171786.29,RW,,,,
 Rows with the same GatePass Number become ONE loading sheet. The printed gate pass follows the ERP layout and runs to as
 many pages as needed (page X of Y); pallets in 6 columns; PDI / Logistics / Security signs on the last page.

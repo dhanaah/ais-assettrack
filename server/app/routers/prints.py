@@ -164,7 +164,7 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     {_head(plant, "GATE CUM SECURITY PASS (OUTWARD) · VEHICLE LOADING RECORD", qr)}
     <div class="grid">
       <div class="box"><b>GCS NO</b><span class="big">{k.gcs_no}</span></div>
-      <div class="box"><b>VEHICLE</b><span class="big">{k.vehicle_no or '—'}</span><br>{k.transporter_code or ''}</div>
+      <div class="box"><b>VEHICLE</b><span class="big">{k.vehicle_no or '—'}</span><br>{k.vehicle_type or ''}{' · ' if k.vehicle_type else ''}{k.transporter_name or k.transporter_code or ''}</div>
       <div class="box"><b>CONSIGNEE · CUSTOMER LOCATION</b>{cust.name if cust else k.customer_code} ({k.customer_code})<br>{('to plant ' + k.to_plant) if k.to_plant else (k.customer_location or ', '.join(x for x in ((cust.ship_to or '') if cust else '', (cust.city or '') if cust else '') if x) or '—')}</div>
       <div class="box"><b>INVOICES / E-WAY BILL</b>{(str(len(invs)) + ' invoice(s) · ' + str(len(items)) + ' line(s)') if items else (k.invoice_no or '—')}<br>e-way bill {k.ewaybill_no or '—'}</div>
       <div class="box"><b>CHALLAN (RETURNABLE PALLETS)</b>{k.challan_no or 'pending'}</div>

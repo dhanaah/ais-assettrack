@@ -382,11 +382,11 @@ with TestClient(app) as c:
         lg = db.query(IntegrationLog).filter_by(system="PRINT").order_by(IntegrationLog.id.desc()).first()
     check(lg is not None and not lg.ok, "print attempt logged (test printer unreachable -> failure recorded, not hidden)")
     print("19. One GCS with several invoices - invoice / item / qty at line level; short pallet numbers on the sheet")
-    multi = (b"GCS No,Vehicle No,Customer Code,Invoice No,Invoice Date,SO No,Item Code,Item Description,Qty,Pallets\n"
-             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0201,10-10-2026,SO-501,WS-1,Windshield front,40,2\n"
-             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0201,10-10-2026,SO-501,BL-9,Backlite,20,1\n"
-             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0202,10-10-2026,SO-502,WS-1,Windshield front,10,1\n"
-             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0203,10-10-2026,SO-503,DG-4,Door glass,30,1\n")
+    multi = (b"GCS No,Vehicle No,Vehicle Type,Customer Code,Invoice No,Invoice Date,SO No,Item Code,Item Description,Qty,Pallets\n"
+             b"GCS-CHN-9001,TN09XY4321,32 FT MXL,MSIL1,INV/26/0201,10-10-2026,SO-501,WS-1,Windshield front,40,2\n"
+             b"GCS-CHN-9001,TN09XY4321,32 FT MXL,MSIL1,INV/26/0201,10-10-2026,SO-501,BL-9,Backlite,20,1\n"
+             b"GCS-CHN-9001,TN09XY4321,32 FT MXL,MSIL1,INV/26/0202,10-10-2026,SO-502,WS-1,Windshield front,10,1\n"
+             b"GCS-CHN-9001,TN09XY4321,32 FT MXL,MSIL1,INV/26/0203,10-10-2026,SO-503,DG-4,Door glass,30,1\n")
     with SessionLocal() as db:
         res = gcssvc.pull(db, fetch=lambda: [("multi.csv", multi)])
     check(res["created"] == 1, f"4 CSV rows of one GCS -> ONE loading sheet: {res}")
@@ -410,7 +410,7 @@ with TestClient(app) as c:
         from app import gcsprint
         pdf = gcsprint.build_pdf(db, pk9, None, "AIS1|GCS|test")
     rd = PdfReader(_io.BytesIO(pdf)); text = rd.pages[0].extract_text()
-    check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Inv No.", "Cust Part No", "Line Amount", "Finished Goods Materials Gate Pass", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
+    check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Inv No.", "Cust Part No", "Line Amount", "Finished Goods Materials Gate Pass", "Vehicle Type", "32 FT MXL", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
           "PDF: one A4 page with every invoice line and the short pallet number")
     h = c.get(f"/print/gcs/{no9}?tok={W['Authorization'].split()[1]}").text
     check("INV/26/0203" in h and "Cust Part No" in h and "ANF-00007" in h, "web GCS print lists the invoice lines")

@@ -247,6 +247,7 @@ class PickList(Base):
     transporter_name: Mapped[str | None] = mapped_column(String(60))
     gcs_remarks: Mapped[str | None] = mapped_column(String(120))
     gr_lr_no: Mapped[str | None] = mapped_column(String(40))
+    vehicle_type: Mapped[str | None] = mapped_column(String(30))         # e.g. 32 ft MXL / 20 ft container / Tata 407
     sales_type: Mapped[str | None] = mapped_column(String(30))
     created_by: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
