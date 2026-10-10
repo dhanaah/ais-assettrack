@@ -25,6 +25,23 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: server-package, path: AIS_AssetTrack_Server.zip }
 
+  server-exe:
+    runs-on: windows-latest
+    defaults: { run: { working-directory: server } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r requirements.txt pyinstaller pystray pillow
+      - run: pyinstaller --noconfirm assettrack_server.spec
+      - name: Smoke test the EXE build (import only)
+        shell: pwsh
+        run: |
+          Copy-Item README_SERVER_EXE.txt dist/AssetTrack_Server/
+          if (!(Test-Path dist/AssetTrack_Server/AssetTrack_Server.exe)) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with: { name: server-exe, path: server/dist/AssetTrack_Server }
+
   hht-apk:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/hht-v') || github.ref == 'refs/heads/main'
