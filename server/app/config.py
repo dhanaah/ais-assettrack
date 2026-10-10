@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 API_MIN_CLIENT = "1.0.0"          # HHT app must be >= this
 DEVELOPER = "Developed by DT"
 
@@ -39,3 +39,5 @@ EVENT_RETENTION_DAYS = 730
 # Admin bootstrap (created on first run if no users exist)
 BOOTSTRAP_ADMIN_USER = os.getenv("PALLET_ADMIN_USER", "admin")
 BOOTSTRAP_ADMIN_PASS = os.getenv("PALLET_ADMIN_PASS", "Admin@123")
+
+SERVER_PORTS = []   # filled by the tray app: every port the server listens on (HHT failover)

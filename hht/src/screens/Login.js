@@ -16,7 +16,7 @@ export default function Login({ onDone, deviceId }) {
   return (<Screen><Page>
     <View style={{ alignItems: 'center', marginTop: 60, marginBottom: 20 }}><Image source={require('../../assets/icon.png')} style={{ width: 110, height: 110, resizeMode: 'contain' }} /><Image source={require('../../assets/wordmark.png')} style={{ width: 260, height: 80, resizeMode: 'contain', marginBottom: 4 }} /><Text style={S.mute}>v{APP_VERSION}</Text></View>
     <View style={S.card}>
-      <Text style={S.mute}>Server URL</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" placeholder="http://server:8001" />
+      <Text style={S.mute}>Server name (no IP / port needed)</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" placeholder="assettrack" />
       <Text style={S.mute}>User ID</Text><TextInput style={S.input} value={u} onChangeText={setU} autoCapitalize="none" />
       <Text style={S.mute}>Password</Text><TextInput style={S.input} value={p} onChangeText={setP} secureTextEntry onSubmitEditing={go} />
       <Btn title={busy ? 'Signing in…' : 'Sign in'} icon="log-in-outline" onPress={go} disabled={busy} />

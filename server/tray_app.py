@@ -17,14 +17,21 @@ def log(msg):
         pass
 
 
-def read_port():
+def read_ports():
+    """port.txt may hold one port or a list, e.g. 80,8001,8002,8003 (default; 80 = address without port number). The server listens on every free one."""
     try:
-        return int(open(os.path.join(BASE_DIR, "port.txt")).read().strip())
+        txt = open(os.path.join(BASE_DIR, "port.txt")).read()
+        ports = [int(x) for x in txt.replace(";", ",").replace(" ", ",").split(",") if x.strip().isdigit()]
+        if ports:
+            return ports
     except Exception:
-        return 8001
+        pass
+    return [80, 8001, 8002, 8003]
 
 
-PORT = read_port()
+PORTS = read_ports()          # wanted ports
+LIVE = []                     # ports actually listening
+PORT = PORTS[0]
 DB = os.path.join(BASE_DIR, "pallet.db")
 # first start next to an existing AssetTrack folder: take over its database (keeps your data)
 if not os.path.exists(DB):
@@ -61,17 +68,49 @@ def ips():
     return sorted(out)
 
 
+def _u(host, port):
+    return f"http://{host}" + ("" if port == 80 else f":{port}")
+
+
+def public_name():
+    """Name the HHTs should use instead of an IP: PUBLIC_NAME in settings.env (e.g. assettrack - a DNS name IT points
+    to this PC), else this PC's own network name."""
+    return os.environ.get("PUBLIC_NAME", "").strip() or socket.gethostname()
+
+
 def urls():
-    return [f"http://{ip}:{PORT}" for ip in ips()] or [f"http://localhost:{PORT}"]
+    return [_u(public_name(), PORT)] + [_u(ip, PORT) for ip in ips()]
+
+
+def bind_ports():
+    """Open a socket on each wanted port; a busy / blocked port is skipped (logged), the rest keep working."""
+    global PORT
+    socks = []
+    for p in PORTS:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            if os.name == "nt":
+                s.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", -5), 1)
+            s.bind(("0.0.0.0", p)); s.listen(2048); s.set_inheritable(True)
+            socks.append(s); LIVE.append(p)
+        except OSError as e:
+            s.close(); log(f"port {p} not available ({e}) - skipped")
+    if LIVE:
+        PORT = LIVE[0]
+    return socks
 
 
 def run_server():
     global server
     try:
-        log(f"starting {config.APP_NAME} v{config.APP_VERSION} on 0.0.0.0:{PORT}  db={os.environ['PALLET_DB_URL']}")
-        cfg = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_config=None, access_log=False)
+        socks = bind_ports()
+        if not socks:
+            log(f"no free port in {PORTS} - is AssetTrack already running?"); return
+        config.SERVER_PORTS = list(LIVE)
+        log(f"starting {config.APP_NAME} v{config.APP_VERSION} on ports {LIVE}  db={os.environ['PALLET_DB_URL']}")
+        cfg = uvicorn.Config(app, log_config=None, access_log=False)
         server = uvicorn.Server(cfg)
-        server.run()
+        server.run(sockets=socks)
         log("server stopped")
     except Exception as e:
         log(f"server crash: {e}\n{traceback.format_exc()}")
@@ -134,13 +173,16 @@ def main():
     threading.Thread(target=run_server, daemon=True).start()
     threading.Thread(target=retry_job, daemon=True).start()
     time.sleep(2)
+    if not LIVE:
+        info_box(f"AssetTrack Server could not open any port {PORTS}.\nIt is probably already running - look for the AIS icon near the clock.")
+        return
 
     def on_open(icon, item):
-        webbrowser.open(f"http://localhost:{PORT}")
+        webbrowser.open(_u("localhost", PORT))
 
     def on_about(icon, item):
-        info_box(f"{config.APP_NAME} v{config.APP_VERSION}\n{config.DEVELOPER}\n\nWeb / HHT address:\n" + "\n".join(urls()) +
-                 f"\n\nData folder:\n{BASE_DIR}\nIntegration mode: {integration.MODE}\n\nIf HHTs cannot connect, ask IT to allow port {PORT} in Windows Firewall.")
+        info_box(f"{config.APP_NAME} v{config.APP_VERSION}\n{config.DEVELOPER}\n\nHHT / web address (use the name, not the IP):\n" + urls()[0] + "\n\nIP fallback:\n" + "\n".join(urls()[1:]) +
+                 f"\n\nListening on ports: {', '.join(map(str, LIVE))} (HHT switches automatically if one is slow)\n\nData folder:\n{BASE_DIR}\nIntegration mode: {integration.MODE}\n\nIf HHTs cannot connect, ask IT to allow ports {', '.join(map(str, LIVE))} in Windows Firewall.")
 
     def on_copy(icon, item):
         try:
@@ -164,7 +206,7 @@ def main():
                         pystray.Menu.SEPARATOR,
                         pystray.MenuItem("Stop server (admin)", on_exit))
     icon = pystray.Icon("AssetTrack", make_icon(), f"AIS AssetTrack Server v{config.APP_VERSION} - {urls()[0]}", menu)
-    webbrowser.open(f"http://localhost:{PORT}")
+    webbrowser.open(_u("localhost", PORT))
     icon.run()
 
 

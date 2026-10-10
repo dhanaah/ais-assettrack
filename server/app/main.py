@@ -74,7 +74,7 @@ def health():
     except Exception:
         db_ok = False
     return {"app": config.APP_NAME, "version": config.APP_VERSION, "developer": config.DEVELOPER, "db": "ok" if db_ok else "error",
-            "integration_mode": integration.MODE}
+            "integration_mode": integration.MODE, "ports": config.SERVER_PORTS}
 
 
 @app.post("/api/v1/jobs/retry")
