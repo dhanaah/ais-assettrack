@@ -1,4 +1,5 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.3 (2026-10-10) — three signs on the GCS: PDI (Bench login), Logistics (shift supervisor, Bench login), Security (HHT login)
 ## 1.10.2 (2026-10-10) — PDI and Shift Supervisor signs on the GCS
 - GCS sheet / PDF / print carry the PDI person and the Shift Supervisor logged in on the Planning Bench ("Name (login)"), taken from the GCS CSV (columns PDI By / PDI Login, Shift Supervisor / Supervisor Login - several spellings accepted) or from the Bench dispatch record; five sign boxes: PDI, Shift Supervisor, Security/Logistics (loading, pre-filled with the HHT login), Driver, OUT gate
 ## 1.10.1 (2026-10-10) — GCS PDF auto print

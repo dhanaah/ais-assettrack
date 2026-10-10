@@ -107,10 +107,9 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     # signatures
     sw = (W - 30 * mm) / 3; sh = 26 * mm
     who = f"{user.full_name} ({user.user_id})" if user else "—"
-    signs = [("PDI", "Planning Bench", f"{pk.pdi_sign or '—'}\n\nSign: __________"),
-             ("SHIFT SUPERVISOR", "Planning Bench", f"{pk.supervisor_sign or '—'}\n\nSign: __________"),
-             ("SECURITY / LOGISTICS", "loading verified", f"{who}\n{datetime.now():%d-%m-%Y %H:%M}\nSign: __________"),
-             ("DRIVER", "", "\n\nName & sign: ________"), ("OUT GATE", "Security", "\n\nID / sign: __________\nTime: ______")]
+    signs = [("PDI", "Planning Bench login", f"{pk.pdi_sign or '—'}\n\nSign: ____________________"),
+             ("LOGISTICS", "Shift supervisor · Planning Bench login", f"{pk.supervisor_sign or '—'}\n\nSign: ____________________"),
+             ("SECURITY", "loading verified · HHT login", f"{who}\n{datetime.now():%d-%m-%Y %H:%M}\nSign: ____________________")]
     sw = (W - 30 * mm) / len(signs); sh = 30 * mm
     for k, (label, sub, val) in enumerate(signs):
         x = 15 * mm + k * sw
@@ -119,7 +118,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
         c.setFont("Helvetica", 6); c.setFillColorRGB(0.4, 0.4, 0.4); c.drawString(x + 1.5 * mm, y - 7.5 * mm, sub)
         c.setFillColorRGB(0, 0, 0); c.setFont("Helvetica", 7.5)
         for i, ln in enumerate(val.split("\n")):
-            c.drawString(x + 1.5 * mm, y - 13 * mm - i * 4.2 * mm, ln[:26])
+            c.drawString(x + 1.5 * mm, y - 13 * mm - i * 4.2 * mm, ln[:44])
     c.setFont("Helvetica", 7); c.setFillColorRGB(0.4, 0.4, 0.4)
     c.drawString(15 * mm, 15 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · GCS {pk.gcs_no} · pick list {pk.picklist_no} · generated {datetime.now():%d-%m-%Y %H:%M}")
     c.setFillColorRGB(*red); c.drawString(15 * mm, 10.5 * mm, "The OUT gate accepts only a QR printed by AssetTrack for this GCS and vehicle.")

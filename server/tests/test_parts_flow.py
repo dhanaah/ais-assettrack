@@ -334,7 +334,7 @@ with TestClient(app) as c:
     check(k2["pdi_sign"] == "Ravi Kumar (ravi.k)" and k2["supervisor_sign"] == "Suresh Babu (suresh.b)", "PDI and shift supervisor (Bench logins) taken from the CSV")
     pr2 = c.get("/api/v1/picklists/GCS-CHN-GCSCHN7782/gcs.pdf", headers=W)
     t2 = "\n".join(pg.extract_text() for pg in __import__('pypdf').PdfReader(__import__('io').BytesIO(pr2.content)).pages)
-    check("Ravi Kumar" in t2 and "Suresh Babu" in t2 and "SHIFT SUPERVISOR" in t2, "PDF shows PDI and Shift Supervisor sign boxes with the Bench names")
+    check("Ravi Kumar" in t2 and "Suresh Babu" in t2 and "LOGISTICS" in t2 and "SECURITY" in t2 and "DRIVER" not in t2, "PDF shows PDI and Shift Supervisor sign boxes with the Bench names")
     with SessionLocal() as db:
         res = gcssvc.pull(db, fetch=lambda: files)
     check(res["created"] == 0 and res["updated"] == 3, "same files again -> updated, no duplicates")
