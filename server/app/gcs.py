@@ -24,6 +24,8 @@ FIELDS = {
     "vehicle_no": ["vehicle_no", "vehicle no", "vehicle", "truck no", "truck", "lorry no"],
     "customer_code": ["customer_code", "customer code", "customer", "consignee code", "ship to code", "ship_to"],
     "customer_name": ["customer_name", "customer name", "consignee", "ship to"],
+    "customer_location": ["customer_location", "customer location", "cust location", "location", "ship to location", "delivery location",
+                          "destination", "customer city", "delivery address"],
     "invoice_no": ["invoice_no", "invoice no", "invoice number", "invoice", "inv no", "inv number"],
     "invoice_date": ["invoice_date", "invoice date", "inv date"],
     "so_number": ["so_number", "so no", "sale order", "sales order", "order no"],
@@ -196,6 +198,7 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
         what = "updated"
     pk.gcs_no = gcs; pk.customer_code = cust if cust != "?" else pk.customer_code; pk.to_plant = to_plant or pk.to_plant
     pk.vehicle_no = (str(f.get("vehicle_no") or pk.vehicle_no or "").upper().replace(" ", "") or None)
+    pk.customer_location = str(f.get("customer_location") or pk.customer_location or "")[:80] or None
     pk.ewaybill_no = str(f.get("ewaybill_no") or pk.ewaybill_no or "")[:20] or None
     pk.transporter_code = str(f.get("transporter") or pk.transporter_code or "")[:20] or None
     pk.pdi_sign = (sign(f.get("pdi_sign"), f.get("pdi_login")) or pk.pdi_sign or None)

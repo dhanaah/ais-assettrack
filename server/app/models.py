@@ -242,6 +242,7 @@ class PickList(Base):
     challan_no: Mapped[str | None] = mapped_column(String(40))
     vehicle_no: Mapped[str | None] = mapped_column(String(20))
     gcs_no: Mapped[str | None] = mapped_column(String(40))
+    customer_location: Mapped[str | None] = mapped_column(String(80))   # delivery location from the GCS file
     created_by: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

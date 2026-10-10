@@ -81,7 +81,8 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     items = gcssvc.items_loaded(db, pk.picklist_no)
     has_cards = any(lpn_by.values())
     invs = list(dict.fromkeys(i["invoice_no"] for i in items if i["invoice_no"]))
-    box(15 * mm, y, cw, bh, "CONSIGNEE", f"{cust.name if cust else pk.customer_code} ({pk.customer_code})" + (f"\nto plant {pk.to_plant}" if pk.to_plant else ""))
+    loc = pk.customer_location or (", ".join(x for x in ((cust.ship_to or "") if cust else "", (cust.city or "") if cust else "") if x) or "—")
+    box(15 * mm, y, cw, bh, "CONSIGNEE · CUSTOMER LOCATION", f"{cust.name if cust else pk.customer_code} ({pk.customer_code})\n" + (f"to plant {pk.to_plant}" if pk.to_plant else loc)[:32])
     box(15 * mm + cw, y, cw, bh, "INVOICES / E-WAY BILL", (f"{len(invs)} invoice(s) · {len(items)} line(s)" if items else f"{pk.invoice_no or '—'}") + f"\nEWB {pk.ewaybill_no or '—'}")
     box(15 * mm + 2 * cw, y, cw, bh, "LOADED", f"{len(lines)} pallet(s)" + (f" · qty {sum(r.qty or 0 for v in lpn_by.values() for r in v)}" if has_cards else "") + f"\n{datetime.now():%d-%m-%Y %H:%M}")
     y -= bh + 5 * mm
@@ -97,11 +98,14 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     # ---- invoice lines (invoice, item, qty at line level) - one GCS may carry several invoices
     if items:
         n_i = len(items)
-        irh = 4.6 * mm if n_i <= 8 else 4.0 * mm if n_i <= 16 else 3.5 * mm
-        room = y - sig_top - 8 * mm - 32 * mm         # keep at least 32 mm for the pallet list
-        cap_i = max(1, int(room / irh) - 3)
+        # fit everything on ONE sheet: invoice rows and pallet rows shrink together (same factor); invoice lines are never cut
+        pc = math.ceil(len(lines) / 6)
+        space = y - sig_top - 5.5 * mm - 8 * mm - 5.5 * mm - 10 * mm
+        f = min(1.0, space / (n_i * 4.6 * mm + pc * 4.0 * mm))
+        irh = max(2.2 * mm, 4.6 * mm * f)
+        cap_i = n_i
         shown_i = items[:cap_i]
-        ifs = 7.5 if irh >= 4.6 * mm else 6.8 if irh >= 4 * mm else 6.2
+        ifs = max(4.5, min(7.5, irh / mm * 1.7))
         cols = [(1.5, "Sl. No.", "l"), (14, "Inv. Date", "l"), (34, "Inv. Number", "l"), (64, "Item Code", "l"), (98, "Cust Part", "l"),
                 (142, "Case", "r"), (160, "Qty./Case", "r"), (178.5, "Total Qty.", "r")]
         band("", y)
@@ -110,7 +114,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
         y -= 5.5 * mm; c.setFillColorRGB(0, 0, 0)
         num = lambda v: "" if v is None else f"{v:,}"
         for k, it in enumerate(shown_i):
-            yy = y - (k + 1) * irh + 1.1 * mm
+            yy = y - (k + 1) * irh + irh * 0.27
             vals = [str(k + 1), f"{it['invoice_date']:%d-%m-%Y}" if it["invoice_date"] else "", (it["invoice_no"] or "")[:20], (it["part_no"] or "")[:22],
                     (it["cust_part"] or "")[:22], num(it["cases"]), num(it["qty_per_case"]), num(it["qty"])]
             for (xm, t, al), v in zip(cols, vals):
@@ -130,8 +134,8 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     n = len(lines)
     ncol = 6                                           # always 6 columns, small font (short numbers ANF-00001)
     per_col = max(1, math.ceil(n / ncol))
-    rh = max(3.0 * mm, min(4.0 * mm, avail / per_col))
-    fs = 6.5 if rh >= 3.6 * mm else 6
+    rh = max(1.4 * mm, min(4.0 * mm, avail / per_col))  # rows and font shrink until the full list fits the sheet
+    fs = max(3.6, min(6.5, rh / mm * 1.8))
     cap = max(1, int(avail / rh))
     shown = lines if per_col <= cap else lines[:cap * ncol]
     colw = tw / ncol
@@ -142,7 +146,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     per_col = max(1, math.ceil(len(shown) / ncol))
     for i, l in enumerate(shown):
         ci, ri = divmod(i, per_col)
-        x = x0 + ci * colw; yy = y - (ri + 1) * rh + 0.9 * mm
+        x = x0 + ci * colw; yy = y - (ri + 1) * rh + rh * 0.28
         c.setFont("Helvetica", fs); c.setFillColorRGB(0.4, 0.4, 0.4); c.drawRightString(x + 6 * mm, yy, str(i + 1))
         c.setFillColorRGB(0, 0, 0); c.setFont("Helvetica-Bold", fs); c.drawString(x + 8 * mm, yy, gcssvc.short_pallet(l.pallet_no)[:16])
         c.setStrokeColorRGB(0.9, 0.9, 0.9); c.setLineWidth(0.25); c.line(x, y - (ri + 1) * rh, x + colw - 1 * mm, y - (ri + 1) * rh)
