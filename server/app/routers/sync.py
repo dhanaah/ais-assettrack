@@ -15,8 +15,9 @@ Dock scan accepts LPN or pallet (optional second scan `pallet`). Missed scans fo
 Any other type is stored with status EXCEPTION for review (forward compatible).
 """
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, services, lpn as lpnsvc
@@ -170,6 +171,13 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
         dev = db.get(models.Device, e.device_id)
         if dev and dev.blocked:
             results.append({"event_id": e.event_id, "status": "REJECTED", "result": "device blocked"}); continue
+        if not dev:
+            dev = models.Device(device_id=e.device_id, plant_code=p.plant); db.add(dev)
+        dev.last_seen = utcnow(); dev.last_user = p.user_id; dev.app_version = e.app_version
+        if e.event_type == "HEARTBEAT":              # device status only - not stored as an event (one per minute per HHT)
+            dev.pending_reported = int(e.payload.get("pending", 0) or 0)
+            db.commit()
+            results.append({"event_id": e.event_id, "status": "APPLIED", "result": "ok"}); continue
         sp = db.begin_nested()
         status, msg = _apply(db, p, e)
         if status == "REJECTED":
@@ -179,14 +187,27 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
         db.add(models.Event(event_id=e.event_id, device_id=e.device_id, user_id=p.user_id, plant_code=p.plant, event_type=e.event_type,
                             payload=json.dumps(e.payload, default=str), local_ts=e.local_ts, app_version=e.app_version,
                             offline=e.offline, status=status, result=msg[:300]))
+        try:
+            db.commit()
+        except IntegrityError:
+            # the same event arrived twice at the same moment (HHT retry on another port): keep the first, answer with its result
+            db.rollback()
+            existing = db.get(models.Event, e.event_id)
+            if existing:
+                results.append({"event_id": e.event_id, "status": existing.status, "result": existing.result, "duplicate": True}); continue
+            raise
         results.append({"event_id": e.event_id, "status": status, "result": msg})
-        if not dev:
-            dev = models.Device(device_id=e.device_id, plant_code=p.plant); db.add(dev)
-        dev.last_seen = utcnow(); dev.last_user = p.user_id; dev.app_version = e.app_version
-        if e.event_type == "HEARTBEAT":
-            dev.pending_reported = int(e.payload.get("pending", 0))
-        db.commit()
     return {"results": results, "server_time": utcnow().isoformat()}
+
+
+def purge_old_events(db: Session, days: int | None = None) -> int:
+    """Housekeeping (retry job): applied events older than EVENT_RETENTION_DAYS are deleted; rejected / exception kept 2x longer."""
+    from .. import config
+    days = days or config.EVENT_RETENTION_DAYS
+    cut = utcnow() - timedelta(days=days)
+    n = db.query(models.Event).filter(models.Event.received_ts < cut, models.Event.status == "APPLIED").delete(synchronize_session=False)
+    n += db.query(models.Event).filter(models.Event.received_ts < utcnow() - timedelta(days=days * 2)).delete(synchronize_session=False)
+    return n
 
 
 @router.get("/pull")
@@ -200,9 +221,11 @@ def pull(since: datetime | None = None, p: Principal = Depends(current_user), db
     pallets = [{"pallet_no": x.pallet_no, "tag": x.current_tag, "home": x.home_plant, "type": x.pallet_type, "status": x.status,
                 "customer": x.customer_code, "picklist": x.picklist_no, "zone": x.zone, "load": x.load_state, "load_ref": x.load_ref,
                 "location": x.location_plant} for x in pq.all()]
-    lq = db.query(models.Lpn).filter(models.Lpn.plant_code == p.plant, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED", "PDI_OK"]))
-    if since:
+    lq = db.query(models.Lpn).filter(models.Lpn.plant_code == p.plant)
+    if since:        # delta: every LPN that changed, so one that was dispatched / rejected is corrected in the HHT cache
         lq = lq.filter(models.Lpn.updated_at >= since)
+    else:            # full: live ones only (keeps the cache small)
+        lq = lq.filter(models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED", "PDI_OK"]))
     lpns = [{"lpn": l.lpn_no, "part": l.part_no, "qty": l.qty, "pallet": l.pallet_no, "status": l.status, "reserved_for": l.reserved_for,
              "picklist": l.picklist_no} for l in lq.all()]
     tags = [] if since else [{"tag": t.tag_no, "pallet": t.pallet_no, "status": t.status} for t in db.query(models.Tag).filter_by(plant_code=p.plant).all()]

@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert, TextInput } from 'react-native';
 import { S, C, Btn, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen, Page } from '../ui/kit';
-import { listPicklists, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity } from '../lib/db';
+import { listPicklists, getPicklist, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity } from '../lib/db';
 import { validateDockScan2 } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
@@ -25,7 +25,8 @@ export default function Dock({ onBack, yard = false }) {
     try { const k = await api('/picklists/yard-return', { method: 'POST', body: { to_plant: owner, vehicle_no: veh || null } }); logActivity('YARD_RETURN_START', k.picklist_no, owner); setOpts(null); await syncNow(); const fresh = (await listPicklists(['OPEN'])).find(x => x.picklist_no === k.picklist_no); await load(); if (fresh) open(fresh); }
     catch (e) { toast(e.message, 'err'); }
   };
-  const refresh = async (k = pk) => { setScans(await localScans(k.picklist_no)); setLpns(await lpnScans(k.picklist_no)); };
+  const [srv, setSrv] = useState(null);
+  const refresh = async (k = pk) => { setScans(await localScans(k.picklist_no)); setLpns(await lpnScans(k.picklist_no)); const fresh = await getPicklist(k.picklist_no); setSrv(fresh ? { scanned: fresh.scanned, picked: fresh.picked_qty } : null); };
   const open = async (k) => { setPk(k); setWaitLpn(null); setAlert(null); await refresh(k); };
 
   const onScan = async (code) => {
@@ -40,7 +41,7 @@ export default function Dock({ onBack, yard = false }) {
     if (!(await localScans(pk.picklist_no)).some(x => x.pallet_no === v.pallet.pallet_no)) await addLocalScan(pk.picklist_no, v.pallet.pallet_no);
     await setPalletLocal(v.pallet.pallet_no, { status: 'ALLOCATED', picklist: pk.picklist_no, load: pk.dispatch_type === 'EMPTY_RETURN' ? 'EMPTY' : (v.lpns.length ? 'LOADED' : v.pallet.load) });
     for (const l of v.lpns) { await addLpnScan(pk.picklist_no, l.lpn, v.pallet.pallet_no, l.qty); await setLpnLocal(l.lpn, { status: 'PICKED', picklist: pk.picklist_no, pallet: v.pallet.pallet_no }); }
-    const payload = { picklist_no: pk.picklist_no, scanned: first }; if (second) payload.pallet = second;
+    const payload = { picklist_no: pk.picklist_no, scanned: first, local_pallet: v.pallet.pallet_no }; if (second) payload.pallet = second;
     const id = await enqueue('PALLET_SCAN_DOCK', payload, !sync.online);
     logActivity(sync.online ? 'SCAN_DOCK' : 'SCAN_DOCK_OFFLINE', pk.picklist_no, v.pallet.pallet_no, { lpns: v.lpns.map(l => l.lpn) });
     await refresh();
@@ -89,6 +90,7 @@ export default function Dock({ onBack, yard = false }) {
         {isPart(pk) ? <Ring value={`${picked}/${pk.part_qty}`} label={pk.part_no ? `${pk.part_no} picked` : 'Bench LPN qty'} color={picked === pk.part_qty ? C.ok : C.accent} size={92} /> : null}
         <Ring value={isYard(pk) ? `${scans.length}` : `${scans.length}/${pk.qty}`} label={isYard(pk) ? 'empty pallets loaded' : 'pallets'} color={complete ? C.ok : C.accent} size={92} />
       </Glass>
+      {srv && srv.scanned !== scans.length ? <Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Server has {srv.scanned} pallet{srv.scanned === 1 ? '' : 's'} on this list (this HHT: {scans.length}) · another HHT may be scanning too</Text> : null}
       {waitLpn ? <Text style={{ color: C.amber, fontWeight: '700', marginTop: 6 }}>LPN {waitLpn.lpn} waiting → scan its PALLET</Text> : null}
       {alert ? <TouchableOpacity onPress={() => setAlert(null)} style={{ backgroundColor: C.warn, borderRadius: 12, padding: 10, marginTop: 6 }}><Text style={{ color: '#fff', fontWeight: '700' }}>⚠ {alert}</Text><Text style={{ color: '#fff', fontSize: 11 }}>tap to dismiss · recorded in Missed Scans</Text></TouchableOpacity> : null}
       <ScanInput onScan={onScan} placeholder={pk.dispatch_type === 'EMPTY_RETURN' ? 'Scan empty pallet' : isPart(pk) ? 'Scan LPN or pallet' : 'Scan pallet tag'} />

@@ -277,6 +277,11 @@ def run_retries(db: Session, max_attempts: int = 50) -> dict:
     done = failed = 0
     from . import lpn as lpnsvc
     lpnsvc.process_pending_txns(db)
+    try:
+        from .routers.sync import purge_old_events
+        purge_old_events(db)
+    except Exception as e:
+        _log(db, "APP", "PURGE_EVENTS", None, False, str(e)[:200])
     for q in db.query(RetryQueue).filter_by(status="PENDING").all():
         q.attempts += 1
         ok = False; msg = ""

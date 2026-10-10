@@ -161,10 +161,18 @@ def customer_holding(db: Session, plant: str | None = None):
 # ---------------------------------------------------------------- return slip QR (v1)
 # AIS1|RS|<slip_no>|<plant>|<customer>|<vehicle>|<qty>|<yyMMddHHmm>|<sig8>
 # sig8 = first 8 hex of HMAC-SHA256(server secret, everything before it). Slips made on the HHT offline carry "-".
-def _sig(body: str) -> str:
+def _sig(body: str, secret: str | None = None) -> str:
     import hmac, hashlib
     from . import config
-    return hmac.new(config.JWT_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()[:8].upper()
+    return hmac.new((secret or config.JWT_SECRET).encode(), body.encode(), hashlib.sha256).hexdigest()[:8].upper()
+
+
+def _sig_ok(body: str, sig: str) -> bool:
+    """Current secret, else the legacy built-in one (labels printed before the secret was made still scan)."""
+    from . import config
+    import hmac
+    s = (sig or "").upper()
+    return hmac.compare_digest(s, _sig(body)) or hmac.compare_digest(s, _sig(body, config.LEGACY_SECRET))
 
 
 def slip_qr(sl, signed: bool = True) -> str:
@@ -173,8 +181,15 @@ def slip_qr(sl, signed: bool = True) -> str:
     return f"{body}|{_sig(body) if signed else '-'}"
 
 
-def label_token(slip_no: str) -> str:
-    return _sig("LABEL|" + slip_no) + _sig("LABEL2|" + slip_no)
+def label_token(slip_no: str, secret: str | None = None) -> str:
+    return _sig("LABEL|" + slip_no, secret) + _sig("LABEL2|" + slip_no, secret)
+
+
+def label_token_ok(slip_no: str, t: str | None) -> bool:
+    import hmac
+    from . import config
+    t = t or ""
+    return hmac.compare_digest(t, label_token(slip_no)) or hmac.compare_digest(t, label_token(slip_no, config.LEGACY_SECRET))
 
 
 def parse_slip_qr(code: str) -> dict:
@@ -185,7 +200,7 @@ def parse_slip_qr(code: str) -> dict:
         if len(parts) != 9:
             return {"slip_no": None, "error": "QR format not recognised"}
         body, sig = "|".join(parts[:8]), parts[8]
-        ok = sig != "-" and sig.upper() == _sig(body)
+        ok = sig != "-" and _sig_ok(body, sig)
         return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": int(parts[6] or 0),
                 "signed": sig != "-", "valid": ok or sig == "-", "error": None if (ok or sig == "-") else "QR check code invalid - label altered or not issued by AssetTrack"}
     if s.startswith("RTS|"):

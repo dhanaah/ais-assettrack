@@ -2,7 +2,7 @@
 transfer, SO after PDI, invoice + challan, loaded/empty, internal moves, other-plant receipt, empty return + e-way bill,
 missed-scan detection. Run:  python -m tests.test_parts_flow   (from server/, uses a temp SQLite db)"""
 import os, sys, uuid, tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 DB = os.getenv("KEEP") or os.path.join(tempfile.gettempdir(), f"at_test_{uuid.uuid4().hex[:6]}.db")
 os.environ["PALLET_DB_URL"] = f"sqlite:///{DB}"
 os.environ["PALLET_INTEGRATION_MODE"] = "STUB"
@@ -269,5 +269,29 @@ with TestClient(app) as c:
     check(r["status"] == "CHALLANED" and r["qty"] == 3 and r["challan_no"] and r["ewaybill_no"], f"Finish loading -> challan {r.get('challan_no')} + e-way bill for 3 pallets")
     p10 = c.get("/api/v1/pallets/PUN-P010", headers=H).json(); p10 = p10.get("pallet") or p10
     check(p10["status"] == "ALLOCATED" and p10["challan_ref"] == r["challan_no"], "pallet carries the challan")
+    print("15. sync hardening")
+    hb = ev(c, H, "HEARTBEAT", {"pending": 3})
+    with SessionLocal() as db:
+        n_hb = db.query(models.Event).filter_by(event_type="HEARTBEAT").count()
+        dev = db.query(models.Device).filter_by(device_id="HHT-T").first()
+    check(hb["status"] == "APPLIED" and n_hb == 0 and dev and dev.pending_reported == 3, "heartbeat updates the device but is not stored as an event")
+    eid = str(uuid.uuid4())
+    body = {"events": [{"event_id": eid, "device_id": "HHT-T", "event_type": "DAMAGE_MARK", "payload": {"scanned": "CHN-P006"}, "local_ts": datetime.utcnow().isoformat()}]}
+    r1 = c.post("/api/v1/sync/push", headers=H, json=body).json()["results"][0]
+    r2 = c.post("/api/v1/sync/push", headers=H, json=body).json()["results"][0]
+    check(r2.get("duplicate") and r2["status"] == r1["status"], "same event sent twice -> answered from the first result")
+    with SessionLocal() as db:
+        l = db.get(models.Lpn, "BL1"); l.status = "DISPATCHED"; db.commit()
+    d = c.get("/api/v1/sync/pull", headers=H, params={"since": (datetime.utcnow() - timedelta(minutes=5)).isoformat()}).json()
+    check(any(x["lpn"] == "BL1" and x["status"] == "DISPATCHED" for x in d["lpns"]), "delta pull reports the LPN that left the live statuses")
+    f = c.get("/api/v1/sync/pull", headers=H).json()
+    check(not any(x["lpn"] == "BL1" for x in f["lpns"]), "full pull keeps only live LPNs")
+    from app.routers.sync import purge_old_events
+    with SessionLocal() as db:
+        db.query(models.Event).filter_by(event_id=eid).update({"received_ts": datetime.utcnow() - timedelta(days=800)}); db.commit()
+        n = purge_old_events(db); db.commit()
+    check(n >= 1, f"event purge removed {n} old event(s)")
+    from app import config
+    check(config.JWT_SECRET != config.LEGACY_SECRET or os.getenv("PALLET_JWT_SECRET"), "server secret is not the public default")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

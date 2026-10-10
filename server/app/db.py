@@ -5,7 +5,7 @@ from .config import DB_URL
 connect_args = {}
 engine_kwargs = dict(pool_pre_ping=True, future=True)
 if DB_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    connect_args = {"check_same_thread": False, "timeout": 30}   # wait up to 30 s for a busy database instead of failing
 else:
     engine_kwargs.update(pool_size=10, max_overflow=20, fast_executemany=True)
 

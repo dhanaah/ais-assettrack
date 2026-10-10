@@ -19,3 +19,9 @@ server/.venv/
 scripts/apk_url.txt
 server/.setup_ok
 scripts/server_url.txt
+
+# server runtime (never commit)
+server/secret.key
+**/secret.key
+**/backups/
+server/server.pid

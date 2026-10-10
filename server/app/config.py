@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 API_MIN_CLIENT = "1.0.0"          # HHT app must be >= this
 DEVELOPER = "Developed by DT"
 
@@ -21,7 +21,32 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DB_URL = os.getenv("PALLET_DB_URL", f"sqlite:///{BASE_DIR / 'pallet.db'}")
 
 # Security -----------------------------------------------------------------
-JWT_SECRET = os.getenv("PALLET_JWT_SECRET", "change-me-in-production-" + APP_NAME)
+LEGACY_SECRET = "change-me-in-production-" + APP_NAME          # the old built-in secret (public on GitHub): verification only
+
+
+def _load_secret() -> str:
+    """Server secret for login tokens and return-slip QR check codes.
+    Order: PALLET_JWT_SECRET env -> secret.key next to the database (made once, random) -> legacy default (dev only)."""
+    env = os.getenv("PALLET_JWT_SECRET")
+    if env:
+        return env
+    try:
+        db_url = os.getenv("PALLET_DB_URL", "")
+        folder = Path(db_url[len("sqlite:///"):]).parent if db_url.startswith("sqlite:///") else BASE_DIR
+        f = folder / "secret.key"
+        if f.exists():
+            v = f.read_text(encoding="utf-8").strip()
+            if len(v) >= 32:
+                return v
+        import secrets
+        v = secrets.token_urlsafe(48)
+        f.write_text(v, encoding="utf-8")
+        return v
+    except Exception:
+        return LEGACY_SECRET
+
+
+JWT_SECRET = _load_secret()
 JWT_ALGO = "HS256"
 TOKEN_HOURS = int(os.getenv("PALLET_TOKEN_HOURS", "12"))
 MAX_FAILED_LOGINS = 5

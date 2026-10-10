@@ -134,7 +134,7 @@ def slip_label(slip_no: str, t: str, db: Session = Depends(get_db)):
     """Customer prints this (browser -> Print) and sticks it on the vehicle / hands it to the driver."""
     from fastapi.responses import HTMLResponse
     import hmac
-    if not hmac.compare_digest(t or "", services.label_token(slip_no)):
+    if not services.label_token_ok(slip_no, t):
         raise HTTPException(403, "Invalid label link")
     sl = db.get(models.ReturnSlip, slip_no)
     if not sl:

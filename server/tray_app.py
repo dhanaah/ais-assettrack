@@ -127,7 +127,8 @@ def run_server():
 
 
 def retry_job():
-    """EBS / GCS retry queue every 5 minutes (replaces scheduler.ps1)."""
+    """EBS / GCS retry queue every 5 minutes (replaces scheduler.ps1) + daily database backup."""
+    last_backup = None
     while True:
         time.sleep(300)
         try:
@@ -135,6 +136,29 @@ def retry_job():
                 integration.run_retries(db)
         except Exception as e:
             log(f"retry job: {e}")
+        try:
+            today = datetime.date.today()
+            if last_backup != today and datetime.datetime.now().hour >= 1:     # once a day, after 01:00
+                backup_db(); last_backup = today
+        except Exception as e:
+            log(f"backup: {e}")
+
+
+def backup_db(keep_days: int = 14):
+    """Consistent copy of the SQLite database -> backups/pallet-YYYYMMDD.db (online, no downtime); 14 days kept."""
+    if not os.environ.get("PALLET_DB_URL", "").startswith("sqlite:///"):
+        return
+    import sqlite3, glob
+    folder = os.path.join(BASE_DIR, "backups"); os.makedirs(folder, exist_ok=True)
+    dest = os.path.join(folder, f"pallet-{datetime.date.today():%Y%m%d}.db")
+    src = sqlite3.connect(DB); dst = sqlite3.connect(dest)
+    with dst:
+        src.backup(dst)
+    src.close(); dst.close()
+    log(f"backup written {dest}")
+    for old in glob.glob(os.path.join(folder, "pallet-*.db")):
+        if (time.time() - os.path.getmtime(old)) > keep_days * 86400:
+            os.remove(old)
 
 
 def make_icon():
@@ -262,6 +286,7 @@ def main():
     menu = pystray.Menu(pystray.MenuItem("Open AssetTrack", on_open, default=True),
                         pystray.MenuItem("Copy network address", on_copy),
                         pystray.MenuItem("About / HHT address", on_about),
+                        pystray.MenuItem("Backup database now", lambda icon, item: (backup_db(), info_box("Backup written to the backups folder next to the database."))),
                         pystray.Menu.SEPARATOR,
                         pystray.MenuItem("Stop server (admin)", on_exit))
     icon = pystray.Icon("AssetTrack", make_icon(), f"AIS AssetTrack Server v{config.APP_VERSION} - {urls()[0]}", menu)

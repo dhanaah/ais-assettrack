@@ -45,7 +45,7 @@ export async function applyPull(data) {
   await d.withTransactionAsync(async () => {
     if (data.full) { await d.execAsync('DELETE FROM pallets; DELETE FROM tags; DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers; DELETE FROM lpns;'); }
     for (const p of data.pallets) await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist, p.zone || 'YARD', p.load || 'EMPTY', p.load_ref || null, p.location || null);
-    for (const l of (data.lpns || [])) await d.runAsync('INSERT OR REPLACE INTO lpns VALUES(?,?,?,?,?,?,?)', l.lpn, l.part, l.qty, l.pallet, l.status, l.reserved_for, l.picklist);
+    for (const l of (data.lpns || [])) { if (['DISPATCHED', 'REJECTED', 'MISSING'].includes(l.status)) await d.runAsync('DELETE FROM lpns WHERE lpn=?', l.lpn); else await d.runAsync('INSERT OR REPLACE INTO lpns VALUES(?,?,?,?,?,?,?)', l.lpn, l.part, l.qty, l.pallet, l.status, l.reserved_for, l.picklist); }
     for (const t of data.tags) await d.runAsync('INSERT OR REPLACE INTO tags VALUES(?,?,?)', t.tag, t.pallet, t.status);
     await d.execAsync('DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;');
     for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned, k.dispatch_type || 'PALLET_ONLY', k.part_no, k.part_qty, k.to_plant, k.picked_qty || 0, k.source || 'APP', k.load_point || null, k.vehicle_no || null);
@@ -99,7 +99,24 @@ export async function enqueue(event_type, payload, offline) {
 }
 export const pendingEvents = async (limit = 200) => (await openDb()).getAllAsync("SELECT * FROM outbox WHERE status='PENDING' ORDER BY local_ts LIMIT ?", limit);
 export const pendingCount = async () => (await (await openDb()).getFirstAsync("SELECT COUNT(*) c FROM outbox WHERE status='PENDING'")).c;
-export const markEvent = async (event_id, status, result) => (await openDb()).runAsync('UPDATE outbox SET status=?, result=?, attempts=attempts+1 WHERE event_id=?', status, result || null, event_id);
+export const markEvent = async (event_id, status, result) => {
+  const d = await openDb();
+  await d.runAsync('UPDATE outbox SET status=?, result=?, attempts=attempts+1 WHERE event_id=?', status, result || null, event_id);
+  if (status === 'REJECTED') await undoRejected(d, event_id);
+};
+// a dock scan the server refused must leave the local pick-list ledger too (otherwise the count on the HHT is wrong)
+async function undoRejected(d, event_id) {
+  try {
+    const e = await d.getFirstAsync('SELECT event_type, payload FROM outbox WHERE event_id=?', event_id);
+    if (!e || e.event_type !== 'PALLET_SCAN_DOCK') return;
+    const p = JSON.parse(e.payload); const pallet = p.local_pallet; if (!pallet) return;
+    await d.runAsync('DELETE FROM local_scans WHERE ref=? AND pallet_no=?', p.picklist_no, pallet);
+    await d.runAsync('DELETE FROM local_lpn_scans WHERE ref=? AND pallet=?', p.picklist_no, pallet);
+    const plant = (await kv.get('plant'))?.code || '';
+    await d.runAsync("UPDATE pallets SET status=CASE WHEN home=? THEN 'AVAILABLE' ELSE 'HELD' END, picklist=NULL WHERE pallet_no=? AND picklist=?", plant, pallet, p.picklist_no);
+    await d.runAsync("UPDATE lpns SET status='RESERVED', picklist=NULL WHERE picklist=? AND pallet=?", p.picklist_no, pallet);
+  } catch (err) { }
+}
 export const recentEvents = async (n = 100) => (await openDb()).getAllAsync('SELECT * FROM outbox ORDER BY created_at DESC LIMIT ?', n);
 export const purgeOld = async (days = 30) => (await openDb()).runAsync("DELETE FROM outbox WHERE status<>'PENDING' AND created_at < ?", new Date(Date.now() - days * 864e5).toISOString());
 
