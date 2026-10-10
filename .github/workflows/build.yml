@@ -39,6 +39,14 @@ jobs:
         run: |
           Copy-Item README_SERVER_EXE.txt dist/AssetTrack_Server/
           if (!(Test-Path dist/AssetTrack_Server/AssetTrack_Server.exe)) { exit 1 }
+          New-Item -ItemType Directory -Force ../smoke | Out-Null
+          Copy-Item -Recurse dist/AssetTrack_Server ../smoke/
+          $p = Start-Process -FilePath ../smoke/AssetTrack_Server/AssetTrack_Server.exe -WorkingDirectory ../smoke/AssetTrack_Server -PassThru
+          Start-Sleep -Seconds 25
+          try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8001/api/v1/health; Write-Host $r.Content; $ok = $r.StatusCode -eq 200 } catch { $ok = $false; Write-Host $_ }
+          Get-Content ../smoke/AssetTrack_Server/assettrack_server.log -ErrorAction SilentlyContinue
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { exit 1 }
       - uses: actions/upload-artifact@v4
         with: { name: server-exe, path: server/dist/AssetTrack_Server }
 
