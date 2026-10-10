@@ -541,6 +541,19 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
         exp = db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no)
         if exp.count() and not exp.filter(models.GcsLpn.lpn_no == l.lpn_no).count():
             alerts.append(f"LPN {l.lpn_no} is NOT in GCS {pk.gcs_no} - check the invoice / part card")
+    if is_gcs(pk) and kind in ("PALLET", "LPN"):  # pallet checks: GCS file names the pallets by type + serial
+        p_chk = pal
+        if pallet_scan:
+            _k2, _l2, p2 = resolve_any(db, pallet_scan, plant)
+            p_chk = p2 or p_chk
+        if p_chk is not None:
+            other = (db.query(models.GcsLpn, models.PickList).join(models.PickList, models.PickList.picklist_no == models.GcsLpn.picklist_no)
+                     .filter(models.GcsLpn.pallet_no == p_chk.pallet_no, models.GcsLpn.picklist_no != pk.picklist_no, models.PickList.status == "OPEN").first())
+            mine = db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no, pallet_no=p_chk.pallet_no).count()
+            if other and not mine:
+                raise RuleError(f"Pallet {services.short_ref(p_chk.pallet_no)} belongs to GCS {other[1].gcs_no} - wrong vehicle")
+            if not mine and db.query(models.GcsLpn).filter(models.GcsLpn.picklist_no == pk.picklist_no, models.GcsLpn.pallet_no.isnot(None)).count():
+                alerts.append(f"Pallet {services.short_ref(p_chk.pallet_no)} is NOT in GCS {pk.gcs_no} - check")
     if pallet_scan:                      # operator scanned both (links LPN to pallet)
         k2, l2, p2 = resolve_any(db, pallet_scan, plant)
         if kind == "PALLET" and k2 == "LPN":
@@ -592,7 +605,7 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
         return f"LPN {l.lpn_no} ({l.part_no} x{l.qty}) on {pal.pallet_no}", alerts
     # pallet scanned -> fetch its LPNs
     lq = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED"]))
-    lp = lq.all() if is_gcs(pk) else (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if is_bench(pk) else lq.filter(models.Lpn.part_no == pk.part_no)).all()
+    lp = [x for x in lq.all() if not (x.reserved_for and x.reserved_for != pk.picklist_no and str(x.reserved_for).startswith("GCS-"))] if is_gcs(pk) else (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if is_bench(pk) else lq.filter(models.Lpn.part_no == pk.part_no)).all()
     if not lp and is_gcs(pk):            # loading by pallet tag only: part cards may be scanned later or not at all
         _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts)
         set_load(db, pal, "LOADED", f"GCS {pk.gcs_no}")

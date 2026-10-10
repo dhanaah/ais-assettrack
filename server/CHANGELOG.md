@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.9 (2026-10-10) — GCS pallets linked to the pallet QR (HHT app 2.1.4)
+- The pallet part of LPN_NUMBER (F.2948 / NF7944) = pallet type + serial of the pallet QR: matched to AIS-<plant>-F-02948-... (own plant first); part cards linked to their pallet at import
+- Scan the pallet QR -> its part cards from the GCS are picked; scan a part card -> its pallet is known (no second scan)
+- Pallet listed on another open GCS refused ("wrong vehicle"); pallet not in this GCS -> warning; a mixed pallet loads only this GCS's part cards
+- Finish loading also lists pallets in the GCS not loaded and pallets loaded but not in the GCS (HHT result screen + audit)
 ## 1.10.8 (2026-10-10) — table headings centred on the gate pass and the challan
 ## 1.10.7 (2026-10-10) — real ERP GCS file format (HHT app 2.1.3)
 - GCS CSV as exported by the ERP: GATE_PASS_NUMBER, VEHICLE_NUM, ENTRY_TIME, CUST_ITEM_NUMBER, QUANTITY_PER_CASE, LINE_QUANTITY, GR_NUMBER, LPN_NUMBER, DRIVER_CONTACT_NO, TRANSPORT_MODE, STATUS, CANCELLED_DATE ... recognised; "-" = empty

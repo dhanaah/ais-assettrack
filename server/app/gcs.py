@@ -313,23 +313,25 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
     lpn_rows = [r for r in items if r.get("lpn_no")]
     if lpn_rows:                                   # expected part cards: check the loading, count the pallets
         db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no).delete()
-        seen = set()
+        seen, pcache = set(), {}
         for r in lpn_rows:
             lno, pref = lpn_parts(r["lpn_no"])
             if lno in seen:
                 continue
             seen.add(lno)
             q = _line_qty(r)
-            db.add(models.GcsLpn(picklist_no=pk.picklist_no, lpn_no=lno, lpn_label=str(r["lpn_no"])[:60], pallet_ref=pref,
+            pno = services.pallet_from_ref(db, pref, plant, pcache)      # F.2948 -> AIS-CHN-F-02948-... (type + serial)
+            db.add(models.GcsLpn(picklist_no=pk.picklist_no, lpn_no=lno, lpn_label=str(r["lpn_no"])[:60], pallet_ref=pref, pallet_no=pno,
                                  invoice_no=(str(r.get("invoice_no") or "")[:40] or None), part_no=(str(r.get("part_no") or "")[:40] or None),
                                  qty=q, subinventory=(str(r.get("subinventory") or "")[:20] or None)))
             l = db.get(models.Lpn, lno)            # pre-register the part card so the HHT knows item / qty when it is scanned
             if not l:
                 db.add(models.Lpn(lpn_no=lno, plant_code=plant, part_no=str(r.get("part_no") or "?")[:40], qty=q or 0, status="RESERVED",
-                                  reserved_for=pk.picklist_no, reserved_at=utcnow(), subinventory=(str(r.get("subinventory") or "GCS")[:20])))
+                                  reserved_for=pk.picklist_no, reserved_at=utcnow(), subinventory=(str(r.get("subinventory") or "GCS")[:20]), pallet_no=pno))
             elif l.status in ("AVAILABLE", "RESERVED") and not (l.reserved_for and l.reserved_for != pk.picklist_no):
                 l.status, l.reserved_for, l.reserved_at = "RESERVED", pk.picklist_no, utcnow()
                 l.qty = l.qty or (q or 0)
+                l.pallet_no = l.pallet_no or pno
         db.flush()
     if items:                                      # line level: replace the invoice lines of this GCS
         items = _merge_lines(items, f)
@@ -485,5 +487,4 @@ def items_loaded(db: Session, picklist_no: str) -> list[dict]:
 
 def short_pallet(no: str | None) -> str:
     """AIS-CHN-ANF-00001-0000001 -> ANF-00001 (pallet type + type serial); other numbers unchanged."""
-    m = services.PALLET_ID_RE.match(str(no or "").upper())
-    return f"{m.group(2)}-{m.group(3)}" if m else str(no or "")
+    return services.short_ref(no)

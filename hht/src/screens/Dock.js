@@ -81,9 +81,11 @@ export default function Dock({ onBack, yard = false }) {
 
   if (result) return (<Screen><Header title="Loading complete" sub={`GCS ${result.gcs_no} · ${result.vehicle_no || ''}`} onBack={() => { setResult(null); setPk(null); }} /><Page>
     <Glass style={{ alignItems: 'center' }}><Ring value={String(result.scanned ?? result.qty)} label="pallets loaded" color={C.ok} size={92} /></Glass>
-    {result.gcs_check && (result.gcs_check.missing_lpns.length || result.gcs_check.extra_lpns.length || (result.gcs_check.expected_pallets && result.gcs_check.expected_pallets !== result.gcs_check.loaded_pallets)) ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.warn }]}>
+    {result.gcs_check && (result.gcs_check.missing_lpns.length || result.gcs_check.extra_lpns.length || (result.gcs_check.missing_pallets || []).length || (result.gcs_check.expected_pallets && result.gcs_check.expected_pallets !== result.gcs_check.loaded_pallets)) ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.warn }]}>
       <Text style={[S.h2, { color: C.warn }]}>Check with the GCS</Text>
       {result.gcs_check.expected_pallets && result.gcs_check.expected_pallets !== result.gcs_check.loaded_pallets ? <Text style={S.body}>Pallets: GCS {result.gcs_check.expected_pallets}, loaded {result.gcs_check.loaded_pallets}</Text> : null}
+      {(result.gcs_check.missing_pallets || []).length ? <Text style={S.body}>Pallets in GCS not loaded ({result.gcs_check.missing_pallets.length}): {result.gcs_check.missing_pallets.slice(0, 8).join(', ')}{result.gcs_check.missing_pallets.length > 8 ? ' …' : ''}</Text> : null}
+      {(result.gcs_check.extra_pallets || []).length ? <Text style={S.body}>Pallets loaded but not in GCS ({result.gcs_check.extra_pallets.length}): {result.gcs_check.extra_pallets.slice(0, 8).join(', ')}</Text> : null}
       {result.gcs_check.missing_lpns.length ? <Text style={S.body}>Part cards in GCS not scanned ({result.gcs_check.missing_lpns.length}): {result.gcs_check.missing_lpns.slice(0, 8).join(', ')}{result.gcs_check.missing_lpns.length > 8 ? ' …' : ''}</Text> : null}
       {result.gcs_check.extra_lpns.length ? <Text style={S.body}>Scanned but not in GCS ({result.gcs_check.extra_lpns.length}): {result.gcs_check.extra_lpns.slice(0, 8).join(', ')}</Text> : null}
       <Text style={S.mute}>Recorded in the audit log.</Text></View> : null}

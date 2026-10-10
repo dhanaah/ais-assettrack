@@ -56,6 +56,36 @@ import re as _re
 PALLET_ID_RE = _re.compile(r"^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{1,8})-(\d{3,8})-(\d{4,10})$")   # type may be 1 letter (F)
 
 
+def short_ref(pallet_no: str | None) -> str:
+    """AIS-CHN-F-02948-0000100 -> F-02948 (type + serial); other numbers unchanged."""
+    m = PALLET_ID_RE.match(str(pallet_no or "").upper())
+    return f"{m.group(2)}-{m.group(3)}" if m else str(pallet_no or "")
+
+
+_REF_RE = _re.compile(r"^([A-Z0-9]*?[A-Z])[.\- ]?0*(\d+)$")
+
+
+def pallet_from_ref(db: Session, ref: str | None, plant: str | None = None, cache: dict | None = None) -> str | None:
+    """ERP pallet reference 'F.2948' / 'NF7944' = pallet type + type serial (part of the pallet QR
+    AIS-<owner>-<type>-<serial>-<global>). Returns the pallet_no, preferring pallets owned by `plant`."""
+    m = _REF_RE.match(str(ref or "").strip().upper())
+    if not m:
+        return None
+    t, n = m.group(1), int(m.group(2))
+    key = (t, n, plant)
+    if cache is not None and key in cache:
+        return cache[key]
+    hits = []
+    for (pno, home) in db.query(models.Pallet.pallet_no, models.Pallet.home_plant).filter(models.Pallet.pallet_no.like(f"AIS-%-{t}-%{n}-%")).all():
+        mm = PALLET_ID_RE.match(pno)
+        if mm and mm.group(2) == t and int(mm.group(3)) == n:
+            hits.append((home != plant, pno))
+    res = sorted(hits)[0][1] if hits else None
+    if cache is not None:
+        cache[key] = res
+    return res
+
+
 def parse_pallet_qr(scanned: str) -> dict | None:
     """Returns {"pallet_no", "owner_plant", "pallet_type", "mfg_date", "raw"} for an AIS pallet QR / ID, else None."""
     s = (scanned or "").strip()

@@ -446,9 +446,18 @@ with TestClient(app) as c:
         db.add(models.Customer(code="WEBASTO", name="Webasto Roofsystems India Private Limited", plant_code="CHN"))
         for i in range(41, 47):
             db.add(models.Pallet(pallet_no=f"CHN-P0{i}", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH"))
+        # pallet QRs: type + serial match the ERP reference (F.2948 -> AIS-CHN-F-02948-..., NF7944 -> AIS-CHN-NF-07944-...)
+        for pno in ("AIS-CHN-F-02948-0010001", "AIS-CHN-F-03655-0010002", "AIS-CHN-NF-07944-0010003", "AIS-PUN-F-02948-0020001"):
+            db.add(models.Pallet(pallet_no=pno, home_plant=pno.split("-")[1], location_plant="CHN", status="AVAILABLE", zone="FGWH",
+                                 pallet_type=pno.split("-")[2]))
         db.commit()
         res = gcssvc.pull(db, fetch=lambda: real)
+        g1 = db.query(models.GcsLpn).filter_by(lpn_no="P10266528972").first()
+        g2 = db.query(models.GcsLpn).filter_by(lpn_no="P10266528888").first()
+        l1 = db.get(models.Lpn, "P10266528972")
     check(res["created"] == 2, f"2 real GCS files -> 2 loading sheets: {res}")
+    check(g1.pallet_no == "AIS-CHN-F-02948-0010001" and l1.pallet_no == g1.pallet_no and g2.pallet_no is None,
+          "F.2948 -> own plant's pallet AIS-CHN-F-02948 (not PUN's); part card linked to it; unknown pallet ref left open")
     d = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712814", headers=W).json(); k = d["picklist"]; it = d["items"]
     check(len(it) == 1 and it[0]["cases"] == 6 and it[0]["qty_per_case"] == 120 and it[0]["qty"] == 720 and abs(it[0]["amount"] - 1105304.16) < 0.01,
           f"6 case rows -> 1 invoice line: 6 cases x 120 = 720, amount {it[0]['amount'] if it else '-'}")
@@ -458,16 +467,22 @@ with TestClient(app) as c:
     k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
     check(k2["qty"] == 2 and k2["customer_name"].startswith("RENAULT NISSAN") and k2["invoice_no"] == "604118430 +1", "12823: 2 invoices, 2 pallets, customer name kept")
     no20 = "GCS-CHN-FGCHN262712814"
-    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "F.2948.P10266528972", "pallet": "CHN-P041"})
-    check(e["status"] == "APPLIED" and "P10266528972" in e["result"] and "x120" in e["result"], f"full LPN label scanned -> part card P10266528972 x120 known from the GCS: {e['result'][:70]}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "AIS-CHN-F-02948-0010001"})
+    check(e["status"] == "APPLIED" and "P10266528972" in e["result"], f"pallet QR scanned -> its part card from the GCS picked automatically: {e['result'][:70]}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "F.3655.P10266528883"})
+    check(e["status"] == "APPLIED" and "AIS-CHN-F-03655" in e["result"] and "x120" in e["result"], f"part card label alone -> pallet already known: {e['result'][:70]}")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "P10266512005", "pallet": "CHN-P042"})
     check(e["status"] == "REJECTED" and "wrong vehicle" in e["result"], f"part card of GCS 12823 refused on 12814: {e['result'][:70]}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "AIS-CHN-NF-07944-0010003"})
+    check(e["status"] == "REJECTED" and "wrong vehicle" in e["result"] and "NF-07944" in e["result"], f"pallet of GCS 12823 refused on 12814: {e['result'][:70]}")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "P99999999", "pallet": "CHN-P043"})
-    check(e["status"] in ("APPLIED", "EXCEPTION") and "NOT in GCS" in (e.get("result") or "") + str(e.get("alerts") or ""), f"part card not in the GCS file -> warning: {str(e)[:110]}")
+    msg = (e.get("result") or "") + str(e.get("alerts") or "")
+    check(e["status"] in ("APPLIED", "EXCEPTION") and "NOT in GCS" in msg, f"part card + pallet not in the GCS file -> warning: {msg[:110]}")
     r = c.post(f"/api/v1/picklists/{no20}/confirm", headers=H).json()
     gc = r.get("gcs_check") or {}
-    check(r["status"] == "APPROVED" and len(gc.get("missing_lpns", [])) == 5 and gc.get("extra_lpns") == ["P99999999"] and gc.get("expected_pallets") == 6,
-          f"finish loading reports the gap: 5 part cards not scanned, 1 extra, 6 pallets expected vs {gc.get('loaded_pallets')}")
+    check(r["status"] == "APPROVED" and len(gc.get("missing_lpns", [])) == 4 and gc.get("extra_lpns") == ["P99999999"] and gc.get("expected_pallets") == 6
+          and gc.get("missing_pallets") == [] and gc.get("extra_pallets") == ["CHN-P043"],
+          f"finish loading reports the gap: 4 part cards not scanned, 1 extra card, extra pallet CHN-P043: {gc}")
     rd = PdfReader(_io.BytesIO(c.get(f"/api/v1/picklists/{no20}/gcs.pdf", headers=W).content)); gt = rd.pages[0].extract_text()
     check(all(x in gt for x in ("FGCHN2627/12814", "WEBASTO ROOFSYSTEMS", "LCV23", "5711605A", "720.00", "1,105,304.16")), "gate pass PDF from the real file")
     hdr, *rows = real[0][1].decode().splitlines()

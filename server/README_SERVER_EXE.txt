@@ -30,7 +30,8 @@ LINE_AMOUNT, GR_NUMBER, PALLET_TYPE, PACKAGE_TYPE, STATUS, REMARKS, APPROVAL_TIM
 CANCELLED_REMARKS, CANCELLED_DATE, PLANT_NAME, LPN_NUMBER
 - Rows of the same GATE_PASS_NUMBER make ONE loading sheet; rows of the same invoice + item are added up into one gate pass
   line (cases, quantity, amount).
-- LPN_NUMBER (e.g. F.2948.P10266528972) = pallet F.2948 + part card P10266528972: the HHT knows every part card of the GCS,
+- LPN_NUMBER (e.g. F.2948.P10266528972) = pallet F.2948 (pallet type F + serial 2948 = pallet QR AIS-CHN-F-02948-...)
+  + part card P10266528972. Scanning the pallet QR picks its part cards; a pallet of another GCS is refused. the HHT knows every part card of the GCS,
   refuses a part card that belongs to another GCS ("wrong vehicle"), warns on one not in the file, and "Finish loading"
   shows part cards not scanned. Expected pallets = number of different pallets in LPN_NUMBER.
 - Customer: matched to the customer master by CUSTOMER_NAME (add the customer with exactly that name), else REMARKS as code.

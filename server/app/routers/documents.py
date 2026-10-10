@@ -305,8 +305,12 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
         # loading vs the GCS file: part cards listed but not scanned / scanned but not listed (warning, recorded in the audit)
         exp = {g.lpn_no for g in db.query(models.GcsLpn).filter_by(picklist_no=no).all()}
         got = {r.lpn_no for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all()}
+        exp_pal = {g.pallet_no for g in db.query(models.GcsLpn).filter_by(picklist_no=no).all() if g.pallet_no}
+        got_pal = {l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=no).all()}
         check = {"expected_pallets": k.qty or None, "loaded_pallets": scanned,
-                 "missing_lpns": sorted(exp - got) if exp else [], "extra_lpns": sorted(got - exp) if exp else []}
+                 "missing_lpns": sorted(exp - got) if exp else [], "extra_lpns": sorted(got - exp) if exp else [],
+                 "missing_pallets": sorted(services.short_ref(x) for x in exp_pal - got_pal),
+                 "extra_pallets": sorted(services.short_ref(x) for x in got_pal - exp_pal) if exp_pal else []}
         k.qty = scanned; k.part_qty = lpnsvc.picked_qty(db, no) or k.part_qty
         plant = db.get(models.Plant, k.plant_code)
         cust = db.query(models.Customer).filter_by(code=k.customer_code, plant_code=k.plant_code).first()

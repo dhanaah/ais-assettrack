@@ -319,6 +319,7 @@ class GcsLpn(Base):
     lpn_no: Mapped[str] = mapped_column(String(40), index=True)
     lpn_label: Mapped[str | None] = mapped_column(String(60))           # full LPN_NUMBER as in the file
     pallet_ref: Mapped[str | None] = mapped_column(String(30))
+    pallet_no: Mapped[str | None] = mapped_column(String(30), index=True)  # pallet QR id matched from pallet_ref (type + serial)
     invoice_no: Mapped[str | None] = mapped_column(String(40))
     part_no: Mapped[str | None] = mapped_column(String(40))
     qty: Mapped[int | None] = mapped_column(Integer)
