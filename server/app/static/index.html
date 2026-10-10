@@ -214,6 +214,7 @@ async function picklists(m){
 
   ['OPEN','SO_PENDING','PDI_PENDING'].includes(r.status)&&(can('PICKLIST_CREATE')||can('EMPTY_RETURN'))?h('button',{className:'d',on:{click:()=>{if(confirm('Cancel '+r.picklist_no+' and release its pallets / LPN reservations?'))act(`/picklists/${r.picklist_no}/cancel`)}}},'Cancel'):'',
   r.challan_no?h('button',{className:'s',on:{click:()=>window.open(`/print/challan/${r.picklist_no}?tok=${T}`)}},'🖨 Challan'):'',
+  r.gcs_no&&r.source==='GCS'?h('button',{className:'s',on:{click:()=>gcsItems(r.picklist_no)}},'🧾 Invoices'):'',
   r.gcs_no&&r.source==='GCS'?h('button',{className:'s',on:{click:()=>window.open(`${API}/picklists/${r.picklist_no}/gcs.pdf?tok=${T}`)}},'📄 GCS PDF'):'',
   r.gcs_no&&r.source==='GCS'&&['APPROVED','DISPATCHED'].includes(r.status)?h('button',{className:'s',on:{click:async()=>{try{const x=await api(`/picklists/${r.picklist_no}/gcs-print`,{method:'POST'});msg('GCS '+x.print)}catch(e){msg(e.message,1)}}}},'🖨 Print again'):'' )))}
  async function act(p,b={}){try{const r=await api(p,{method:'POST',body:b});msg(r.so_message||r.gcs_message||r.message||('Done · '+(r.status||'')));load()}catch(x){msg(x.message,1)}}
@@ -232,6 +233,9 @@ async function picklists(m){
    try{const r=await api('/picklists',{method:'POST',body:b});msg(`${r.picklist_no} released`+(r.reserved_lpns?` · ${r.reserved_lpns.length} LPN reserved`:'')+(r.so_message?' · '+r.so_message:''));load()}catch(x){msg(x.message,1)}};
   m.append(h('div',{className:'card'},h('h2',{},'Release pick list'),h('p',{className:'muted'},'Part dispatch: WMS stock must be fresh; the blanket order controls PO and schedule qty; LPNs are reserved FIFO. Sale order goes to EBS only after PDI and confirmed sub-inventory transfer.'),f))}
  m.append(h('div',{className:'card'},h('h2',{},'Pick lists'),list));load()}
+async function gcsItems(no){const r=await api(`/picklists/${no}`);const it=r.items||[];const inv=new Set(it.map(x=>x.invoice_no).filter(Boolean)).size;
+ $('#main').prepend(h('div',{className:'card'},h('h2',{},'Invoice lines · GCS '+(r.picklist.gcs_no||no),' ',pill(r.picklist.status),` ${inv} invoice(s) · ${it.length} line(s) `,h('button',{className:'s',on:{click:e=>e.target.closest('.card').remove()}},'close')),
+ it.length?table([['#','line_no'],['Invoice','invoice_no'],['Inv date',x=>x.invoice_date?String(x.invoice_date).slice(0,10):''],['SO','so_number'],['Item','part_no'],['Description','part_desc'],['Qty','qty'],['Loaded',x=>h('b',{style:x.qty&&x.loaded<x.qty?'color:#c8102e':'color:#15803d'},String(x.loaded))],['Pallets','pallets']],it):h('p',{className:'mute'},'No invoice lines in the GCS file.')));window.scrollTo(0,0)}
 async function plLpns(no){const r=await api(`/picklists/${no}/lpns`);$('#main').prepend(h('div',{className:'card'},h('h2',{},'LPNs on '+no,' ',pill(r.picklist.status),` picked ${r.picked_qty}/${r.picklist.part_qty} `,h('button',{className:'s',on:{click:e=>e.target.closest('.card').remove()}},'close')),
  table([['LPN','lpn_no'],['Pallet','pallet_no'],['Part','part_no'],['Qty','qty'],['PDI',r=>r.pdi_result?pill(r.pdi_result):''],['Remarks','pdi_remarks'],['Scanned',r=>fmt(r.scanned_at)],['User','user_id']],r.lpns),
  h('h3',{},'Reserved (not yet picked)'),table([['LPN','lpn_no'],['Pallet','pallet_no'],['Qty','qty'],['Sub-inv','subinventory'],['Reserved',r=>fmt(r.reserved_at)],['WMS',r=>r.wms_missing?pill('MISSING'):'']],r.reserved),

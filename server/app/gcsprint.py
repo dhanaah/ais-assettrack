@@ -1,5 +1,6 @@
 """GCS (gate pass) PDF: built when loading finishes and printed automatically on the plant's configured printer.
-Contents: AIS header, GCS number, vehicle, consignee, invoice / SO / e-way bill, CHALLAN NUMBER, the loaded pallets with
+Contents: AIS header, GCS number, vehicle, consignee, invoice LINES (invoice, item, qty, loaded - one GCS may carry several
+invoices), e-way bill, CHALLAN NUMBER, the loaded pallets (short number: type + serial) with
 their part cards, the signed QR the OUT gate scans, and the SECURITY SIGN box with the login ID and name of the person
 who completed the loading. PDFs are kept in gcs_docs/ next to the database (reprint from the web any time).
 Printing: plant master -> gcs_print_mode WINDOWS (printer name, shared or network, via the Windows print verb) or
@@ -76,34 +77,90 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     box(15 * mm + cw, y, cw, bh, "VEHICLE", pk.vehicle_no or "—", big=True)
     box(15 * mm + 2 * cw, y, cw, bh, "CHALLAN NO (RETURNABLE PALLETS)", pk.challan_no or "pending", big=True)
     y -= bh
+    from . import gcs as gcssvc
+    items = gcssvc.items_loaded(db, pk.picklist_no)
+    has_cards = any(lpn_by.values())
+    invs = list(dict.fromkeys(i["invoice_no"] for i in items if i["invoice_no"]))
     box(15 * mm, y, cw, bh, "CONSIGNEE", f"{cust.name if cust else pk.customer_code} ({pk.customer_code})" + (f"\nto plant {pk.to_plant}" if pk.to_plant else ""))
-    box(15 * mm + cw, y, cw, bh, "INVOICE / SO / E-WAY BILL", f"{pk.invoice_no or '—'}" + (f" · {pk.invoice_date:%d-%m-%Y}" if pk.invoice_date else "") + f"\nSO {pk.so_number or '—'} · EWB {pk.ewaybill_no or '—'}")
-    box(15 * mm + 2 * cw, y, cw, bh, "LOADED", f"{len(lines)} pallet(s)" + (f" · part {pk.part_no}" if pk.part_no else "") + (f" qty {pk.part_qty}" if pk.part_qty else "") + f"\n{utcnow():%d-%m-%Y %H:%M} UTC")
-    y -= bh + 6 * mm
-    # table
-    cols = [("#", 10 * mm), ("Pallet", 48 * mm), ("Part cards (LPN · part × qty)", 92 * mm), ("Loaded at", 20 * mm), ("By", 10 * mm)]
-    def thead(y):
-        c.setFillColorRGB(0.93, 0.95, 1); c.rect(15 * mm, y - 6 * mm, W - 30 * mm, 6 * mm, fill=1, stroke=0)
-        c.setFillColorRGB(*navy); c.setFont("Helvetica-Bold", 8); x = 15 * mm
-        for name, w in cols:
-            c.drawString(x + 1.5 * mm, y - 4.2 * mm, name); x += w
-        c.setFillColorRGB(0, 0, 0); return y - 6 * mm
-    y = thead(y); c.setFont("Helvetica", 8); page = 1
-    for i, l in enumerate(lines, 1):
-        cards = [f"{x.lpn_no} · {x.part_no} × {x.qty}" for x in lpn_by.get(l.pallet_no, [])] or ["—"]
-        rows = max(1, (len(cards) + 1) // 2); rh = 5 * mm * rows + 1.5 * mm
-        if y - rh < 60 * mm:
-            c.showPage(); page += 1; y = header(page); y = thead(y); c.setFont("Helvetica", 8)
-        x = 15 * mm
-        c.drawString(x + 1.5 * mm, y - 4 * mm, str(i)); x += cols[0][1]
-        c.setFont("Helvetica-Bold", 8); c.drawString(x + 1.5 * mm, y - 4 * mm, l.pallet_no); c.setFont("Helvetica", 8); x += cols[1][1]
-        for j, card in enumerate(cards):
-            c.drawString(x + 1.5 * mm + (j % 2) * 46 * mm, y - 4 * mm - (j // 2) * 5 * mm, card[:34])
-        x += cols[2][1]
-        c.drawString(x + 1.5 * mm, y - 4 * mm, f"{l.scanned_at:%d-%m %H:%M}"); x += cols[3][1]
-        c.drawString(x + 1.5 * mm, y - 4 * mm, (l.user_id or "")[:8])
-        c.setStrokeColorRGB(0.85, 0.85, 0.85); c.setLineWidth(0.4); c.line(15 * mm, y - rh, W - 15 * mm, y - rh); y -= rh
-    c.setFont("Helvetica-Bold", 9); c.drawRightString(W - 15 * mm, y - 5 * mm, f"TOTAL PALLETS LOADED: {len(lines)}"); y -= 12 * mm
+    box(15 * mm + cw, y, cw, bh, "INVOICES / E-WAY BILL", (f"{len(invs)} invoice(s) · {len(items)} line(s)" if items else f"{pk.invoice_no or '—'}") + f"\nEWB {pk.ewaybill_no or '—'}")
+    box(15 * mm + 2 * cw, y, cw, bh, "LOADED", f"{len(lines)} pallet(s)" + (f" · qty {sum(r.qty or 0 for v in lpn_by.values() for r in v)}" if has_cards else "") + f"\n{datetime.now():%d-%m-%Y %H:%M}")
+    y -= bh + 5 * mm
+    import math
+    sig_top = 52 * mm                                  # signature block + footer need the bottom 52 mm
+    x0, tw = 15 * mm, W - 30 * mm
+
+    def band(text, yy):
+        c.setFillColorRGB(0.93, 0.95, 1); c.rect(x0, yy - 5.5 * mm, tw, 5.5 * mm, fill=1, stroke=0)
+        c.setFillColorRGB(*navy); c.setFont("Helvetica-Bold", 7.5)
+        return yy
+
+    # ---- invoice lines (invoice, item, qty at line level) - one GCS may carry several invoices
+    if items:
+        n_i = len(items)
+        irh = 4.6 * mm if n_i <= 8 else 4.0 * mm if n_i <= 16 else 3.5 * mm
+        room = y - sig_top - 8 * mm - 32 * mm         # keep at least 32 mm for the pallet list
+        cap_i = max(1, int(room / irh) - 3)
+        shown_i = items[:cap_i]
+        ifs = 7.5 if irh >= 4.6 * mm else 6.8 if irh >= 4 * mm else 6.2
+        cols = [(1.5, "#", "l"), (7, "Invoice no", "l"), (40, "Inv date", "l"), (58, "SO no", "l"), (84, "Item", "l"), (114, "Description", "l"),
+                (157, "Qty", "r"), (169, "Loaded", "r"), (178.5, "Pallets", "r")]
+        band("", y)
+        for xm, t, al in cols:
+            (c.drawRightString if al == "r" else c.drawString)(x0 + xm * mm, y - 4 * mm, t)
+        y -= 5.5 * mm; c.setFillColorRGB(0, 0, 0)
+        for k, it in enumerate(shown_i):
+            yy = y - (k + 1) * irh + 1.1 * mm
+            short = has_cards and it["qty"] and (it["loaded"] or 0) < it["qty"]
+            vals = [str(it["line_no"]), (it["invoice_no"] or "")[:18], f"{it['invoice_date']:%d-%m-%Y}" if it["invoice_date"] else "", (it["so_number"] or "")[:14],
+                    (it["part_no"] or "")[:16], (it["part_desc"] or "")[:26], "" if it["qty"] is None else str(it["qty"]),
+                    (str(it["loaded"]) if has_cards else "—"), "" if it["pallets"] is None else str(it["pallets"])]
+            for (xm, t, al), v in zip(cols, vals):
+                c.setFont("Helvetica-Bold" if t in ("Invoice no", "Item") else "Helvetica", ifs)
+                if t == "Loaded" and short:
+                    c.setFillColorRGB(*red)
+                (c.drawRightString if al == "r" else c.drawString)(x0 + xm * mm, yy, v); c.setFillColorRGB(0, 0, 0)
+            c.setStrokeColorRGB(0.88, 0.88, 0.88); c.setLineWidth(0.3); c.line(x0, y - (k + 1) * irh, x0 + tw, y - (k + 1) * irh)
+        y -= len(shown_i) * irh
+        c.setFont("Helvetica-Bold", ifs)
+        c.drawString(x0 + 7 * mm, y - 3.6 * mm, f"TOTAL  {len(invs)} invoice(s)" + (f"  (first {len(shown_i)} of {n_i} lines shown - full list on the web)" if len(shown_i) < n_i else ""))
+        c.drawRightString(x0 + 157 * mm, y - 3.6 * mm, str(sum(i["qty"] or 0 for i in items)))
+        c.drawRightString(x0 + 169 * mm, y - 3.6 * mm, str(sum(i["loaded"] or 0 for i in items)) if has_cards else "—")
+        c.drawRightString(x0 + 178.5 * mm, y - 3.6 * mm, str(sum(i["pallets"] or 0 for i in items)) if any(i["pallets"] for i in items) else "")
+        y -= 8 * mm
+
+    # ---- pallet list (short number: type + serial) - always ONE A4 sheet, 1..4 columns, rows shrink with the count
+    avail = y - sig_top - 5.5 * mm - 10 * mm       # minus column-header band and the total line
+    n = len(lines)
+    for ncol in (1, 2, 3, 4, 5, 6):                  # short numbers (ANF-00001) allow up to 6 narrow columns
+        per_col = max(1, math.ceil(n / ncol))
+        if avail / per_col >= (4.4 * mm if ncol < 4 else 3.3 * mm) or ncol == 6:
+            break
+    rh = max(3.3 * mm, min(5.0 * mm, avail / per_col))
+    fs = 8 if rh >= 4.8 * mm else 7 if rh >= 4.0 * mm else 6.2
+    cap = max(1, int(avail / rh))
+    shown = lines if per_col <= cap else lines[:cap * ncol]
+    colw = tw / ncol
+    band("", y)
+    for ci in range(ncol):
+        c.drawString(x0 + ci * colw + 1.5 * mm, y - 4 * mm, "#   Pallet" + ("        part cards (LPN · item × qty)" if ncol == 1 else "        part cards" if ncol < 4 else ""))
+    c.setFillColorRGB(0, 0, 0); y -= 5.5 * mm
+    per_col = max(1, math.ceil(len(shown) / ncol))
+    for i, l in enumerate(shown):
+        ci, ri = divmod(i, per_col)
+        x = x0 + ci * colw; yy = y - (ri + 1) * rh + 1.2 * mm
+        cards = ", ".join(f"{r.lpn_no}·{r.part_no}×{r.qty}" if ncol == 1 else r.lpn_no for r in lpn_by.get(l.pallet_no, []))
+        c.setFont("Helvetica", fs); c.drawString(x + 1.5 * mm, yy, f"{i + 1:>3}")
+        c.setFont("Helvetica-Bold", fs); c.drawString(x + 8 * mm, yy, gcssvc.short_pallet(l.pallet_no)[:16])
+        c.setFont("Helvetica", fs - 0.5)
+        if cards and ncol < 4:
+            cx = x + 28 * mm
+            maxc = int((colw - 29 * mm) / (fs * 0.5))
+            c.drawString(cx, yy, cards[:max(6, maxc)])
+        c.setStrokeColorRGB(0.88, 0.88, 0.88); c.setLineWidth(0.3); c.line(x, y - (ri + 1) * rh, x + colw, y - (ri + 1) * rh)
+    y -= per_col * rh + 2 * mm
+    c.setFont("Helvetica-Bold", 9)
+    note = f"TOTAL PALLETS LOADED: {n}" + (f"   (first {len(shown)} listed - full list on the web)" if len(shown) < n else "")
+    c.drawRightString(W - 15 * mm, y - 4 * mm, note); y = max(y - 10 * mm, sig_top + 2 * mm)
     # signatures
     sw = (W - 30 * mm) / 3; sh = 26 * mm
     who = f"{user.full_name} ({user.user_id})" if user else "—"

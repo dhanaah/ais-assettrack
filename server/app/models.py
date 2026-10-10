@@ -259,6 +259,21 @@ class PickListLine(Base):
     __table_args__ = (UniqueConstraint("picklist_no", "pallet_no", name="uq_pl_pallet"),)
 
 
+class PickListItem(Base):
+    """Invoice lines of a GCS / pick list: one GCS may carry several invoices, each with its items and quantities."""
+    __tablename__ = "picklist_items"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    picklist_no: Mapped[str] = mapped_column(ForeignKey("picklists.picklist_no"), index=True)
+    line_no: Mapped[int] = mapped_column(Integer, default=1)
+    invoice_no: Mapped[str | None] = mapped_column(String(40), index=True)
+    invoice_date: Mapped[datetime | None] = mapped_column(DateTime)
+    so_number: Mapped[str | None] = mapped_column(String(40))
+    part_no: Mapped[str | None] = mapped_column(String(40))
+    part_desc: Mapped[str | None] = mapped_column(String(80))
+    qty: Mapped[int | None] = mapped_column(Integer)
+    pallets: Mapped[int | None] = mapped_column(Integer)
+
+
 class ReturnSlip(Base):
     __tablename__ = "return_slips"
     slip_no: Mapped[str] = mapped_column(String(40), primary_key=True)

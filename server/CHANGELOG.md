@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.4 (2026-10-10) — several invoices per GCS (line level); short pallet numbers; GCS always one A4 sheet
+- GCS CSV: one row per invoice line (GCS No, Vehicle, Customer, Invoice No, Invoice Date, SO No, Item Code, Item Description, Qty, Pallets); rows with the same GCS No make ONE loading sheet with all its invoice lines (new table picklist_items); a re-sent file refreshes the lines while the GCS is still open
+- Loaded quantity per invoice line from the part cards scanned (same item on several invoices fills the lines in order); short-loaded lines shown in red
+- GCS PDF / web print: invoice-lines table (invoice, date, SO, item, description, qty, loaded, pallets) with totals; web Pick Lists "🧾 Invoices"; HHT loading screen shows invoices · lines · qty (tap to expand)
+- Pallet numbers on the GCS sheet shortened to pallet type + serial (AIS-CHN-ANF-00001-0000001 → ANF-00001); up to 6 columns; always a single A4 sheet
 ## 1.10.3 (2026-10-10) — three signs on the GCS: PDI (Bench login), Logistics (shift supervisor, Bench login), Security (HHT login)
 ## 1.10.2 (2026-10-10) — PDI and Shift Supervisor signs on the GCS
 - GCS sheet / PDF / print carry the PDI person and the Shift Supervisor logged in on the Planning Bench ("Name (login)"), taken from the GCS CSV (columns PDI By / PDI Login, Shift Supervisor / Supervisor Login - several spellings accepted) or from the Bench dispatch record; five sign boxes: PDI, Shift Supervisor, Security/Logistics (loading, pre-filled with the HHT login), Driver, OUT gate

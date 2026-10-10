@@ -34,8 +34,10 @@ export default function Dock({ onBack, yard = false }) {
     catch (e) { toast(e.message, 'err'); }
   };
   const [srv, setSrv] = useState(null);
-  const refresh = async (k = pk) => { setScans(await localScans(k.picklist_no)); setLpns(await lpnScans(k.picklist_no)); const fresh = await getPicklist(k.picklist_no); setSrv(fresh ? { scanned: fresh.scanned, picked: fresh.picked_qty } : null); };
-  const open = async (k) => { setPk(k); setWaitLpn(null); setAlert(null); await refresh(k); };
+  const [items, setItems] = useState(null); const [showItems, setShowItems] = useState(false);
+  const refresh = async (k = pk) => { setScans(await localScans(k.picklist_no)); setLpns(await lpnScans(k.picklist_no)); const fresh = await getPicklist(k.picklist_no); setSrv(fresh ? { scanned: fresh.scanned, picked: fresh.picked_qty } : null);
+    if (isGcs(k) && sync.online) api(`/picklists/${k.picklist_no}`).then(r => setItems(r.items || [])).catch(() => { }); };
+  const open = async (k) => { setPk(k); setWaitLpn(null); setAlert(null); setItems(null); setShowItems(false); await refresh(k); };
 
   const onScan = async (code) => {
     let first = code, second = null;
@@ -116,6 +118,10 @@ export default function Dock({ onBack, yard = false }) {
         {isGcs(pk) ? <Ring value={String(lpns.length)} label="part cards" color={C.accent} size={92} /> : null}
         <Ring value={isYard(pk) || isGcs(pk) ? `${scans.length}${isGcs(pk) && pk.qty ? '/' + pk.qty : ''}` : `${scans.length}/${pk.qty}`} label={isYard(pk) ? 'empty pallets loaded' : isGcs(pk) ? 'pallets loaded' : 'pallets'} color={complete ? C.ok : C.accent} size={92} />
       </Glass>
+      {isGcs(pk) && items && items.length ? <TouchableOpacity activeOpacity={0.8} onPress={() => setShowItems(!showItems)} style={[S.card, { paddingVertical: 8, marginTop: 8, marginBottom: 0 }]}>
+        <View style={S.row}><Text style={{ flex: 1, fontWeight: '700', color: C.fg }}>{new Set(items.map(i => i.invoice_no).filter(Boolean)).size} invoice(s) · {items.length} line(s) · qty {items.reduce((a, i) => a + (i.qty || 0), 0)}</Text><Text style={S.mute}>{showItems ? 'hide ▲' : 'show ▼'}</Text></View>
+        {showItems ? items.map(i => <View key={i.line_no} style={{ flexDirection: 'row', marginTop: 4 }}><Text style={[S.mute, { flex: 1 }]} numberOfLines={1}>{i.invoice_no || '—'} · {i.part_no || ''}</Text><Text style={{ fontWeight: '700', color: lpns.length && i.qty && i.loaded < i.qty ? C.amber : C.ok }}>{lpns.length ? `${i.loaded}/` : ''}{i.qty ?? ''}</Text></View>) : null}
+      </TouchableOpacity> : null}
       {srv && srv.scanned !== scans.length ? <Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Server has {srv.scanned} pallet{srv.scanned === 1 ? '' : 's'} on this list (this HHT: {scans.length}) · another HHT may be scanning too</Text> : null}
       {waitLpn ? <Text style={{ color: C.amber, fontWeight: '700', marginTop: 6 }}>LPN {waitLpn.lpn} waiting → scan its PALLET</Text> : null}
       {alert ? <TouchableOpacity onPress={() => setAlert(null)} style={{ backgroundColor: C.warn, borderRadius: 12, padding: 10, marginTop: 6 }}><Text style={{ color: '#fff', fontWeight: '700' }}>⚠ {alert}</Text><Text style={{ color: '#fff', fontSize: 11 }}>tap to dismiss · recorded in Missed Scans</Text></TouchableOpacity> : null}

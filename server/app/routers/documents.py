@@ -50,8 +50,9 @@ def get_picklist(no: str, p: Principal = Depends(current_user), db: Session = De
     if not k:
         raise HTTPException(404, "Not found")
     p.require_plant(k.plant_code)
+    from .. import gcs as gcssvc
     lines = db.query(models.PickListLine).filter_by(picklist_no=no).order_by(models.PickListLine.scanned_at).all()
-    return {"picklist": row(k), "lines": [row(l) for l in lines]}
+    return {"picklist": row(k), "lines": [row(l) for l in lines], "items": gcssvc.items_loaded(db, no)}
 
 
 @router.post("/picklists")
@@ -256,7 +257,7 @@ def gcs_open(body: GcsOpenIn, request: Request, p: Principal = Depends(hht("DOCK
         what, k = gcssvc.apply_gcs(db, p.plant, {"gcs_no": no, "vehicle_no": body.vehicle_no, "customer_code": body.customer_code, "invoice_no": body.invoice_no}, "HHT manual")
         audit(db, p, "GCS_OPEN_MANUAL", "picklist", k.picklist_no, None, body.model_dump(), request)
     db.commit()
-    return row(k) | {"scanned": db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count()}
+    return row(k) | {"scanned": db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count(), "items": gcssvc.items_loaded(db, k.picklist_no)}
 
 
 def _return_challan(db: Session, k: models.PickList, p: Principal, request: Request):

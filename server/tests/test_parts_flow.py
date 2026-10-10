@@ -381,5 +381,38 @@ with TestClient(app) as c:
         from app.integration import IntegrationLog
         lg = db.query(IntegrationLog).filter_by(system="PRINT").order_by(IntegrationLog.id.desc()).first()
     check(lg is not None and not lg.ok, "print attempt logged (test printer unreachable -> failure recorded, not hidden)")
+    print("19. One GCS with several invoices - invoice / item / qty at line level; short pallet numbers on the sheet")
+    multi = (b"GCS No,Vehicle No,Customer Code,Invoice No,Invoice Date,SO No,Item Code,Item Description,Qty,Pallets\n"
+             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0201,10-10-2026,SO-501,WS-1,Windshield front,40,2\n"
+             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0201,10-10-2026,SO-501,BL-9,Backlite,20,1\n"
+             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0202,10-10-2026,SO-502,WS-1,Windshield front,10,1\n"
+             b"GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0203,10-10-2026,SO-503,DG-4,Door glass,30,1\n")
+    with SessionLocal() as db:
+        res = gcssvc.pull(db, fetch=lambda: [("multi.csv", multi)])
+    check(res["created"] == 1, f"4 CSV rows of one GCS -> ONE loading sheet: {res}")
+    no9 = "GCS-CHN-GCSCHN9001"
+    d = c.get(f"/api/v1/picklists/{no9}", headers=W).json()
+    it = d["items"]
+    check(len(it) == 4 and [x["invoice_no"] for x in it] == ["INV/26/0201", "INV/26/0201", "INV/26/0202", "INV/26/0203"], "4 invoice lines kept in order")
+    check([x["part_no"] for x in it] == ["WS-1", "BL-9", "WS-1", "DG-4"] and [x["qty"] for x in it] == [40, 20, 10, 30], "item and qty at line level")
+    check(d["picklist"]["part_qty"] == 100 and d["picklist"]["qty"] == 5 and d["picklist"]["invoice_no"] == "INV/26/0201 +2", f"header = totals + invoice summary: {d['picklist']['invoice_no']}")
+    with SessionLocal() as db:                          # re-sent file with a correction replaces the lines (still OPEN)
+        gcssvc.pull(db, fetch=lambda: [("multi2.csv", multi.replace(b",30,1", b",35,1"))])
+    it = c.get(f"/api/v1/picklists/{no9}", headers=W).json()["items"]
+    check(len(it) == 4 and it[3]["qty"] == 35, "re-sent GCS file refreshes the lines, no duplicates")
+    with SessionLocal() as db:                          # loaded qty fills same-item lines in order
+        pk9 = db.get(models.PickList, no9)
+        db.add(models.PickListLpn(picklist_no=no9, lpn_no="PC-X1", pallet_no="AIS-CHN-ANF-00007-0000123", part_no="WS-1", qty=45, pdi_result="OK"))
+        db.add(models.PickListLine(picklist_no=no9, pallet_no="AIS-CHN-ANF-00007-0000123")); db.commit()
+        il = gcssvc.items_loaded(db, no9)
+        check([x["loaded"] for x in il] == [40, 0, 5, 0], f"loaded WS-1 45 -> line 1 full 40, line 3 gets 5: {[x['loaded'] for x in il]}")
+        check(gcssvc.short_pallet("AIS-CHN-ANF-00007-0000123") == "ANF-00007" and gcssvc.short_pallet("CHN-P001") == "CHN-P001", "short pallet = type + serial; other numbers unchanged")
+        from app import gcsprint
+        pdf = gcsprint.build_pdf(db, pk9, None, "AIS1|GCS|test")
+    rd = PdfReader(_io.BytesIO(pdf)); text = rd.pages[0].extract_text()
+    check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Backlite", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
+          "PDF: one A4 page with every invoice line and the short pallet number")
+    h = c.get(f"/print/gcs/{no9}?tok={W['Authorization'].split()[1]}").text
+    check("INV/26/0203" in h and "Door glass" in h and "ANF-00007" in h, "web GCS print lists the invoice lines")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

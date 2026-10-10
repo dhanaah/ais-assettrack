@@ -27,7 +27,8 @@ FIELDS = {
     "invoice_no": ["invoice_no", "invoice no", "invoice number", "invoice", "inv no"],
     "invoice_date": ["invoice_date", "invoice date", "inv date"],
     "so_number": ["so_number", "so no", "sale order", "sales order", "order no"],
-    "part_no": ["part_no", "part no", "item", "item code", "part"],
+    "part_no": ["part_no", "part no", "item", "item code", "item no", "part"],
+    "part_desc": ["part_desc", "item description", "description", "item desc", "part name", "part description"],
     "part_qty": ["part_qty", "qty", "quantity", "invoice qty"],
     "pallets": ["pallets", "pallet qty", "no of pallets", "pallet count"],
     "transporter": ["transporter", "transporter code", "transporter name"],
@@ -87,6 +88,9 @@ def parse_file(name: str, data: bytes) -> list[dict]:
     low = name.lower()
     if low.endswith(".json"):
         j = json.loads(data.decode("utf-8-sig"))
+        if isinstance(j, dict) and _lookup(j).get("gcs_no") and isinstance(j.get("items") or j.get("lines"), list):
+            head = {k: v for k, v in j.items() if not isinstance(v, (list, dict))}      # one GCS with its invoice lines
+            return [_lookup({**head, **r}) for r in (j.get("items") or j.get("lines")) if isinstance(r, dict)]
         rows = j if isinstance(j, list) else (j.get("gcs") or j.get("items") or j.get("rows") or [j])
         return [_lookup(r) for r in rows if isinstance(r, dict)]
     if low.endswith(".csv") or low.endswith(".txt") and b"," in data.split(b"\n", 1)[0]:
@@ -125,8 +129,44 @@ def save_settings(db: Session, data: dict):
         row.value = v; db.add(row)
 
 
-def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None) -> tuple[str, models.PickList | None]:
-    """Create / refresh the loading sheet for one GCS. Returns ('created'|'updated'|'skipped', picklist)."""
+def _int(v):
+    try:
+        return int(float(str(v).replace(",", ""))) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
+def _date(v):
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(str(v)[:11].strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def group_rows(rows: list[dict]) -> list[tuple[dict, list[dict]]]:
+    """CSV / JSON rows -> [(header, invoice lines)] per GCS. One GCS may have many rows (invoice x item)."""
+    out, idx = [], {}
+    for r in rows:
+        g = str(r.get("gcs_no") or "").strip().upper()
+        if not g:
+            continue
+        if g not in idx:
+            idx[g] = len(out); out.append((dict(r), []))
+        head, items = out[idx[g]]
+        for k, v in r.items():                     # header: first non-empty value wins
+            head.setdefault(k, v)
+        if any(r.get(k) not in (None, "") for k in ("invoice_no", "part_no", "part_qty")):
+            items.append(r)
+    return out
+
+
+def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, items: list[dict] | None = None) -> tuple[str, models.PickList | None]:
+    """Create / refresh the loading sheet for one GCS with its invoice lines (invoice, item, qty at line level).
+    Returns ('created'|'updated'|'skipped', picklist)."""
+    if items is None:
+        items = [f] if any(f.get(k) not in (None, "") for k in ("invoice_no", "part_no", "part_qty")) else []
     gcs = str(f.get("gcs_no") or "").strip().upper()
     if not gcs:
         return "skipped", None
@@ -145,27 +185,33 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None) 
         what = "updated"
     pk.gcs_no = gcs; pk.customer_code = cust if cust != "?" else pk.customer_code; pk.to_plant = to_plant or pk.to_plant
     pk.vehicle_no = (str(f.get("vehicle_no") or pk.vehicle_no or "").upper().replace(" ", "") or None)
-    pk.invoice_no = str(f.get("invoice_no") or pk.invoice_no or "") or None
-    pk.so_number = str(f.get("so_number") or pk.so_number or "") or None
-    pk.part_no = str(f.get("part_no") or pk.part_no or "")[:40] or None
     pk.ewaybill_no = str(f.get("ewaybill_no") or pk.ewaybill_no or "")[:20] or None
     pk.transporter_code = str(f.get("transporter") or pk.transporter_code or "")[:20] or None
     pk.pdi_sign = (sign(f.get("pdi_sign"), f.get("pdi_login")) or pk.pdi_sign or None)
     pk.supervisor_sign = (sign(f.get("supervisor_sign"), f.get("supervisor_login")) or pk.supervisor_sign or None)
-    try:
-        pk.part_qty = int(float(f.get("part_qty"))) if f.get("part_qty") not in (None, "") else pk.part_qty
-    except ValueError:
-        pass
-    try:
-        pk.qty = int(float(f.get("pallets"))) if f.get("pallets") not in (None, "") else pk.qty
-    except ValueError:
-        pass
-    if f.get("invoice_date"):
-        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y"):
-            try:
-                pk.invoice_date = datetime.strptime(str(f["invoice_date"])[:11].strip(), fmt); break
-            except ValueError:
-                continue
+    if items:                                      # line level: replace the invoice lines of this GCS
+        db.query(models.PickListItem).filter_by(picklist_no=pk.picklist_no).delete()
+        for i, r in enumerate(items, 1):
+            db.add(models.PickListItem(picklist_no=pk.picklist_no, line_no=i, invoice_no=(str(r.get("invoice_no") or f.get("invoice_no") or "")[:40] or None),
+                                       invoice_date=_date(r.get("invoice_date") or f.get("invoice_date") or ""),
+                                       so_number=(str(r.get("so_number") or "")[:40] or None), part_no=(str(r.get("part_no") or "")[:40] or None),
+                                       part_desc=(str(r.get("part_desc") or "")[:80] or None), qty=_int(r.get("part_qty")), pallets=_int(r.get("pallets"))))
+        invs = list(dict.fromkeys(str(r.get("invoice_no") or f.get("invoice_no") or "") for r in items if (r.get("invoice_no") or f.get("invoice_no"))))
+        parts = list(dict.fromkeys(str(r.get("part_no")) for r in items if r.get("part_no")))
+        sos = list(dict.fromkeys(str(r.get("so_number")) for r in items if r.get("so_number")))
+        # header keeps a summary (first value + count) for lists / HHT; the full detail is in picklist_items
+        pk.invoice_no = ((invs[0] + (f" +{len(invs) - 1}" if len(invs) > 1 else ""))[:40]) if invs else pk.invoice_no
+        pk.so_number = ((sos[0] + (f" +{len(sos) - 1}" if len(sos) > 1 else ""))[:40]) if sos else pk.so_number
+        pk.part_no = ((parts[0] + (f" +{len(parts) - 1}" if len(parts) > 1 else ""))[:40]) if parts else pk.part_no
+        q = [_int(r.get("part_qty")) for r in items]
+        pk.part_qty = sum(x for x in q if x) if any(q) else pk.part_qty
+        pl = [_int(r.get("pallets")) for r in items]
+        hp = _int(f.get("pallets")) if len(items) == 1 else None
+        pk.qty = sum(x for x in pl if x) if any(pl) and not hp else (hp or pk.qty)
+        d = _date(items[0].get("invoice_date") or f.get("invoice_date") or "")
+        pk.invoice_date = d or pk.invoice_date
+    else:
+        pk.qty = _int(f.get("pallets")) or pk.qty
     pk.remarks = (f"GCS from {source_file}" if source_file else pk.remarks)
     return what, pk
 
@@ -201,8 +247,8 @@ def pull(db: Session, fetch=None) -> dict:
     created = updated = skipped = 0
     for name, data in files:
         try:
-            for fields in parse_file(name, data):
-                what, _ = apply_gcs(db, plant, fields, name)
+            for head, items in group_rows(parse_file(name, data)):
+                what, _ = apply_gcs(db, plant, head, name, items)
                 created += what == "created"; updated += what == "updated"; skipped += what == "skipped"
             done_names.append(name)
         except Exception as e:
@@ -266,3 +312,28 @@ def parse_gcs_qr(code: str) -> dict | None:
     ok = services._sig_ok(body, sig)
     return {"gcs_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "pallets": int(parts[6] or 0),
             "valid": ok, "error": None if ok else "GCS QR check code invalid - not printed by AssetTrack"}
+
+
+# ---------------------------------------------------------------- invoice lines with loaded quantity
+def items_loaded(db: Session, picklist_no: str) -> list[dict]:
+    """Invoice lines of a GCS with the quantity loaded so far (part cards scanned, matched by item; when the same item
+    is on several invoices the loaded quantity fills the lines in order)."""
+    items = db.query(models.PickListItem).filter_by(picklist_no=picklist_no).order_by(models.PickListItem.line_no).all()
+    left = {}
+    for r in db.query(models.PickListLpn).filter(models.PickListLpn.picklist_no == picklist_no,
+                                                 (models.PickListLpn.pdi_result == "OK") | models.PickListLpn.pdi_result.is_(None)).all():
+        k = (r.part_no or "").upper(); left[k] = left.get(k, 0) + (r.qty or 0)
+    out = []
+    for it in items:
+        k = (it.part_no or "").upper(); need = it.qty or 0
+        got = min(left.get(k, 0), need) if need else left.get(k, 0)
+        left[k] = left.get(k, 0) - got
+        out.append({"line_no": it.line_no, "invoice_no": it.invoice_no, "invoice_date": it.invoice_date, "so_number": it.so_number,
+                    "part_no": it.part_no, "part_desc": it.part_desc, "qty": it.qty, "pallets": it.pallets, "loaded": got})
+    return out
+
+
+def short_pallet(no: str | None) -> str:
+    """AIS-CHN-ANF-00001-0000001 -> ANF-00001 (pallet type + type serial); other numbers unchanged."""
+    m = services.PALLET_ID_RE.match(str(no or "").upper())
+    return f"{m.group(2)}-{m.group(3)}" if m else str(no or "")

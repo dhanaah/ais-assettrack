@@ -147,8 +147,16 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     lpn_by = {}
     for r in db.query(models.PickListLpn).filter_by(picklist_no=k.picklist_no).all():
         lpn_by.setdefault(r.pallet_no, []).append(r)
-    rows = "".join(f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in lpn_by.get(l.pallet_no, [])) or '—'}</td><td>{l.scanned_at:%d-%m %H:%M}</td><td>{l.user_id or ''}</td></tr>" for i, l in enumerate(lines, 1))
+    rows = "".join(f"<tr><td>{i}</td><td><b>{gcssvc.short_pallet(l.pallet_no)}</b></td><td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in lpn_by.get(l.pallet_no, [])) or '—'}</td><td>{l.scanned_at:%d-%m %H:%M}</td><td>{l.user_id or ''}</td></tr>" for i, l in enumerate(lines, 1))
     qr = gcssvc.gcs_qr(k, len(lines))
+    RED = ' style="color:#c8102e;font-weight:700"'
+    items = gcssvc.items_loaded(db, k.picklist_no); has_cards = any(lpn_by.values())
+    invs = list(dict.fromkeys(i["invoice_no"] for i in items if i["invoice_no"]))
+    item_tbl = ("<table><tr><th>#</th><th>Invoice no</th><th>Inv date</th><th>SO no</th><th>Item</th><th>Description</th><th>Qty</th><th>Loaded</th><th>Pallets</th></tr>"
+                + "".join(f"<tr><td>{i['line_no']}</td><td><b>{i['invoice_no'] or ''}</b></td><td>{i['invoice_date'].strftime('%d-%m-%Y') if i['invoice_date'] else ''}</td><td>{i['so_number'] or ''}</td>"
+                          f"<td><b>{i['part_no'] or ''}</b></td><td>{i['part_desc'] or ''}</td><td>{'' if i['qty'] is None else i['qty']}</td>"
+                          f"<td{RED if has_cards and i['qty'] and i['loaded'] < i['qty'] else ''}>{i['loaded'] if has_cards else '—'}</td><td>{'' if i['pallets'] is None else i['pallets']}</td></tr>" for i in items)
+                + f"<tr><th colspan='6' style='text-align:right'>TOTAL · {len(invs)} invoice(s)</th><th>{sum(i['qty'] or 0 for i in items)}</th><th>{sum(i['loaded'] or 0 for i in items) if has_cards else '—'}</th><th>{sum(i['pallets'] or 0 for i in items) or ''}</th></tr></table>") if items else ""
     html = f"""<!doctype html><html><head><meta charset="utf-8"><title>GCS {k.gcs_no}</title><style>{CSS} .big{{font-size:22px;font-weight:800;letter-spacing:1px}}</style></head><body>
     <button class="btn" onclick="window.print()">Print / Save PDF</button>
     {_head(plant, "GATE CUM SECURITY PASS (OUTWARD) · VEHICLE LOADING RECORD", qr)}
@@ -156,10 +164,11 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
       <div class="box"><b>GCS NO</b><span class="big">{k.gcs_no}</span></div>
       <div class="box"><b>VEHICLE</b><span class="big">{k.vehicle_no or '—'}</span><br>{k.transporter_code or ''}</div>
       <div class="box"><b>CONSIGNEE</b>{cust.name if cust else k.customer_code} ({k.customer_code}){'<br>to plant ' + k.to_plant if k.to_plant else ''}</div>
-      <div class="box"><b>INVOICE / SO</b>{k.invoice_no or '—'}{(' · ' + k.invoice_date.strftime('%d-%m-%Y')) if k.invoice_date else ''}<br>SO {k.so_number or '—'} · e-way bill {k.ewaybill_no or '—'}</div>
+      <div class="box"><b>INVOICES / E-WAY BILL</b>{(str(len(invs)) + ' invoice(s) · ' + str(len(items)) + ' line(s)') if items else (k.invoice_no or '—')}<br>e-way bill {k.ewaybill_no or '—'}</div>
       <div class="box"><b>CHALLAN (RETURNABLE PALLETS)</b>{k.challan_no or 'pending'}</div>
-      <div class="box"><b>STATUS</b>{k.status} · loaded {len(lines)} pallet(s){(' · part ' + k.part_no) if k.part_no else ''}{(' qty ' + str(k.part_qty)) if k.part_qty else ''}</div>
+      <div class="box"><b>STATUS</b>{k.status} · loaded {len(lines)} pallet(s)</div>
     </div>
+    {item_tbl}
     <table><tr><th>#</th><th>Pallet</th><th>Part cards (LPN)</th><th>Loaded at</th><th>By</th></tr>{rows}
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS LOADED</th><th>{len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>OUT gate:</b> scan the QR at the top right. The gate accepts only a QR printed by AssetTrack for this GCS and vehicle.</div>
