@@ -43,6 +43,9 @@ class PlantIn(BaseModel):
     wms_stale_hours: int | None = 4
     pdi_subinv: str | None = None
     reject_subinv: str | None = None
+    gcs_printer: str | None = None
+    gcs_print_mode: str | None = "OFF"
+    gcs_copies: int | None = 1
     active: bool = True
     notes: str | None = None
 

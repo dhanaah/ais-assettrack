@@ -1,5 +1,6 @@
 """Pick lists (dispatch) and return slips (return) - document level operations.
 EBS SO posting and GCS calls are stubs behind integration.py; they queue for retry."""
+import os
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -321,8 +322,15 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
         k.status = "APPROVED"               # GCS exists and the vehicle is known: ready for the OUT gate
         audit(db, p, "GCS_LOADING_COMPLETE", "picklist", no, None, {"pallets": scanned, "challan_no": k.challan_no, "gcs": k.gcs_no}, request)
         db.commit()
-        from .. import gcs as gcssvc
-        return row(k) | {"gcs_qr": gcssvc.gcs_qr(k, scanned), "scanned": scanned}
+        from .. import gcs as gcssvc, gcsprint
+        from ..db import SessionLocal
+        qr = gcssvc.gcs_qr(k, scanned)
+        try:
+            pr = gcsprint.generate_and_print(SessionLocal, no, p.user.id, qr)
+        except Exception as e:
+            pr = {"pdf": None, "print": f"PDF failed: {e}"[:200]}
+        return row(k) | {"gcs_qr": qr, "scanned": scanned, "gcs_pdf": pr.get("pdf"), "gcs_print": pr.get("print")}
+
     if k.dispatch_type in lpnsvc.PART_TYPES:
         got = lpnsvc.picked_qty(db, no)
         if got != k.part_qty:
@@ -343,6 +351,39 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
     audit(db, p, "PICKLIST_CONFIRM", "picklist", no, request=request)
     db.commit()
     return row(k)
+
+
+@router.post("/picklists/{no}/gcs-print")
+def gcs_reprint(no: str, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Rebuild the GCS PDF and print it again on the plant printer (web or HHT)."""
+    from .. import gcs as gcssvc, gcsprint
+    from ..db import SessionLocal
+    k = db.get(models.PickList, no)
+    if not k or not k.gcs_no:
+        raise HTTPException(404, "GCS not found")
+    p.require_plant(k.plant_code)
+    if not (p.has("OUT_GATE_SCAN") or p.has("DOCK_SCAN") or p.has("LOGISTICS_APPROVE") or p.has("CHALLAN_REQUEST")):
+        raise HTTPException(403, "Not allowed")
+    n = db.query(models.PickListLine).filter_by(picklist_no=no).count()
+    pr = gcsprint.generate_and_print(SessionLocal, no, p.user.id, gcssvc.gcs_qr(k, n))
+    audit(db, p, "GCS_REPRINT", "picklist", no, None, pr, request); db.commit()
+    return pr
+
+
+@router.get("/picklists/{no}/gcs.pdf")
+def gcs_pdf(no: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    from .. import gcs as gcssvc, gcsprint
+    from fastapi.responses import FileResponse
+    k = db.get(models.PickList, no)
+    if not k or not k.gcs_no:
+        raise HTTPException(404, "GCS not found")
+    p.require_plant(k.plant_code)
+    path = gcsprint.pdf_path(k)
+    if not os.path.exists(path):
+        n = db.query(models.PickListLine).filter_by(picklist_no=no).count()
+        data = gcsprint.build_pdf(db, k, p.user, gcssvc.gcs_qr(k, n))
+        open(path, "wb").write(data)
+    return FileResponse(path, media_type="application/pdf", filename=os.path.basename(path))
 
 
 @router.post("/picklists/{no}/challan")

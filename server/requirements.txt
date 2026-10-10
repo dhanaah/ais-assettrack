@@ -10,3 +10,4 @@ httpx>=0.27
 pyodbc>=5.1 ; platform_system == "Windows"
 segno>=1.6
 pypdf>=4.0
+reportlab>=4.0

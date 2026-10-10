@@ -360,5 +360,21 @@ with TestClient(app) as c:
     with SessionLocal() as db:
         l = db.get(models.Lpn, "PC-000123")
     check(l and l.status == "DISPATCHED", "part card marked dispatched")
+    print("18. GCS PDF: QR + challan + security sign; auto print setting")
+    with SessionLocal() as db:
+        pl = db.get(models.Plant, "CHN"); pl.gcs_print_mode = "RAW9100"; pl.gcs_printer = "127.0.0.1:1"; db.commit()
+    r = c.get(f"/api/v1/picklists/{no}/gcs.pdf", headers=W)
+    check(r.status_code == 200 and r.content[:4] == b"%PDF", "GCS PDF downloads")
+    from pypdf import PdfReader
+    import io as _io
+    text = "\n".join(pg.extract_text() for pg in PdfReader(_io.BytesIO(r.content)).pages)
+    check("GCS-CHN-7781" in text and "CHN/00003" in text and "chn" in text and "SECURITY" in text, "PDF carries GCS no, challan no and the security sign with login ID")
+    pr = c.post(f"/api/v1/picklists/{no}/gcs-print", headers=W).json()
+    check(pr["pdf"].startswith("GCS_") and "queued" in pr["print"], f"reprint builds the PDF and queues it on the plant printer: {pr}")
+    import time as _t; _t.sleep(1.5)
+    with SessionLocal() as db:
+        from app.integration import IntegrationLog
+        lg = db.query(IntegrationLog).filter_by(system="PRINT").order_by(IntegrationLog.id.desc()).first()
+    check(lg is not None and not lg.ok, "print attempt logged (test printer unreachable -> failure recorded, not hidden)")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

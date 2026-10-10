@@ -3,7 +3,7 @@
 from PyInstaller.utils.hooks import collect_submodules
 hidden = (collect_submodules('uvicorn') + collect_submodules('app') + collect_submodules('sqlalchemy.dialects') +
           ['anyio._backends._asyncio', 'multipart', 'python_multipart', 'segno', 'openpyxl', 'bcrypt', 'jwt', 'httpx',
-           'pystray._win32', 'PIL._tkinter_finder', 'pyodbc', 'email.mime.text', 'email.mime.multipart'])
+           'pystray._win32', 'PIL._tkinter_finder', 'pyodbc', 'reportlab', 'reportlab.pdfgen', 'reportlab.lib', 'pypdf', 'email.mime.text', 'email.mime.multipart'])
 a = Analysis(['tray_app.py'], pathex=['.'], binaries=[], datas=[('app/static', 'app/static')], hiddenimports=hidden,
              hookspath=[], runtime_hooks=[], excludes=['matplotlib', 'numpy', 'pandas', 'test'], noarchive=False)
 pyz = PYZ(a.pure, a.zipped_data)

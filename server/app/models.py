@@ -36,6 +36,9 @@ class Plant(Base):
     wms_stale_hours: Mapped[int | None] = mapped_column(Integer, default=4)          # block release if WMS stock older
     pdi_subinv: Mapped[str | None] = mapped_column(String(20))                       # LPNs wait here for PDI
     reject_subinv: Mapped[str | None] = mapped_column(String(20))                    # PDI rejected LPNs go here
+    gcs_printer: Mapped[str | None] = mapped_column(String(120))                     # Windows printer name (shared / network) or IP[:9100]
+    gcs_print_mode: Mapped[str | None] = mapped_column(String(10), default="OFF")     # OFF | WINDOWS | RAW9100
+    gcs_copies: Mapped[int | None] = mapped_column(Integer, default=1)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(String(250))
 
