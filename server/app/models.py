@@ -270,7 +270,10 @@ class PickListItem(Base):
     so_number: Mapped[str | None] = mapped_column(String(40))
     part_no: Mapped[str | None] = mapped_column(String(40))
     part_desc: Mapped[str | None] = mapped_column(String(80))
-    qty: Mapped[int | None] = mapped_column(Integer)
+    cust_part: Mapped[str | None] = mapped_column(String(40))          # customer part number
+    cases: Mapped[int | None] = mapped_column(Integer)                 # no. of cases
+    qty_per_case: Mapped[int | None] = mapped_column(Integer)
+    qty: Mapped[int | None] = mapped_column(Integer)                   # total qty
     pallets: Mapped[int | None] = mapped_column(Integer)
 
 

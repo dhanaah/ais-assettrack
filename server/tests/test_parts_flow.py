@@ -410,7 +410,7 @@ with TestClient(app) as c:
         from app import gcsprint
         pdf = gcsprint.build_pdf(db, pk9, None, "AIS1|GCS|test")
     rd = PdfReader(_io.BytesIO(pdf)); text = rd.pages[0].extract_text()
-    check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Backlite", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
+    check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Inv. Number", "Cust Part", "Qty./Case", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
           "PDF: one A4 page with every invoice line and the short pallet number")
     h = c.get(f"/print/gcs/{no9}?tok={W['Authorization'].split()[1]}").text
     check("INV/26/0203" in h and "Door glass" in h and "ANF-00007" in h, "web GCS print lists the invoice lines")

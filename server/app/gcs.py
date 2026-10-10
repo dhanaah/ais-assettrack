@@ -24,12 +24,15 @@ FIELDS = {
     "vehicle_no": ["vehicle_no", "vehicle no", "vehicle", "truck no", "truck", "lorry no"],
     "customer_code": ["customer_code", "customer code", "customer", "consignee code", "ship to code", "ship_to"],
     "customer_name": ["customer_name", "customer name", "consignee", "ship to"],
-    "invoice_no": ["invoice_no", "invoice no", "invoice number", "invoice", "inv no"],
+    "invoice_no": ["invoice_no", "invoice no", "invoice number", "invoice", "inv no", "inv number"],
     "invoice_date": ["invoice_date", "invoice date", "inv date"],
     "so_number": ["so_number", "so no", "sale order", "sales order", "order no"],
     "part_no": ["part_no", "part no", "item", "item code", "item no", "part"],
     "part_desc": ["part_desc", "item description", "description", "item desc", "part name", "part description"],
-    "part_qty": ["part_qty", "qty", "quantity", "invoice qty"],
+    "part_qty": ["part_qty", "total qty", "total quantity", "qty", "quantity", "invoice qty"],
+    "cust_part": ["cust_part", "cust part", "customer part", "customer part no", "cust part no", "customer part number"],
+    "cases": ["cases", "case", "no of cases", "no of case", "case count"],
+    "qty_per_case": ["qty_per_case", "qty case", "qty per case", "std pack", "pack qty", "standard pack"],
     "pallets": ["pallets", "pallet qty", "no of pallets", "pallet count"],
     "transporter": ["transporter", "transporter code", "transporter name"],
     "to_plant": ["to_plant", "to plant", "dest plant", "destination plant"],
@@ -145,6 +148,14 @@ def _date(v):
     return None
 
 
+def _line_qty(r):
+    """Total qty of an invoice line; when only cases x qty/case are given, their product."""
+    q = _int(r.get("part_qty"))
+    if q is None and _int(r.get("cases")) and _int(r.get("qty_per_case")):
+        q = _int(r.get("cases")) * _int(r.get("qty_per_case"))
+    return q
+
+
 def group_rows(rows: list[dict]) -> list[tuple[dict, list[dict]]]:
     """CSV / JSON rows -> [(header, invoice lines)] per GCS. One GCS may have many rows (invoice x item)."""
     out, idx = [], {}
@@ -195,7 +206,9 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
             db.add(models.PickListItem(picklist_no=pk.picklist_no, line_no=i, invoice_no=(str(r.get("invoice_no") or f.get("invoice_no") or "")[:40] or None),
                                        invoice_date=_date(r.get("invoice_date") or f.get("invoice_date") or ""),
                                        so_number=(str(r.get("so_number") or "")[:40] or None), part_no=(str(r.get("part_no") or "")[:40] or None),
-                                       part_desc=(str(r.get("part_desc") or "")[:80] or None), qty=_int(r.get("part_qty")), pallets=_int(r.get("pallets"))))
+                                       part_desc=(str(r.get("part_desc") or "")[:80] or None), cust_part=(str(r.get("cust_part") or "")[:40] or None),
+                                       cases=_int(r.get("cases")), qty_per_case=_int(r.get("qty_per_case")),
+                                       qty=_line_qty(r), pallets=_int(r.get("pallets"))))
         invs = list(dict.fromkeys(str(r.get("invoice_no") or f.get("invoice_no") or "") for r in items if (r.get("invoice_no") or f.get("invoice_no"))))
         parts = list(dict.fromkeys(str(r.get("part_no")) for r in items if r.get("part_no")))
         sos = list(dict.fromkeys(str(r.get("so_number")) for r in items if r.get("so_number")))
@@ -203,7 +216,7 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
         pk.invoice_no = ((invs[0] + (f" +{len(invs) - 1}" if len(invs) > 1 else ""))[:40]) if invs else pk.invoice_no
         pk.so_number = ((sos[0] + (f" +{len(sos) - 1}" if len(sos) > 1 else ""))[:40]) if sos else pk.so_number
         pk.part_no = ((parts[0] + (f" +{len(parts) - 1}" if len(parts) > 1 else ""))[:40]) if parts else pk.part_no
-        q = [_int(r.get("part_qty")) for r in items]
+        q = [_line_qty(r) for r in items]
         pk.part_qty = sum(x for x in q if x) if any(q) else pk.part_qty
         pl = [_int(r.get("pallets")) for r in items]
         hp = _int(f.get("pallets")) if len(items) == 1 else None
@@ -329,7 +342,8 @@ def items_loaded(db: Session, picklist_no: str) -> list[dict]:
         got = min(left.get(k, 0), need) if need else left.get(k, 0)
         left[k] = left.get(k, 0) - got
         out.append({"line_no": it.line_no, "invoice_no": it.invoice_no, "invoice_date": it.invoice_date, "so_number": it.so_number,
-                    "part_no": it.part_no, "part_desc": it.part_desc, "qty": it.qty, "pallets": it.pallets, "loaded": got})
+                    "part_no": it.part_no, "part_desc": it.part_desc, "cust_part": it.cust_part, "cases": it.cases,
+                    "qty_per_case": it.qty_per_case, "qty": it.qty, "pallets": it.pallets, "loaded": got})
     return out
 
 
