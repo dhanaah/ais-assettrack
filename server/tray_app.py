@@ -179,8 +179,53 @@ def info_box(text):
     threading.Thread(target=show, daemon=True).start()
 
 
+_MUTEX = None
+
+
+def live_port():
+    import urllib.request, json
+    for p in PORTS:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{p}/api/v1/health", timeout=1.5) as r:
+                if json.loads(r.read()).get("app") == config.APP_NAME:
+                    return p
+        except Exception:
+            pass
+    return None
+
+
+def already_running():
+    """True if another AssetTrack server is running: Windows named mutex (same PC) or a live /health on our ports."""
+    global _MUTEX
+    if os.name == "nt":
+        try:
+            import ctypes
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            _MUTEX = k.CreateMutexW(None, False, "Local\\AIS_AssetTrack_Server")
+            if ctypes.get_last_error() == 183:      # ERROR_ALREADY_EXISTS
+                return True
+        except Exception as e:
+            log(f"mutex: {e}")
+    return live_port() is not None
+
+
+def show_and_wait(text):
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(0, text, "AIS AssetTrack Server", 0x40 | 0x40000)
+    except Exception:
+        print(text)
+
+
 def main():
     import pystray
+    if already_running():
+        log("second start refused - server already running")
+        show_and_wait("AIS AssetTrack Server is already running.\n\nLook for the AIS icon near the clock (click ^ if hidden).\nThe web page opens now.")
+        p = live_port()
+        if p:
+            webbrowser.open(_u("localhost", p))
+        return
     try:
         open(os.path.join(BASE_DIR, "server.pid"), "w").write(str(os.getpid()))
     except Exception:
