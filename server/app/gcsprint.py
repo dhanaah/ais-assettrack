@@ -55,7 +55,7 @@ def amount_in_words(v: float) -> str:
     return f"{_words(r)}" + (f" and paise {_words99(p)}" if p else "") + " only"
 
 
-def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_text: str) -> bytes:
+def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_text: str, scale: float | None = None) -> bytes:
     """Same layout as the ERP 'Finished Goods Materials Gate Pass' (header, details block, invoice table with totals and
     amount in words) plus AssetTrack: OUT-gate QR, returnable pallet challan, the pallets loaded (6 columns, short number)
     and the PDI / Logistics / Security signs. Multi-page: table and pallet list continue with repeated headers, 'X of Y'."""
@@ -84,7 +84,9 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     logo = os.path.join(str(config.BASE_DIR), "app", "static", "icon-192.png")
     x0, tw = 12 * mm, W - 24 * mm
     BOTTOM = 22 * mm
-    RH, PRH = 5.0 * mm, 4.2 * mm
+    # font scale: plant master "GCS font size %" (100 = standard, 90 = compact, 80 = small); row heights follow the font
+    F = scale or (max(70, min(110, int(getattr(plant, "gcs_font_pct", None) or 90))) / 100)
+    RH, PRH = 5.0 * mm * F, 4.2 * mm * F
     fnum = lambda v, d=0: "" if v in (None, "") else (f"{v:,.{d}f}" if d else f"{v:,}")
     # SI, Inv No, Inv Date, Item Code, Cust Part No, No of Case, Qty/Case, Act Qty, Line Amount, Pallet Type  (mm, sums to 186)
     cw = [8, 21, 18, 40, 26, 12, 12, 15, 22, 12]
@@ -98,7 +100,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
         st = {"page": 1}
 
         def txt(x, y, t, size=9, bold=False, color=(0, 0, 0), align="l"):
-            c.setFillColorRGB(*color); c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
+            c.setFillColorRGB(*color); c.setFont("Helvetica-Bold" if bold else "Helvetica", size * F)
             {"l": c.drawString, "r": c.drawRightString, "c": c.drawCentredString}[align](x, y, str(t))
             c.setFillColorRGB(0, 0, 0)
 
@@ -154,7 +156,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                       ("No of Invoices:", str(len(invs)) if invs else ""), ("GR/LR No.", pk.gr_lr_no or ""), ("Sales Type", sales_type),
                       ]
             rows = max(len(left), len(rightc)) + 1                 # last row: pallets loaded
-            h = rows * 5.6 * mm + 5 * mm
+            h = rows * 5.6 * mm * F + 5 * mm
             c.setStrokeColorRGB(*ink); c.setLineWidth(1.6); c.rect(x0, y - h, tw, h)
             c.setLineWidth(0.6); c.rect(x0 + 1.5 * mm, y - h + 1.5 * mm, tw - 3 * mm, h - 3 * mm)
             yy = y - 6.5 * mm
@@ -166,7 +168,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                 if k < len(rightc):
                     txt(x0 + 118 * mm, yy, rightc[k][0], 9.5, color=(0.25, 0.25, 0.25))
                     txt(x0 + 150 * mm, yy, str(rightc[k][1])[:22].upper() if k == 1 else str(rightc[k][1])[:22], 10, True)
-                yy -= 5.6 * mm
+                yy -= 5.6 * mm * F
             txt(x0 + 5 * mm, yy, "Pallets Loaded:", 9.5, color=(0.25, 0.25, 0.25))
             txt(x0 + 42 * mm, yy, f"{len(lines)}  (returnable)", 10, True)
             txt(x0 + 118 * mm, yy, "Vehicle Type:", 9.5, color=(0.25, 0.25, 0.25))
@@ -174,7 +176,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             return y - h - 4 * mm
 
         def table_head(y):
-            hh = 9 * mm; x = x0
+            hh = 9 * mm * F; x = x0
             c.setFillColorRGB(*grey); c.rect(x0, y - hh, tw, hh, fill=1, stroke=0)
             c.setStrokeColorRGB(*ink); c.setLineWidth(0.8); c.rect(x0, y - hh, tw, hh)
             for k, (a, b) in enumerate(heads):
@@ -182,11 +184,11 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                 if k:
                     c.line(x, y, x, y - hh)
                 if k in right:
-                    txt(x + w - 1.5 * mm, y - 4 * mm, a, 8, True, align="r");
-                    if b: txt(x + w - 1.5 * mm, y - 7.7 * mm, b, 8, True, align="r")
+                    txt(x + w - 1.5 * mm, y - 4 * mm * F, a, 8, True, align="r");
+                    if b: txt(x + w - 1.5 * mm, y - 7.7 * mm * F, b, 8, True, align="r")
                 else:
-                    txt(x + 1.5 * mm, y - 4 * mm, a, 8, True)
-                    if b: txt(x + 1.5 * mm, y - 7.7 * mm, b, 8, True)
+                    txt(x + 1.5 * mm, y - 4 * mm * F, a, 8, True)
+                    if b: txt(x + 1.5 * mm, y - 7.7 * mm * F, b, 8, True)
                 x += w
             return y - hh
 
@@ -199,12 +201,12 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                 if v != "":
                     from reportlab.pdfbase.pdfmetrics import stringWidth
                     size = 8.5                              # shrink the font so the text stays inside its cell
-                    while size > 5.5 and stringWidth(str(v), "Helvetica-Bold" if bold else "Helvetica", size) > w - 2.5 * mm:
+                    while size > 5.5 and stringWidth(str(v), "Helvetica-Bold" if bold else "Helvetica", size * F) > w - 2.5 * mm:
                         size -= 0.5
                     if k in right or (bold and k == 4):
-                        txt(x + w - 1.5 * mm, y - RH + 1.5 * mm, v, size, bold, align="r")
+                        txt(x + w - 1.5 * mm, y - RH + 1.5 * mm * F, v, size, bold, align="r")
                     else:
-                        txt(x + 1.5 * mm, y - RH + 1.5 * mm, v, size, bold)
+                        txt(x + 1.5 * mm, y - RH + 1.5 * mm * F, v, size, bold)
                 x += w
             c.line(x0 + tw, y, x0 + tw, y - RH); c.line(x0, y - RH, x0 + tw, y - RH)
             return y - RH
@@ -244,10 +246,10 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
         ncol, colw = 6, tw / 6
 
         def pal_head(y, cont=False):
-            c.setFillColorRGB(*grey); c.rect(x0, y - 6 * mm, tw, 6 * mm, fill=1, stroke=0)
-            c.setStrokeColorRGB(*ink); c.setLineWidth(0.8); c.rect(x0, y - 6 * mm, tw, 6 * mm)
-            txt(x0 + 2 * mm, y - 4.2 * mm, f"RETURNABLE PALLETS LOADED: {len(lines)}" + ("  (continued)" if cont else "") + f"     ·     Pallet Challan No: {pk.challan_no or 'pending'}", 8.5, True)
-            return y - 6 * mm
+            c.setFillColorRGB(*grey); c.rect(x0, y - 6 * mm * F, tw, 6 * mm * F, fill=1, stroke=0)
+            c.setStrokeColorRGB(*ink); c.setLineWidth(0.8); c.rect(x0, y - 6 * mm * F, tw, 6 * mm * F)
+            txt(x0 + 2 * mm, y - 4.2 * mm * F, f"RETURNABLE PALLETS LOADED: {len(lines)}" + ("  (continued)" if cont else "") + f"     ·     Pallet Challan No: {pk.challan_no or 'pending'}", 8.5, True)
+            return y - 6 * mm * F
 
         if y - 6 * mm - PRH < BOTTOM:
             y = new_page()
@@ -258,7 +260,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             chunk = lines[i:i + rows * ncol]
             for j, l in enumerate(chunk):
                 ci, ri = divmod(j, rows)
-                x = x0 + ci * colw; yy = y - (ri + 1) * PRH + 1.3 * mm
+                x = x0 + ci * colw; yy = y - (ri + 1) * PRH + 1.3 * mm * F
                 txt(x + 7 * mm, yy, i + j + 1, 7, color=(0.45, 0.45, 0.45), align="r")
                 txt(x + 9 * mm, yy, gcssvc.short_pallet(l.pallet_no)[:16], 7.2, True)
                 c.setStrokeColorRGB(0.88, 0.88, 0.88); c.setLineWidth(0.25); c.line(x, y - (ri + 1) * PRH, x + colw, y - (ri + 1) * PRH)
@@ -273,7 +275,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             txt(x0 + 3 * mm, y - 4 * mm, "No pallets scanned", 8.5); y -= 6 * mm
         y -= 6 * mm
         # ---- signs (last page)
-        sh = 28 * mm
+        sh = 28 * mm * max(F, 0.85)
         if y - sh < BOTTOM:
             y = new_page()
         signs = [("PDI", "Planning Bench login", pk.pdi_sign or "—", ""),
