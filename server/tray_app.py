@@ -2,7 +2,17 @@
 Double-click AssetTrack_Server.exe -> server starts on port 8001 (all network cards), tray icon appears.
 Data (pallet.db, logs) is kept next to the EXE. Developed by DT
 """
-import os, sys, shutil, socket, threading, time, traceback, webbrowser, datetime
+import os, sys, shutil, socket, threading, time, traceback, webbrowser, datetime, subprocess
+
+if "--ask-password" in sys.argv:          # helper process: shows only the password box, prints the answer
+    import tkinter as tk
+    from tkinter import simpledialog
+    r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
+    pw = simpledialog.askstring("Stop AssetTrack server", "Central admin password to stop the server:", show="*", parent=r)
+    r.destroy()
+    if pw:
+        sys.stdout.write(pw); sys.stdout.flush()
+    sys.exit(0)
 
 BASE_DIR = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
 os.chdir(BASE_DIR)
@@ -136,14 +146,14 @@ def make_icon():
 
 
 def ask_password():
+    """Password box in a separate process - a Tk window opened from the tray thread freezes on Windows."""
     try:
-        import tkinter as tk
-        from tkinter import simpledialog
-        r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
-        pw = simpledialog.askstring("Stop AssetTrack server", "Central admin password to stop the server:", show="*", parent=r)
-        r.destroy(); return pw
-    except Exception:
-        return None
+        cmd = [sys.executable, "--ask-password"] if getattr(sys, "frozen", False) else [sys.executable, os.path.abspath(__file__), "--ask-password"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return r.stdout.strip() or None
+    except Exception as e:
+        log(f"password box: {e}"); return None
 
 
 def admin_ok(pw):
@@ -159,17 +169,22 @@ def admin_ok(pw):
 
 
 def info_box(text):
-    try:
-        import tkinter as tk
-        from tkinter import messagebox
-        r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
-        messagebox.showinfo("AIS AssetTrack Server", text, parent=r); r.destroy()
-    except Exception:
-        pass
+    """Windows message box (safe from any thread); runs in the background so the tray never hangs."""
+    def show():
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, text, "AIS AssetTrack Server", 0x40 | 0x40000)   # info icon, topmost
+        except Exception:
+            log(text)
+    threading.Thread(target=show, daemon=True).start()
 
 
 def main():
     import pystray
+    try:
+        open(os.path.join(BASE_DIR, "server.pid"), "w").write(str(os.getpid()))
+    except Exception:
+        pass
     threading.Thread(target=run_server, daemon=True).start()
     threading.Thread(target=retry_job, daemon=True).start()
     time.sleep(2)
@@ -186,10 +201,9 @@ def main():
 
     def on_copy(icon, item):
         try:
-            import tkinter as tk
-            r = tk.Tk(); r.withdraw(); r.clipboard_clear(); r.clipboard_append(urls()[0]); r.update(); r.destroy()
-        except Exception:
-            pass
+            subprocess.run("clip", input=urls()[0], text=True, shell=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception as e:
+            log(f"copy: {e}")
 
     def on_exit(icon, item):
         if admin_ok(ask_password()):
