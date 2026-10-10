@@ -39,7 +39,7 @@ class Plant(Base):
     gcs_printer: Mapped[str | None] = mapped_column(String(120))                     # Windows printer name (shared / network) or IP[:9100]
     gcs_print_mode: Mapped[str | None] = mapped_column(String(10), default="OFF")     # OFF | WINDOWS | RAW9100
     gcs_copies: Mapped[int | None] = mapped_column(Integer, default=1)
-    gcs_font_pct: Mapped[int | None] = mapped_column(Integer)          # gate pass font size % (default 90)
+    gcs_font_pct: Mapped[int | None] = mapped_column(Integer)          # gate pass font size % (default 88 = option B compact)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(String(250))
 

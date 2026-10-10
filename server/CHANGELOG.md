@@ -1,4 +1,10 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.5 (2026-10-10) — gate pass in the ERP layout, multi-page
+- Gate pass PDF follows the ERP "Finished Goods Materials Gate Pass": gate pass number + page X of Y, boxed header (logo, title, plant address, Outward Non Returnable), details (GatePass Number, To M/s, Vehicle No, Transporter, Remarks, Date, Location, Time, No of Invoices, GR/LR No, Sales Type, Vehicle Type), invoice table (Sl, Inv No, Inv Date, Item Code, Cust Part No, No of Case, Qty/Case, Act Qty, Line Amount, Pallet Type) with totals and amount in words (lakh / crore)
+- AssetTrack additions: OUT-gate QR in the header, pallet challan number, pallets loaded (6 columns, short number ANF-00001), PDI / Logistics / Security signs
+- Multi-page: no shrinking - table and pallet list continue on the next page with repeated headings; signs on the last page
+- Font size per plant (Masters > Plants > GCS font size %): 88 compact (default), 100, 80
+- GCS CSV: new columns Date, Time, Location, Vehicle Type, Transporter, Remarks, GR/LR No, Sales Type, Cust Part No, No of Case, Qty/Case, Act Qty, Line Amount, Pallet Type
 ## 1.10.4 (2026-10-10) — several invoices per GCS (line level); short pallet numbers; GCS always one A4 sheet
 - GCS CSV: one row per invoice line (GCS No, Vehicle, Customer, Invoice No, Invoice Date, SO No, Item Code, Item Description, Qty, Pallets); rows with the same GCS No make ONE loading sheet with all its invoice lines (new table picklist_items); a re-sent file refreshes the lines while the GCS is still open
 - Loaded quantity per invoice line from the part cards scanned (same item on several invoices fills the lines in order); short-loaded lines shown in red

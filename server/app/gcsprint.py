@@ -84,8 +84,8 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     logo = os.path.join(str(config.BASE_DIR), "app", "static", "icon-192.png")
     x0, tw = 12 * mm, W - 24 * mm
     BOTTOM = 22 * mm
-    # font scale: plant master "GCS font size %" (100 = standard, 90 = compact, 80 = small); row heights follow the font
-    F = scale or (max(70, min(110, int(getattr(plant, "gcs_font_pct", None) or 90))) / 100)
+    # font scale: plant master "GCS font size %" (100 = standard, 88 = compact - default, 80 = small); row heights follow the font
+    F = scale or (max(70, min(110, int(getattr(plant, "gcs_font_pct", None) or 88))) / 100)
     RH, PRH = 5.0 * mm * F, 4.2 * mm * F
     fnum = lambda v, d=0: "" if v in (None, "") else (f"{v:,.{d}f}" if d else f"{v:,}")
     # SI, Inv No, Inv Date, Item Code, Cust Part No, No of Case, Qty/Case, Act Qty, Line Amount, Pallet Type  (mm, sums to 186)
