@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import os
+from pathlib import Path
 from sqlalchemy.orm import Session
 from . import config, models, integration, bench, reminders  # noqa: F401 (reminders registers email_log)
 from .db import engine, Base, SessionLocal, add_missing_columns
@@ -79,6 +81,42 @@ def health():
         db_ok = False
     return {"app": config.APP_NAME, "version": config.APP_VERSION, "developer": config.DEVELOPER, "db": "ok" if db_ok else "error",
             "integration_mode": integration.MODE, "ports": config.SERVER_PORTS, "min_client": config.API_MIN_CLIENT}
+
+
+APK_DIR = Path(os.environ.get("PALLET_APK_DIR") or (Path(os.environ["PALLET_DB_URL"][10:]).parent / "apk" if os.environ.get("PALLET_DB_URL", "").startswith("sqlite:///") else config.BASE_DIR / "apk"))
+
+
+def _latest_apk():
+    """Newest APK in the apk folder next to the database (name must contain the version, e.g. AIS_AssetTrack_HHT_v1.9.1.apk)."""
+    import re
+    best = None
+    if APK_DIR.exists():
+        for f in APK_DIR.glob("*.apk"):
+            m = re.search(r"(\d+\.\d+\.\d+)", f.name)
+            if not m:
+                continue
+            v = tuple(int(x) for x in m.group(1).split("."))
+            if best is None or v > best[0]:
+                best = (v, f)
+    return best
+
+
+@app.get("/api/v1/app/latest")
+def app_latest():
+    """What the HHT compares itself with: newest APK on this server + the minimum version allowed."""
+    b = _latest_apk()
+    if not b:
+        return {"version": None, "min_client": config.API_MIN_CLIENT}
+    return {"version": ".".join(map(str, b[0])), "file": b[1].name, "url": f"/apk/{b[1].name}", "size": b[1].stat().st_size, "min_client": config.API_MIN_CLIENT}
+
+
+@app.get("/apk/{name}", include_in_schema=False)
+def apk_file(name: str):
+    f = APK_DIR / Path(name).name
+    if not f.exists() or f.suffix.lower() != ".apk":
+        from fastapi import HTTPException
+        raise HTTPException(404, "APK not found")
+    return FileResponse(f, media_type="application/vnd.android.package-archive", filename=f.name)
 
 
 @app.post("/api/v1/jobs/retry")

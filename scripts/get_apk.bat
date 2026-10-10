@@ -9,5 +9,8 @@ curl -L --fail -sS -o "..\dist\hht-apk.zip" "%URL%" 2> "%HERE%get_apk.log"
 if errorlevel 1 ( echo DOWNLOAD FAILED - link may have expired. & del apk_url.txt & pause & exit /b 1 )
 powershell -NoProfile -Command "Expand-Archive -Force '..\dist\hht-apk.zip' '..\dist'"
 del "..\dist\hht-apk.zip"
+if not exist "..\server\apk" mkdir "..\server\apk"
+copy /y "..\dist\AIS_AssetTrack_HHT_*.apk" "..\server\apk\" >nul 2>nul
+echo APK also placed in server\apk - the HHTs now see "update available" and can download it from the server.
 del apk_url.txt
 start "" explorer "%HERE%..\dist"

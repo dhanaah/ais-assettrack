@@ -25,3 +25,4 @@ server/secret.key
 **/secret.key
 **/backups/
 server/server.pid
+server/apk/

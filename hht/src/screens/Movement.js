@@ -1,7 +1,7 @@
 // Internal movement, other-plant receipt, PDI and missed-scan view. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput } from 'react-native';
-import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Glass, Ring, Screen } from '../ui/kit';
+import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Glass, Ring, Screen, Segmented, Empty, ListRow } from '../ui/kit';
 import { enqueue, setPalletLocal, logActivity, resolveTag, listPicklists } from '../lib/db';
 import { validateMove } from '../lib/rules';
 import { api } from '../lib/api';
@@ -42,7 +42,8 @@ export function Move({ onBack }) {
     <Glass style={{ alignItems: 'center' }}><Ring value={String(done.length)} label="moved this session" color={C.ok} size={84} /></Glass>
     <AlertBox text={alert} onClose={() => setAlert(null)} />
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan pallet (or any LPN on it)" /></View>
-    {done.map((d, i) => <View key={i} style={[S.card, { paddingVertical: 8, marginBottom: 6, flexDirection: 'row' }]}><Text style={{ flex: 1, fontWeight: '600' }}>{d.p}</Text><Pill s={d.load} /><Text style={[S.mute, { marginLeft: 8 }]}>{d.t}</Text></View>)}
+    {done.length === 0 ? <Empty icon="scan-outline" text="Scan the first pallet" hint="Each pallet moved in this session is listed here." /> : null}
+    {done.map((d, i) => <ListRow key={i} index={done.length - i} title={d.p} sub={d.t} right={<Pill s={d.load} />} />)}
   </Page><Toast msg={msg} /></Screen>);
 }
 
@@ -60,7 +61,7 @@ export function Receipt({ onBack }) {
     if (r.status === 'REJECTED') { setAlert(r.result); toast(r.result, 'err'); } else if (r.status === 'EXCEPTION') setAlert(r.result);
   };
   return (<Screen><Header title="Other-plant Material Receipt" sub="Loaded pallets from another AIS plant" onBack={onBack} /><Page>
-    <View style={[S.row, { marginBottom: 8 }]}>{['FGWH', 'PACKING'].map(z => <TouchableOpacity key={z} onPress={() => setZone(z)} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: zone === z ? C.accent : undefined }]}><Text style={[S.btnSText, zone === z ? { color: '#fff' } : null]}>Receive at {z}</Text></TouchableOpacity>)}</View>
+    <Segmented options={[['FGWH', 'Receive at FGWH'], ['PACKING', 'Receive at PACKING']]} value={zone} onChange={setZone} />
     <AlertBox text={alert} onClose={() => setAlert(null)} />
     <View style={S.card}><TextInput style={S.input} placeholder="Sending plant challan / invoice (optional)" value={ref} onChangeText={setRef} /><ScanInput onScan={onScan} placeholder="Scan pallet" /></View>
     <Text style={S.mute}>Received pallets stay IN WIP. When emptied: Internal Movement → Packing → Pallet Yard, then an Empty Return pick list sends them home (EBS challan + e-way bill).</Text>
@@ -84,13 +85,13 @@ export function Pdi({ onBack }) {
     catch (e) { toast(e.message, 'err'); }
   };
   if (!pk) return (<Screen><Header title="PDI Check" sub="Pick lists waiting for QA" onBack={onBack} /><Page>
-    {lists.length === 0 ? <Text style={S.mute}>No pick list waiting for PDI.</Text> : null}
+    {lists.length === 0 ? <Empty text="No pick list waiting for PDI" hint="Lists arrive here after the dock confirms them." /> : null}
     {lists.map(k => <TouchableOpacity key={k.picklist_no} style={S.card} onPress={() => open(k)}><Text style={S.h2}>{k.picklist_no}</Text><Text style={S.mute}>{k.customer_code || k.customer} · {k.part_no} × {k.part_qty}</Text></TouchableOpacity>)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
   const rows = data?.lpns || []; const left = rows.filter(r => !r.pdi_result).length;
   return (<Screen><Header title={`PDI · ${pk.picklist_no}`} sub={`${pk.part_no} × ${pk.part_qty}`} onBack={() => { setPk(null); setData(null); }} /><Page>
     <Glass style={{ alignItems: 'center' }}><Ring value={`${rows.length - left}/${rows.length}`} label="LPN checked" color={left ? C.accent : C.ok} size={88} /></Glass>
-    <View style={[S.row, { marginBottom: 8 }]}>{[[false, 'Scan = OK'], [true, 'Scan = REJECT']].map(([k, l]) => <TouchableOpacity key={l} onPress={() => setRejectMode(k)} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: rejectMode === k ? (k ? C.warn : C.ok) : undefined }]}><Text style={[S.btnSText, rejectMode === k ? { color: '#fff' } : null]}>{l}</Text></TouchableOpacity>)}</View>
+    <Segmented options={[[false, 'Scan = OK', C.ok], [true, 'Scan = REJECT', C.warn]]} value={rejectMode} onChange={setRejectMode} />
     <View style={S.card}>{rejectMode ? <TextInput style={S.input} placeholder="Defect / reason" value={remarks} onChangeText={setRemarks} /> : null}<ScanInput onScan={c => mark(c, rejectMode ? 'REJECT' : 'OK')} placeholder="Scan LPN (or pallet = all its LPN)" /></View>
     {rows.map(r => <View key={r.lpn_no} style={[S.card, { paddingVertical: 8, marginBottom: 6, flexDirection: 'row', alignItems: 'center' }]}><View style={{ flex: 1 }}><Text style={{ fontWeight: '600' }}>{r.lpn_no} × {r.qty}</Text><Text style={S.mute}>{r.pallet_no}{r.pdi_remarks ? ' · ' + r.pdi_remarks : ''}</Text></View>{r.pdi_result ? <Pill s={r.pdi_result} /> : <Text style={S.mute}>pending</Text>}</View>)}
     <Btn title="Complete PDI → EBS sub-inventory → SO" icon="checkmark-done-outline" disabled={left > 0 || !rows.length} onPress={complete} color={C.ok} />
@@ -103,7 +104,7 @@ export function Misses({ onBack }) {
   const load = async () => { try { setRows(await api('/scan-misses')); } catch (e) { toast(e.message, 'err'); } };
   useEffect(() => { load(); }, []);
   return (<Screen><Header title="Missed Scans" sub="Open alerts for this plant" onBack={onBack} /><Page>
-    {rows.length === 0 ? <Text style={S.mute}>No open missed scans 👍</Text> : null}
+    {rows.length === 0 ? <Empty text="No open missed scans" hint="Every scan point was followed." /> : null}
     {rows.map(r => <View key={r.id} style={S.card}><View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{r.missed_point.replace(/_/g, ' ')}</Text><Pill s={r.action} /></View>
       <Text style={{ marginTop: 4 }}>{r.message}</Text><Text style={S.mute}>{(r.ts || '').slice(0, 16).replace('T', ' ')} · found at {r.detected_at} by {r.user_id} · should scan: {r.responsible_role || '-'}</Text></View>)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);

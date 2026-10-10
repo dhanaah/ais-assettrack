@@ -72,8 +72,10 @@ jobs:
       - name: Build release APK (debug-signed; replace with keystore secrets for store release)
         env: { GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g }
         run: cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon --stacktrace
-      - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk ../AIS_AssetTrack_HHT_${GITHUB_REF_NAME}.apk
+      - name: Rename APK (version from app.json so the server can announce it)
+        run: |
+          V=$(node -p "require('./app.json').expo.version")
+          cp android/app/build/outputs/apk/release/app-release.apk ../AIS_AssetTrack_HHT_v${V}.apk
       - uses: actions/upload-artifact@v4
         with: { name: hht-apk, path: AIS_AssetTrack_HHT_*.apk }
       - name: Attach APK to release

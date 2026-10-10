@@ -75,7 +75,7 @@ input[type=checkbox],input[type=radio]{min-width:0;width:16px;height:16px;paddin
 </style>
 </head>
 <body>
-<header><img src="/static/icon-on-dark.png" alt="AIS" style="height:46px"><img src="/static/wordmark-on-dark.png" alt="AssetTrack" style="height:38px"><small id="who"></small><span class="sp"></span><small id="ver"></small><button class="s" id="logout" style="display:none">Logout</button></header>
+<header><img src="/static/icon-on-dark.png" alt="AIS" style="height:46px"><img src="/static/wordmark-on-dark.png" alt="AssetTrack" style="height:38px"><small id="who"></small><span class="sp"></span><small id="ver"></small><a id="apk" href="#" style="display:none;color:#fff;font-size:12.5px;margin-left:10px;background:rgba(255,255,255,.18);padding:4px 10px;border-radius:999px;text-decoration:none">📱 HHT app</a><button class="s" id="logout" style="display:none">Logout</button></header>
 <nav id="nav" style="display:none"></nav>
 <main id="main"></main>
 <footer>AIS AssetTrack · Developed by DT · Asahi India Glass Ltd. · <span id="ver2"></span></footer>
@@ -408,7 +408,7 @@ async function activity(m){
 }
 async function audit(m){const r=await api('/reports/audit');m.append(h('div',{className:'card'},h('h2',{},'Audit log'),table([['Time',r=>fmt(r.ts)],['User','user_id'],['Plant','plant_code'],['Action','action'],['Entity','entity'],['ID','entity_id'],['Old',r=>(r.old_value||'').slice(0,120)],['New',r=>(r.new_value||'').slice(0,160)],['IP','ip']],r)))}
 
-fetch(API+'/health').then(r=>r.json()).then(j=>{$('#ver').textContent='v'+j.version+' · '+j.integration_mode;$('#ver2').textContent='v'+j.version});
+fetch(API+'/health').then(r=>r.json()).then(j=>{$('#ver').textContent='v'+j.version+' · '+j.integration_mode;$('#ver2').textContent='v'+j.version});fetch(API+'/app/latest').then(r=>r.json()).then(a=>{if(a.version){const e=$('#apk');e.style.display='';e.href=a.url;e.textContent='📱 HHT app v'+a.version;e.title='Download the Android app ('+Math.round(a.size/1048576)+' MB) - open on the HHT or copy by USB'}}).catch(()=>{});
 render();
 </script>
 </body>

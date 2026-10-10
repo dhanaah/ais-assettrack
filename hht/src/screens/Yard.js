@@ -44,9 +44,8 @@ export default function Yard({ onBack }) {
         <Ring value={short.length} label="short" color={short.length ? C.warn : C.ok} size={76} />
         <Ring value={extra.length} label="excess/other" color={extra.length ? C.amber : C.accent} size={76} />
       </View></Glass>
-      <View style={[S.row, { marginBottom: 8, justifyContent: 'space-between' }]}>
-        <View style={S.row}><Switch value={accept} onValueChange={setAccept} /><Text>Accept other-plant pallet</Text></View>
-        <View style={S.row}><Switch value={damaged} onValueChange={setDamaged} trackColor={{ true: C.warn }} /><Text>Damaged</Text></View>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
+        {[['accept', accept, setAccept, 'Accept other-plant', C.accent], ['dmg', damaged, setDamaged, 'Next scan = DAMAGED', C.warn]].map(([k, v, set, l, c]) => <TouchableOpacity key={k} onPress={() => set(!v)} activeOpacity={0.8} style={[S.btnS, { flex: 1, marginTop: 0, minHeight: 44, justifyContent: 'center', backgroundColor: v ? c : undefined, borderColor: v ? c : C.accent }]}><Text style={[S.btnSText, v ? { color: '#fff' } : null]}>{v ? '✓ ' : ''}{l}</Text></TouchableOpacity>)}
       </View>
       <ScanInput onScan={onScan} placeholder="Scan pallet tag" />
     </View>

@@ -1,13 +1,15 @@
 // Gate IN, Gate OUT, Damage/Tag, Lookup, Pending & Sync, Settings. Developed by DT
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Switch } from 'react-native';
-import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo } from '../ui/kit';
+import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
 import { Screen, applyTheme, T } from '../ui/kit';
 import { THEMES, THEME_KEYS } from '../ui/theme';
-import { api, getServer, setServer } from '../lib/api';
+import { api, getServer, setServer, APP_VERSION } from '../lib/api';
 import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity, getLpn, lpnsOnPallet } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
 import { listPaired, connect, printerAvailable, testPrint, setPaperWidth } from '../lib/printer';
+import { setSoundEnabled, soundEnabled, feedback } from '../lib/feedback';
+import { checkUpdate, openUpdate } from '../lib/update';
 
 const needOnline = (toast) => { if (!sync.online) { toast('This step needs the server (gate documents are online-only). Use manual gate pass + supervisor PIN if the outage continues.', 'err'); return false; } return true; };
 
@@ -40,11 +42,12 @@ export function GateOut({ onBack }) {
   };
   return (<Screen><Header title="OUT Gate" sub="Scan GCS / challan QR" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan GCS or challan QR" />
-      <View style={[S.row, { marginTop: 8 }]}><Switch value={override} onValueChange={setOverride} trackColor={{ true: C.warn }} /><Text>Manual override (paper challan)</Text></View>
+      <SwitchRow label="Manual override (paper challan)" hint="Needs a supervisor PIN; recorded in the audit log" value={override} onChange={setOverride} danger />
       {override ? <TextInput style={[S.input, { marginTop: 6 }]} placeholder="Supervisor PIN" value={pin} onChangeText={setPin} secureTextEntry keyboardType="number-pad" /> : null}</View>
     <Text style={S.h2}>Approved, waiting at gate</Text>
-    {lists.map(k => <View key={k.picklist_no} style={S.card}><Text style={{ fontWeight: '700' }}>{k.vehicle_no} · {k.customer_code}</Text><Text style={S.mute}>{k.picklist_no} · challan {k.challan_no} · GCS {k.gcs_no || 'pending'} · {k.qty} pallets</Text></View>)}
-    <Btn title="Refresh" secondary onPress={load} /></Page><Toast msg={msg} /></Screen>);
+    {lists.length === 0 ? <Empty icon="car-outline" text="No vehicle approved yet" hint="Logistics approves the vehicle on the web after the challan." /> : null}
+    {lists.map(k => <ListRow key={k.picklist_no} title={`${k.vehicle_no || '—'} · ${k.customer_code}`} sub={`${k.picklist_no} · challan ${k.challan_no} · GCS ${k.gcs_no || 'pending'} · ${k.qty} pallets`} right={<Pill s={k.dispatch_type || 'PALLET_ONLY'} />} />)}
+    <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
 }
 
 export function Damage({ onBack }) {
@@ -56,19 +59,21 @@ export function Damage({ onBack }) {
     setRemarks(''); if (sync.online) syncNow().catch(() => {});
   };
   return (<Screen><Header title="Damage / Tag issue" onBack={onBack} /><Page>
-    <View style={[S.row, { marginBottom: 8 }]}>{[['DAMAGE', 'Mark damaged'], ['TAG', 'Tag unreadable / lost']].map(([k, l]) => <TouchableOpacity key={k} onPress={() => setKind(k)} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: kind === k ? C.accent : undefined }]}><Text style={[S.btnSText, kind === k ? { color: '#fff' } : null]}>{l}</Text></TouchableOpacity>)}</View>
+    <Segmented options={[['DAMAGE', 'Mark damaged', C.warn], ['TAG', 'Tag unreadable / lost', C.amber]]} value={kind} onChange={setKind} />
     <View style={S.card}><TextInput style={S.input} placeholder="Remarks" value={remarks} onChangeText={setRemarks} /><ScanInput onScan={onScan} placeholder={kind === 'TAG' ? 'Scan tag or type pallet no' : 'Scan pallet tag'} /></View>
   </Page><Toast msg={msg} /></Screen>);
 }
 
-export function Lookup({ onBack }) {
+export function Lookup({ onBack, initial }) {
   const [p, setP] = useState(null); const [hist, setHist] = useState(null); const [lp, setLp] = useState([]); const [msg, toast] = useToast();
+  useEffect(() => { if (initial) onScan(initial); }, [initial]);
   const onScan = async (code) => { let r = await resolveTag(code); setHist(null);
     if (!r.pallet) { const l = await getLpn(code); if (l && l.pallet) r = await resolveTag(l.pallet); else if (l) return toast(`LPN ${l.lpn}: ${l.part} × ${l.qty} · ${l.status} · no pallet linked`, 'warn'); }
     if (!r.pallet) return toast('Not in local cache' + (r.tag ? ` (tag ${r.tag.tag} ${r.tag.status})` : ''), 'err'); setP(r.pallet); setLp(await lpnsOnPallet(r.pallet.pallet_no));
     if (sync.online) { try { const h = await api('/pallets/' + r.pallet.pallet_no); setHist(h.history.slice(0, 15)); } catch { } } };
   return (<Screen><Header title="Pallet Lookup" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onScan} /></View>
+    {!p ? <Empty icon="search-outline" text="Scan a pallet, tag or LPN" hint="Shows status, load, zone, LPNs and recent history (history needs the server)." /> : null}
     {p ? <View style={S.card}><Text style={S.h1}>{p.pallet_no} <Pill s={p.status} /></Text><View style={[S.row, { marginVertical: 4 }]}><Pill s={p.load || 'EMPTY'} /><Text style={S.mute}>  zone {p.zone || '-'}{p.load_ref ? ' · ' + p.load_ref : ''}</Text></View><Text style={S.mute}>Home {p.home} · type {p.type} · tag {p.tag}</Text>{lp.map(l => <Text key={l.lpn} style={S.mute}>• LPN {l.lpn} · {l.part} × {l.qty} · {l.status}</Text>)}{p.customer ? <Text style={S.mute}>At customer {p.customer}</Text> : null}{p.picklist ? <Text style={S.mute}>Pick list {p.picklist}</Text> : null}</View> : null}
     {hist ? <View style={S.card}><Text style={S.h2}>Recent history</Text>{hist.map(h => <Text key={h.id} style={[S.mute, { marginBottom: 3 }]}>{String(h.ts).slice(0, 16)} · {h.event_type} → {h.to_status || ''} {h.ref_doc || ''} {h.customer_code || ''} · {h.user_id}</Text>)}</View> : null}
   </Page><Toast msg={msg} /></Screen>);
@@ -78,36 +83,47 @@ export function Pending({ onBack }) {
   const [st, setSt] = useState({ ...sync }); const [ev, setEv] = useState([]); const [docs, setDocs] = useState([]); const [acts, setActs] = useState([]); const [tab, setTab] = useState('events');
   const load = async () => { setEv(await recentEvents(80)); setDocs(await pendingDocs()); setActs(await recentActivity(80)); };
   useEffect(() => { load(); return subscribe(s => { setSt(s); load(); }); }, []);
-  return (<Screen><Header title="Pending & Sync" onBack={onBack} /><Page>
+  return (<Screen><Header title="Pending & Sync" onBack={onBack} /><Page refreshing={st.syncing} onRefresh={() => syncNow()}>
     <View style={[S.card, { flexDirection: 'row', justifyContent: 'space-around' }]}>
       <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: st.online ? C.ok : C.warn }]}>{st.online ? 'ON' : 'OFF'}</Text><Text style={S.mute}>network</Text></View>
       <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: st.pending ? C.amber : C.ok }]}>{st.pending}</Text><Text style={S.mute}>pending events</Text></View>
       <View style={{ alignItems: 'center' }}><Text style={[S.big, { fontSize: 18, marginTop: 10 }]}>{st.lastSync ? st.lastSync.slice(11, 19) : '—'}</Text><Text style={S.mute}>last sync</Text></View></View>
     {st.lastError ? <View style={[S.card, { borderLeftWidth: 4, borderLeftColor: C.warn }]}><Text style={{ color: C.warn }}>{st.lastError === 'LOGIN' ? 'Session expired - login again to sync' : st.lastError}</Text></View> : null}
-    <Btn title={st.syncing ? 'Syncing…' : 'Sync now'} onPress={() => syncNow()} disabled={st.syncing} />
+    <Btn title="Sync now" icon="sync-outline" onPress={() => syncNow()} busy={st.syncing} />
     {docs.length ? <View style={S.card}><Text style={S.h2}>Offline documents waiting</Text>{docs.map(d => <Text key={d.doc_no} style={S.mute}>{d.kind} {d.doc_no}</Text>)}</View> : null}
-    <View style={[S.row, { marginBottom: 8 }]}>{[['events', 'Recent events'], ['activity', 'My activity']].map(([k, l]) => <TouchableOpacity key={k} onPress={() => setTab(k)} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: tab === k ? C.accent : undefined }]}><Text style={[S.btnSText, tab === k ? { color: '#fff' } : null]}>{l}</Text></TouchableOpacity>)}</View>
+    <Segmented options={[['events', 'Recent events'], ['activity', 'My activity']]} value={tab} onChange={setTab} />
     {tab === 'activity' ? acts.map(a => <View key={a.id} style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}><View style={S.row}><Text style={{ flex: 1, fontWeight: '600' }}>{a.action}</Text><Text style={S.mute}>{a.sent ? '✓ sent' : 'pending'}</Text></View><Text style={S.mute}>{a.ts.slice(0, 19).replace('T', ' ')} · {a.ref || ''} {a.result ? '· ' + a.result : ''}</Text></View>) : null}
     {tab === 'events' ? ev.map(e => <View key={e.event_id} style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}><View style={S.row}><Text style={{ flex: 1, fontWeight: '600' }}>{e.event_type}</Text><Pill s={e.status} /></View><Text style={S.mute}>{e.local_ts.slice(0, 19).replace('T', ' ')} · {JSON.parse(e.payload).scanned || JSON.parse(e.payload).slip_no || ''} {e.result ? '· ' + e.result : ''}</Text></View>) : null}
   </Page></Screen>);
 }
 
-export function Settings({ onBack, deviceId, onTheme }) {
+export function Settings({ onBack, deviceId, onTheme, onUi }) {
   const [srv, setSrv] = useState(getServer()); const [printers, setPrinters] = useState([]); const [sel, setSel] = useState(null); const [selName, setSelName] = useState(null); const [paper, setPaper] = useState('58'); const [busy, setBusy] = useState(false); const [msg, toast] = useToast();
-  useEffect(() => { kv.get('printer').then(setSel); kv.get('printer_name').then(setSelName); kv.get('printer_width').then(w => setPaper(w || '58')); }, []);
+  const [sound, setSound] = useState(soundEnabled()); const [scale, setScale] = useState(T.scale || 1); const [idle, setIdle] = useState(30); const [upd, setUpd] = useState(null);
+  useEffect(() => { kv.get('printer').then(setSel); kv.get('printer_name').then(setSelName); kv.get('printer_width').then(w => setPaper(w || '58')); kv.get('idle_min').then(v => setIdle(v ?? 30)); }, []);
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>
-    <View style={S.card}><Text style={S.h2}>Server name</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" placeholder="assettrack" /><Text style={S.mute}>Ports 80 / 8001 / 8002 / 8003 are tried automatically.</Text><Btn title="Save" secondary onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId}</Text></View>
+    <View style={S.card}><Text style={S.h2}>Server name</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" autoCorrect={false} placeholder="assettrack" /><Text style={S.mute}>Ports 80 / 8001 / 8002 / 8003 are tried automatically.</Text><Btn title="Save" secondary icon="save-outline" onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId} · app v{APP_VERSION}</Text>
+      <Btn title={upd?.busy ? 'Checking…' : 'Check for app update'} secondary icon="cloud-download-outline" busy={upd?.busy} onPress={async () => { setUpd({ busy: true }); const r = await checkUpdate(); setUpd(r || { none: true }); if (!r) toast('Server has no APK published', 'warn'); else if (r.newer) toast(`v${r.version} available`, 'warn'); else toast('You have the latest version', 'ok'); }} />
+      {upd?.newer ? <Btn title={`Download v${upd.version}`} icon="download-outline" onPress={() => openUpdate(upd)} /> : null}</View>
+    <View style={S.card}><Text style={S.h2}>Operator feedback</Text>
+      <SwitchRow label="Scan sounds" hint="High beep = OK · two beeps = warning · low buzz = rejected (vibration always on)" value={sound} onChange={async (v) => { setSound(v); await setSoundEnabled(v); if (v) feedback('ok'); }} />
+      <View style={S.row}>{[['ok', 'Test OK'], ['warn', 'Warn'], ['err', 'Error']].map(([k, l]) => <TouchableOpacity key={k} onPress={() => feedback(k)} style={[S.btnS, { flex: 1, marginTop: 0 }]}><Text style={S.btnSText}>{l}</Text></TouchableOpacity>)}</View>
+      <Text style={[S.h2, { marginTop: 12 }]}>Text size</Text>
+      <Segmented options={[[1, 'Normal'], [1.15, 'Large'], [1.3, 'Glove / outdoor']]} value={scale} onChange={async (v) => { setScale(v); await kv.set('ui_scale', v); applyTheme(T.key, v); onUi && onUi({}); }} />
+      <Text style={S.h2}>Auto-lock when idle</Text>
+      <Segmented options={[[0, 'Off'], [15, '15 min'], [30, '30 min'], [60, '60 min']]} value={idle} onChange={async (v) => { setIdle(v); await kv.set('idle_min', v); onUi && onUi({ idle_min: v }); }} />
+      <Text style={S.mute}>After this time without a touch the password is asked again. Scans and the outbox are kept.</Text></View>
     <View style={S.card}><Text style={S.h2}>Theme</Text><Text style={S.mute}>Current: {THEMES[T.key].name}</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{THEME_KEYS.map(k => <TouchableOpacity key={k} onPress={async () => { applyTheme(k); await kv.set('theme', k); onTheme && onTheme(k); toast('Theme: ' + THEMES[k].name); }} style={[S.btnS, { flex: 1, minWidth: '45%', marginTop: 0, backgroundColor: T.key === k ? C.accent : undefined }]}><Text style={[S.btnSText, T.key === k ? { color: '#fff' } : null]}>{THEMES[k].name}</Text></TouchableOpacity>)}</View></View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{THEME_KEYS.map(k => <TouchableOpacity key={k} onPress={async () => { applyTheme(k); await kv.set('theme', k); onTheme && onTheme(k); toast('Theme: ' + THEMES[k].name); }} style={[S.btnS, { flex: 1, minWidth: '45%', marginTop: 0, minHeight: 44, justifyContent: 'center', backgroundColor: T.key === k ? C.accent : undefined }]}><Text style={[S.btnSText, T.key === k ? { color: '#fff' } : null]}>{THEMES[k].name}</Text></TouchableOpacity>)}</View></View>
     <View style={S.card}><Text style={S.h2}>Bluetooth printer {printerAvailable() ? '' : '(module not in this build)'}</Text>
       <Text style={S.mute}>Selected: {selName ? `${selName} (${sel})` : (sel || 'none')}</Text>
       <Text style={[S.mute, { marginTop: 4 }]}>1. Switch the printer on. 2. Pair it once in Android Settings > Bluetooth. 3. List and tap it here. 4. Test print.</Text>
-      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>{[['58', '2" / 58 mm (SEZNIK)'], ['80', '3" / 80 mm']].map(([w, l]) => <TouchableOpacity key={w} onPress={async () => { setPaper(w); await setPaperWidth(w); }} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: paper === w ? C.accent : undefined }]}><Text style={[S.btnSText, paper === w ? { color: '#fff' } : null]}>{l}</Text></TouchableOpacity>)}</View>
-      <Btn title="List paired printers" secondary icon="bluetooth-outline" onPress={async () => { try { const l = await listPaired(); setPrinters(l); if (!l.length) toast('No paired Bluetooth devices - pair the printer in Android Settings first', 'warn'); } catch (e) { toast(e.message, 'err'); } }} />
+      <View style={{ height: 8 }} /><Segmented options={[['58', '2" / 58 mm (SEZNIK)'], ['80', '3" / 80 mm']]} value={paper} onChange={async (w) => { setPaper(w); await setPaperWidth(w); }} />
+      <Btn title="List paired printers" secondary icon="bluetooth-outline" busy={busy} onPress={async () => { try { const l = await listPaired(); setPrinters(l); if (!l.length) toast('No paired Bluetooth devices - pair the printer in Android Settings first', 'warn'); } catch (e) { toast(e.message, 'err'); } }} />
       {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { setBusy(true); try { await connect(p.address); await kv.set('printer_name', p.name); setSel(p.address); setSelName(p.name); toast('Connected ' + p.name); } catch (e) { toast('Cannot connect: ' + e.message, 'err'); } finally { setBusy(false); } }} style={[S.btnS, { alignItems: 'flex-start', backgroundColor: sel === p.address ? C.ok : undefined }]}><Text style={[S.btnSText, sel === p.address ? { color: '#fff' } : null]}>{p.name}  {p.address}</Text></TouchableOpacity>)}
-      {sel ? <Btn title={busy ? 'Printing…' : 'Test print'} icon="print-outline" onPress={async () => { setBusy(true); try { await testPrint(await kv.get('plant')); toast('Test sent - check the printer'); logActivity('PRINT_TEST', sel, 'ok'); } catch (e) { toast('Test print failed: ' + e.message, 'err'); logActivity('PRINT_TEST', sel, e.message); } finally { setBusy(false); } }} /> : null}
+      {sel ? <Btn title="Test print" icon="print-outline" busy={busy} onPress={async () => { setBusy(true); try { await testPrint(await kv.get('plant')); toast('Test sent - check the printer'); logActivity('PRINT_TEST', sel, 'ok'); } catch (e) { toast('Test print failed: ' + e.message, 'err'); logActivity('PRINT_TEST', sel, e.message); } finally { setBusy(false); } }} /> : null}
       <Text style={[S.mute, { marginTop: 6 }]}>Blank paper after a test = the printer does not use ESC/POS; tell DT the printer model.</Text></View>
-    <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done'); }} /></View>
+    <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary icon="refresh-circle-outline" onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done', sync.lastError ? 'err' : 'done'); }} /></View>
     <Footer />
   </Page><Toast msg={msg} /></Screen>);
 }

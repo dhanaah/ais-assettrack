@@ -1,7 +1,7 @@
 // Return slip at IN gate (Mode B1 full scan / B2 qty only) - works offline with device-series number, prints via BT. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Modal, ScrollView } from 'react-native';
-import { S, C, Btn, Page, Header, ScanInput, useToast, Toast } from '../ui/kit';
+import { S, C, Btn, Page, Header, ScanInput, useToast, Toast, Segmented } from '../ui/kit';
 import { Screen } from '../ui/kit';
 import { listCustomers, enqueueDoc, kv, logActivity } from '../lib/db';
 import { validateReturnPallet } from '../lib/rules';
@@ -54,7 +54,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
   </Page></Screen>);
 
   return (<Screen><Header title={cust.name} sub="Return slip at IN gate" onBack={() => setCust(null)} /><Page>
-    <View style={[S.row, { marginBottom: 8 }]}>{['B1', 'B2'].map(m => <TouchableOpacity key={m} onPress={() => setMode(m)} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: mode === m ? C.accent : undefined }]}><Text style={[S.btnSText, mode === m ? { color: '#fff' } : null]}>{m === 'B1' ? 'B1 · scan each pallet' : 'B2 · quantity only'}</Text></TouchableOpacity>)}</View>
+    <Segmented options={[['B1', 'B1 · scan each pallet'], ['B2', 'B2 · quantity only']]} value={mode} onChange={setMode} />
     <View style={S.card}>
       <TextInput style={S.input} placeholder="Vehicle number *" value={veh} onChangeText={setVeh} autoCapitalize="characters" />
       <TextInput style={S.input} placeholder="Customer challan / DC number" value={dc} onChangeText={setDc} autoCapitalize="characters" />
