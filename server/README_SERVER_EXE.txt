@@ -21,10 +21,18 @@ Masters > Plants: set "GCS auto print" and the printer.
  - Printer IP, direct: the printer's IP (port 9100); most network laser printers print the PDF directly.
 Every finished loading prints the GCS PDF (QR + challan number + security sign). The PDFs are kept in gcs_docs\.
 
-GCS CSV ON THE FTP (one row per invoice line - same headings as the ERP gate pass)
--------------------------------------------------------------------------------
-GatePass Number,Date,Time,To M/s,Customer Code,Location,Vehicle No,Vehicle Type,Transporter,Remarks,GR/LR No,Sales Type,Inv No,Inv Date,Item Code,Cust Part No,No of Case,Qty/Case,Act Qty,Line Amount,Pallet Type,PDI By,PDI Login,Shift Supervisor,Supervisor Login
-FGCHN2627/12678,07/10/2026,22:33:08,"Asahi India Glass Ltd, Varale",VARALE,Pune,TN31CE4390,32 FT MXL,ARC Enterprises,PUNE AIR,,Stock Transfer,604334208,07/10/2026,SF.M13.RDLZAZ18180000,,3,12,36,51794.59,RW,Ravi Kumar,ravi.k,Suresh Babu,suresh.b
-FGCHN2627/12678,07/10/2026,22:33:08,"Asahi India Glass Ltd, Varale",VARALE,Pune,TN31CE4390,32 FT MXL,ARC Enterprises,PUNE AIR,,Stock Transfer,604334208,07/10/2026,SF.M16.FDRZCZ18180000,,12,10,120,171786.29,RW,,,,
-Rows with the same GatePass Number become ONE loading sheet. The printed gate pass follows the ERP layout and runs to as
-many pages as needed (page X of Y); pallets in 6 columns; PDI / Logistics / Security signs on the last page.
+GCS CSV ON THE FTP (ERP export - one row per case / LPN)
+--------------------------------------------------------
+Columns as exported by the ERP (file name e.g. 20261009_154526_FGCHN2627_12823.csv):
+GATE_PASS_NUMBER, GATE_PASS_DATE, SALES_TYPE, CUSTOMER_NAME, LOCATION, INVOICE_NO, INVOICE_DATE, VEHICLE_NUM, VEHICLE_TYPE,
+TRANSPORTER_NAME, TRANSPORT_MODE, ENTRY_TIME, ITEM_CODE, CUST_ITEM_NUMBER, NO_OF_CASES, QUANTITY_PER_CASE, LINE_QUANTITY,
+LINE_AMOUNT, GR_NUMBER, PALLET_TYPE, PACKAGE_TYPE, STATUS, REMARKS, APPROVAL_TIME, DRIVER_CONTACT_NO, SUBINVENTORY,
+CANCELLED_REMARKS, CANCELLED_DATE, PLANT_NAME, LPN_NUMBER
+- Rows of the same GATE_PASS_NUMBER make ONE loading sheet; rows of the same invoice + item are added up into one gate pass
+  line (cases, quantity, amount).
+- LPN_NUMBER (e.g. F.2948.P10266528972) = pallet F.2948 + part card P10266528972: the HHT knows every part card of the GCS,
+  refuses a part card that belongs to another GCS ("wrong vehicle"), warns on one not in the file, and "Finish loading"
+  shows part cards not scanned. Expected pallets = number of different pallets in LPN_NUMBER.
+- Customer: matched to the customer master by CUSTOMER_NAME (add the customer with exactly that name), else REMARKS as code.
+- CANCELLED_DATE / STATUS "CANCELLED": the loading sheet is cancelled (if nothing was loaded yet).
+- "-" in a cell is treated as empty.

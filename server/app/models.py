@@ -264,6 +264,9 @@ class PickList(Base):
     vehicle_no: Mapped[str | None] = mapped_column(String(20))
     gcs_no: Mapped[str | None] = mapped_column(String(40))
     customer_location: Mapped[str | None] = mapped_column(String(80))   # delivery location from the GCS file
+    customer_name: Mapped[str | None] = mapped_column(String(120))      # as on the GCS file (CUSTOMER_NAME)
+    driver_mobile: Mapped[str | None] = mapped_column(String(20))
+    transport_mode: Mapped[str | None] = mapped_column(String(15))
     gp_date: Mapped[datetime | None] = mapped_column(DateTime)          # gate pass date / time from the GCS file
     transporter_name: Mapped[str | None] = mapped_column(String(60))
     gcs_remarks: Mapped[str | None] = mapped_column(String(120))
@@ -305,6 +308,21 @@ class PickListItem(Base):
     amount: Mapped[float | None] = mapped_column(Float)                # line amount
     pallet_type: Mapped[str | None] = mapped_column(String(15))
     pallets: Mapped[int | None] = mapped_column(Integer)
+
+
+class GcsLpn(Base):
+    """Part cards (LPN) the GCS file says go on this vehicle - one CSV row each. pallet_ref is the pallet part of
+    LPN_NUMBER (e.g. F.2948 in F.2948.P10266528972). Used to check the loading and to count expected pallets."""
+    __tablename__ = "gcs_lpns"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    picklist_no: Mapped[str] = mapped_column(ForeignKey("picklists.picklist_no"), index=True)
+    lpn_no: Mapped[str] = mapped_column(String(40), index=True)
+    lpn_label: Mapped[str | None] = mapped_column(String(60))           # full LPN_NUMBER as in the file
+    pallet_ref: Mapped[str | None] = mapped_column(String(30))
+    invoice_no: Mapped[str | None] = mapped_column(String(40))
+    part_no: Mapped[str | None] = mapped_column(String(40))
+    qty: Mapped[int | None] = mapped_column(Integer)
+    subinventory: Mapped[str | None] = mapped_column(String(20))
 
 
 class ReturnSlip(Base):

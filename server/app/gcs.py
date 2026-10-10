@@ -8,6 +8,7 @@ Developed by DT
 import io, json, logging, re, threading, time, csv
 from datetime import datetime
 from ftplib import FTP
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from . import models, config, services
 from .models import utcnow
@@ -21,7 +22,7 @@ _lock = threading.Lock()
 # field name variants we accept in JSON keys / CSV headers / "Label: value" lines of a text or PDF document
 FIELDS = {
     "gcs_no": ["gcs_no", "gcs no", "gcs number", "gcs", "gate pass no", "gate pass number", "gatepass number", "gate pass", "gatepass no", "gp no"],
-    "vehicle_no": ["vehicle_no", "vehicle no", "vehicle", "truck no", "truck", "lorry no"],
+    "vehicle_no": ["vehicle_no", "vehicle no", "vehicle num", "vehicle number", "vehicle", "truck no", "truck", "lorry no"],
     "vehicle_type": ["vehicle_type", "vehicle type", "truck type", "vehicle size", "vehicle model", "type of vehicle"],
     "customer_code": ["customer_code", "customer code", "customer", "consignee code", "ship to code", "ship_to"],
     "customer_name": ["customer_name", "customer name", "to m s", "to", "consignee", "ship to"],
@@ -32,16 +33,23 @@ FIELDS = {
     "so_number": ["so_number", "so no", "sale order", "sales order", "order no"],
     "part_no": ["part_no", "part no", "item", "item code", "item no", "part"],
     "part_desc": ["part_desc", "item description", "description", "item desc", "part name", "part description"],
-    "part_qty": ["part_qty", "act qty", "actual qty", "total qty", "total quantity", "qty", "quantity", "invoice qty"],
-    "cust_part": ["cust_part", "cust part", "customer part", "customer part no", "cust part no", "customer part number"],
+    "part_qty": ["part_qty", "line quantity", "line qty", "act qty", "actual qty", "total qty", "total quantity", "qty", "quantity", "invoice qty"],
+    "cust_part": ["cust_part", "cust item number", "customer item number", "cust item no", "cust part", "customer part", "customer part no", "cust part no", "customer part number"],
     "cases": ["cases", "case", "no of cases", "no of case", "case count"],
-    "qty_per_case": ["qty_per_case", "qty case", "qty per case", "std pack", "pack qty", "standard pack"],
+    "qty_per_case": ["qty_per_case", "quantity per case", "qty case", "qty per case", "std pack", "pack qty", "standard pack"],
     "pallets": ["pallets", "pallet qty", "no of pallets", "pallet count"],
     "transporter": ["transporter", "transporter code", "transporter name"],
     "gp_date": ["gp_date", "date", "gate pass date", "gatepass date", "gcs date", "gp date"],
-    "gp_time": ["gp_time", "time", "gate pass time", "gcs time"],
+    "gp_time": ["gp_time", "entry time", "time", "gate pass time", "gcs time"],
     "remarks": ["remarks", "remark"],
-    "gr_lr_no": ["gr_lr_no", "gr lr no", "gr no", "lr no", "lr number"],
+    "gr_lr_no": ["gr_lr_no", "gr number", "gr lr no", "gr no", "lr no", "lr number"],
+    "lpn_no": ["lpn_no", "lpn number", "lpn no", "lpn", "part card", "part card no"],
+    "status": ["status", "gcs status", "gate pass status"],
+    "cancelled_date": ["cancelled date", "cancel date"],
+    "cancelled_remarks": ["cancelled remarks", "cancel remarks"],
+    "driver_mobile": ["driver contact no", "driver contact", "driver mobile", "driver phone"],
+    "transport_mode": ["transport mode"],
+    "subinventory": ["subinventory", "sub inventory", "subinv"],
     "sales_type": ["sales_type", "sales type", "sale type"],
     "amount": ["amount", "line amount", "line value", "value", "taxable value"],
     "pallet_type": ["pallet_type", "pallet type"],
@@ -72,7 +80,7 @@ def _lookup(d: dict) -> dict:
     out = {}
     for field, names in FIELDS.items():
         for n in names:
-            if _norm(n) in nd and nd[_norm(n)] not in (None, ""):
+            if _norm(n) in nd and nd[_norm(n)] not in (None, "", "-"):
                 out[field] = nd[_norm(n)]; break
     return out
 
@@ -190,6 +198,68 @@ def group_rows(rows: list[dict]) -> list[tuple[dict, list[dict]]]:
     return out
 
 
+def lpn_parts(label: str) -> tuple[str, str | None]:
+    """LPN_NUMBER 'F.2948.P10266528972' -> ('P10266528972', 'F.2948'); 'NF7944.P1026...' -> ('P1026...', 'NF7944')."""
+    s = str(label or "").strip().upper()
+    if "." in s:
+        head, _, tail = s.rpartition(".")
+        return tail[:40], head[:30] or None
+    return s[:40], None
+
+
+def _merge_lines(rows: list[dict], head: dict) -> list[dict]:
+    """The ERP file has one row per case / LPN; the gate pass shows one line per invoice + item: cases, qty and
+    amount are added up, qty per case kept when it is the same on every row."""
+    out, idx = [], {}
+    for r in rows:
+        k = tuple(str(r.get(x) or head.get(x) or "") for x in ("invoice_no", "invoice_date", "so_number", "part_no", "cust_part", "pallet_type"))
+        if k not in idx:
+            m = dict(r); m["_qpc"] = {_int(r.get("qty_per_case"))}; m["part_qty"] = _line_qty(r)
+            for x in ("cases", "amount", "pallets"):
+                m[x] = _float(r.get(x))
+            idx[k] = len(out); out.append(m); continue
+        m = out[idx[k]]
+        for x in ("cases", "amount", "pallets"):
+            v = _float(r.get(x))
+            if v is not None:
+                m[x] = (m[x] or 0) + v
+        q = _line_qty(r)
+        if q is not None:
+            m["part_qty"] = (m["part_qty"] or 0) + q
+        m["_qpc"].add(_int(r.get("qty_per_case")))
+    for m in out:
+        qpc = m.pop("_qpc")
+        m["qty_per_case"] = next(iter(qpc)) if len(qpc) == 1 else None
+        for x in ("cases", "pallets"):
+            m[x] = int(m[x]) if m[x] is not None else None
+    return out
+
+
+def _time(v):
+    """'15:43:30' or '09-OCT-2026 15:43:30' -> (15, 43, 30)."""
+    t = str(v or "").strip().split(" ")[-1]
+    try:
+        hh, mi, *ss = [int(x) for x in t.split(":")]
+        return hh, mi, (ss[0] if ss else 0)
+    except ValueError:
+        return None
+
+
+def _customer(db: Session, plant: str, f: dict) -> str:
+    """Customer code: file code -> customer master by name -> short name in REMARKS -> name (cut to 20)."""
+    if f.get("customer_code"):
+        return str(f["customer_code"]).strip()[:20]
+    name = str(f.get("customer_name") or "").strip()
+    if name:
+        c = db.query(models.Customer).filter(models.Customer.plant_code == plant, func.upper(models.Customer.name) == name.upper()).first()
+        if c:
+            return c.code
+    short = str(f.get("remarks") or "").strip().upper()
+    if short and len(short) <= 20 and db.query(models.Customer).filter_by(plant_code=plant, code=short).first():
+        return short
+    return (name or short or "?")[:20]
+
+
 def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, items: list[dict] | None = None) -> tuple[str, models.PickList | None]:
     """Create / refresh the loading sheet for one GCS with its invoice lines (invoice, item, qty at line level).
     Returns ('created'|'updated'|'skipped', picklist)."""
@@ -200,7 +270,8 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
         return "skipped", None
     no = f"GCS-{plant}-{re.sub(r'[^A-Z0-9]+', '', gcs)[-20:]}"
     pk = db.query(models.PickList).filter(models.PickList.plant_code == plant, models.PickList.gcs_no == gcs).first() or db.get(models.PickList, no)
-    cust = str(f.get("customer_code") or f.get("customer_name") or "?").strip()[:20]
+    cust = _customer(db, plant, f)
+    cancelled = bool(f.get("cancelled_date")) or "CANCEL" in str(f.get("status") or "").upper()
     to_plant = (str(f.get("to_plant") or "").strip().upper() or None)
     dt = "STOCK_TRANSFER" if (to_plant and db.get(models.Plant, to_plant)) else "CUSTOMER"
     if not pk:
@@ -211,17 +282,24 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
         if pk.status not in ("OPEN",):
             return "skipped", pk                   # already loaded / dispatched: frozen
         what = "updated"
+    if cancelled:                                  # GCS cancelled in the ERP
+        if db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() == 0:
+            pk.status = "CANCELLED"
+            for l in db.query(models.Lpn).filter_by(reserved_for=pk.picklist_no, status="RESERVED").all():
+                l.status, l.reserved_for = "AVAILABLE", None
+        pk.remarks = f"GCS CANCELLED in ERP {f.get('cancelled_date') or ''} {f.get('cancelled_remarks') or ''}".strip()[:250]
+        return "cancelled", pk
     pk.gcs_no = gcs; pk.customer_code = cust if cust != "?" else pk.customer_code; pk.to_plant = to_plant or pk.to_plant
     pk.vehicle_no = (str(f.get("vehicle_no") or pk.vehicle_no or "").upper().replace(" ", "") or None)
     pk.customer_location = str(f.get("customer_location") or pk.customer_location or "")[:80] or None
+    pk.customer_name = str(f.get("customer_name") or pk.customer_name or "")[:120] or None
+    pk.driver_mobile = str(f.get("driver_mobile") or pk.driver_mobile or "")[:20] or None
+    pk.transport_mode = str(f.get("transport_mode") or pk.transport_mode or "")[:15] or None
     if f.get("gp_date"):
         d = _date(f["gp_date"])
-        if d and f.get("gp_time"):
-            try:
-                hh, mi, *ss = [int(x) for x in str(f["gp_time"]).strip().split(":")]
-                d = d.replace(hour=hh, minute=mi, second=(ss[0] if ss else 0))
-            except ValueError:
-                pass
+        tm = _time(f.get("gp_time"))
+        if d and tm:
+            d = d.replace(hour=tm[0], minute=tm[1], second=tm[2])
         pk.gp_date = d or pk.gp_date
     pk.transporter_name = str(f.get("transporter") or pk.transporter_name or "")[:60] or None
     pk.gcs_remarks = str(f.get("remarks") or pk.gcs_remarks or "")[:120] or None
@@ -232,7 +310,29 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
     pk.transporter_code = str(f.get("transporter") or pk.transporter_code or "")[:20] or None
     pk.pdi_sign = (sign(f.get("pdi_sign"), f.get("pdi_login")) or pk.pdi_sign or None)
     pk.supervisor_sign = (sign(f.get("supervisor_sign"), f.get("supervisor_login")) or pk.supervisor_sign or None)
+    lpn_rows = [r for r in items if r.get("lpn_no")]
+    if lpn_rows:                                   # expected part cards: check the loading, count the pallets
+        db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no).delete()
+        seen = set()
+        for r in lpn_rows:
+            lno, pref = lpn_parts(r["lpn_no"])
+            if lno in seen:
+                continue
+            seen.add(lno)
+            q = _line_qty(r)
+            db.add(models.GcsLpn(picklist_no=pk.picklist_no, lpn_no=lno, lpn_label=str(r["lpn_no"])[:60], pallet_ref=pref,
+                                 invoice_no=(str(r.get("invoice_no") or "")[:40] or None), part_no=(str(r.get("part_no") or "")[:40] or None),
+                                 qty=q, subinventory=(str(r.get("subinventory") or "")[:20] or None)))
+            l = db.get(models.Lpn, lno)            # pre-register the part card so the HHT knows item / qty when it is scanned
+            if not l:
+                db.add(models.Lpn(lpn_no=lno, plant_code=plant, part_no=str(r.get("part_no") or "?")[:40], qty=q or 0, status="RESERVED",
+                                  reserved_for=pk.picklist_no, reserved_at=utcnow(), subinventory=(str(r.get("subinventory") or "GCS")[:20])))
+            elif l.status in ("AVAILABLE", "RESERVED") and not (l.reserved_for and l.reserved_for != pk.picklist_no):
+                l.status, l.reserved_for, l.reserved_at = "RESERVED", pk.picklist_no, utcnow()
+                l.qty = l.qty or (q or 0)
+        db.flush()
     if items:                                      # line level: replace the invoice lines of this GCS
+        items = _merge_lines(items, f)
         db.query(models.PickListItem).filter_by(picklist_no=pk.picklist_no).delete()
         for i, r in enumerate(items, 1):
             db.add(models.PickListItem(picklist_no=pk.picklist_no, line_no=i, invoice_no=(str(r.get("invoice_no") or f.get("invoice_no") or "")[:40] or None),
@@ -249,11 +349,14 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
         pk.invoice_no = ((invs[0] + (f" +{len(invs) - 1}" if len(invs) > 1 else ""))[:40]) if invs else pk.invoice_no
         pk.so_number = ((sos[0] + (f" +{len(sos) - 1}" if len(sos) > 1 else ""))[:40]) if sos else pk.so_number
         pk.part_no = ((parts[0] + (f" +{len(parts) - 1}" if len(parts) > 1 else ""))[:40]) if parts else pk.part_no
-        q = [_line_qty(r) for r in items]
+        q = [r.get("part_qty") for r in items]
         pk.part_qty = sum(x for x in q if x) if any(q) else pk.part_qty
         pl = [_int(r.get("pallets")) for r in items]
         hp = _int(f.get("pallets")) if len(items) == 1 else None
         pk.qty = sum(x for x in pl if x) if any(pl) and not hp else (hp or pk.qty)
+        refs = {g.pallet_ref for g in db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no).all() if g.pallet_ref}
+        if refs:                                   # pallets expected = distinct pallets in the LPN numbers
+            pk.qty = len(refs)
         d = _date(items[0].get("invoice_date") or f.get("invoice_date") or "")
         pk.invoice_date = d or pk.invoice_date
     else:
@@ -290,12 +393,12 @@ def pull(db: Session, fetch=None) -> dict:
             buf = io.BytesIO(); f.retrbinary("RETR " + n, buf.write); files.append((n, buf.getvalue()))
     else:
         f = None; files = [(n, b) for n, b in fetch() if pat.match(n)]
-    created = updated = skipped = 0
+    created = updated = skipped = cancelled = 0
     for name, data in files:
         try:
             for head, items in group_rows(parse_file(name, data)):
                 what, _ = apply_gcs(db, plant, head, name, items)
-                created += what == "created"; updated += what == "updated"; skipped += what == "skipped"
+                created += what == "created"; updated += what == "updated"; skipped += what == "skipped"; cancelled += what == "cancelled"
             done_names.append(name)
         except Exception as e:
             log.warning("GCS file %s: %s", name, e); _state["last_error"] = f"{name}: {e}"[:300]
@@ -313,10 +416,10 @@ def pull(db: Session, fetch=None) -> dict:
             f.quit()
         except Exception:
             pass
-    _state.update(last_ok=utcnow(), files=len(files), created=created, updated=updated, skipped=skipped)
+    _state.update(last_ok=utcnow(), files=len(files), created=created, updated=updated, skipped=skipped, cancelled=cancelled)
     if not _state.get("last_error") or done_names:
         _state["last_error"] = None if len(done_names) == len(files) else _state["last_error"]
-    return {"files": len(files), "created": created, "updated": updated, "skipped": skipped}
+    return {"files": len(files), "created": created, "updated": updated, "skipped": skipped, "cancelled": cancelled}
 
 
 def status() -> dict:

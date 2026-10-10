@@ -302,8 +302,11 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
         # Finish loading against a GCS: quantity = what was loaded; challan now; the GCS (made after invoicing) is the gate pass
         if scanned < 1:
             raise HTTPException(400, "Scan at least one pallet")
-        if k.qty and scanned != k.qty:
-            pass    # GCS said a different pallet count - allowed, recorded in the audit
+        # loading vs the GCS file: part cards listed but not scanned / scanned but not listed (warning, recorded in the audit)
+        exp = {g.lpn_no for g in db.query(models.GcsLpn).filter_by(picklist_no=no).all()}
+        got = {r.lpn_no for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all()}
+        check = {"expected_pallets": k.qty or None, "loaded_pallets": scanned,
+                 "missing_lpns": sorted(exp - got) if exp else [], "extra_lpns": sorted(got - exp) if exp else []}
         k.qty = scanned; k.part_qty = lpnsvc.picked_qty(db, no) or k.part_qty
         plant = db.get(models.Plant, k.plant_code)
         cust = db.query(models.Customer).filter_by(code=k.customer_code, plant_code=k.plant_code).first()
@@ -321,7 +324,7 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
                 if pal:
                     pal.challan_ref = cno
         k.status = "APPROVED"               # GCS exists and the vehicle is known: ready for the OUT gate
-        audit(db, p, "GCS_LOADING_COMPLETE", "picklist", no, None, {"pallets": scanned, "challan_no": k.challan_no, "gcs": k.gcs_no}, request)
+        audit(db, p, "GCS_LOADING_COMPLETE", "picklist", no, None, {"pallets": scanned, "challan_no": k.challan_no, "gcs": k.gcs_no, "check": check}, request)
         db.commit()
         from .. import gcs as gcssvc, gcsprint
         from ..db import SessionLocal
@@ -330,7 +333,7 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
             pr = gcsprint.generate_and_print(SessionLocal, no, p.user.id, qr)
         except Exception as e:
             pr = {"pdf": None, "print": f"PDF failed: {e}"[:200]}
-        return row(k) | {"gcs_qr": qr, "scanned": scanned, "gcs_pdf": pr.get("pdf"), "gcs_print": pr.get("print")}
+        return row(k) | {"gcs_qr": qr, "scanned": scanned, "gcs_pdf": pr.get("pdf"), "gcs_print": pr.get("print"), "gcs_check": check}
 
     if k.dispatch_type in lpnsvc.PART_TYPES:
         got = lpnsvc.picked_qty(db, no)

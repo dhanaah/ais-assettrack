@@ -115,7 +115,7 @@ async def upload_gcs(request: Request, p: Principal = Depends(current_user), db:
     if not plant:
         raise HTTPException(400, "plant required")
     data = await f.read()
-    out = {"created": 0, "updated": 0, "skipped": 0, "gcs": []}
+    out = {"created": 0, "updated": 0, "skipped": 0, "cancelled": 0, "gcs": []}
     for head, items in gcs.group_rows(gcs.parse_file(f.filename, data)):
         what, k = gcs.apply_gcs(db, plant, head, f.filename, items)
         out[what] += 1

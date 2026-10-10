@@ -53,7 +53,7 @@ def doc_number(db: Session, plant: str, kind: str, device: str | None = None) ->
 #    "globalSerial":"0000001","mfgDate":"2026-08-27"}
 # uniquePalletID = AIS-<owner plant>-<pallet type>-<type serial>-<global serial>. A plain ID string is accepted too.
 import re as _re
-PALLET_ID_RE = _re.compile(r"^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{2,8})-(\d{3,8})-(\d{4,10})$")
+PALLET_ID_RE = _re.compile(r"^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{1,8})-(\d{3,8})-(\d{4,10})$")   # type may be 1 letter (F)
 
 
 def parse_pallet_qr(scanned: str) -> dict | None:

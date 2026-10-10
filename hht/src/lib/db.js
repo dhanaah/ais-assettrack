@@ -59,8 +59,8 @@ export async function applyPull(data) {
 // AIS pallet label QR: {"uniquePalletID":"AIS-AAB-ANF-00001-0000001","ownerPlant":"AAB","palletType":"ANF",...} or the plain ID
 export function parsePalletQr(scanned) {
   const s = String(scanned || '').trim();
-  if (s.startsWith('{')) { try { const d = JSON.parse(s); const id = String(d.uniquePalletID || d.palletID || d.pallet_no || '').trim().toUpperCase(); if (!id) return null; const m = id.match(/^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{2,8})-/); return { pallet_no: id, owner: String(d.ownerPlant || (m ? m[1] : '')).toUpperCase() || null, type: String(d.palletType || (m ? m[2] : '')).toUpperCase() || null }; } catch (e) { return null; } }
-  const m = s.toUpperCase().match(/^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{2,8})-(\d{3,8})-(\d{4,10})$/);
+  if (s.startsWith('{')) { try { const d = JSON.parse(s); const id = String(d.uniquePalletID || d.palletID || d.pallet_no || '').trim().toUpperCase(); if (!id) return null; const m = id.match(/^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{1,8})-/); return { pallet_no: id, owner: String(d.ownerPlant || (m ? m[1] : '')).toUpperCase() || null, type: String(d.palletType || (m ? m[2] : '')).toUpperCase() || null }; } catch (e) { return null; } }
+  const m = s.toUpperCase().match(/^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{1,8})-(\d{3,8})-(\d{4,10})$/);
   return m ? { pallet_no: s.toUpperCase(), owner: m[1], type: m[2] } : null;
 }
 export async function resolveTag(scanned) {

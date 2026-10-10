@@ -76,7 +76,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     items = gcssvc.items_loaded(db, pk.picklist_no)
     invs = list(dict.fromkeys(i["invoice_no"] for i in items if i["invoice_no"]))
     to_plant = db.get(models.Plant, pk.to_plant) if pk.to_plant else None
-    to_name = (to_plant.name if to_plant else None) or (cust.name if cust else None) or pk.customer_code
+    to_name = (to_plant.name if to_plant else None) or (cust.name if cust else None) or pk.customer_name or pk.customer_code
     loc = pk.customer_location or ((to_plant.city if to_plant and getattr(to_plant, "city", None) else None)
                                    or ((cust.city or cust.ship_to) if cust else None) or "")
     sales_type = pk.sales_type or {"STOCK_TRANSFER": "Stock Transfer", "CUSTOMER": "Sales"}.get(pk.dispatch_type or "", "")
@@ -155,6 +155,12 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                 txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "OUT GATE: scan QR", 6.5, align="c")
             return top - hh - 3 * mm
 
+        def fitw(t, size, width):            # shrink a value so it never runs into the next column
+            from reportlab.pdfbase.pdfmetrics import stringWidth
+            while size > 6 and stringWidth(str(t), "Helvetica-Bold", size * F) > width:
+                size -= 0.5
+            return size
+
         def details(y):
             """Two-column details block as on the ERP gate pass (+ pallet challan / pallets loaded)."""
             left = [("GatePass Number:", pk.gcs_no), ("To M/s:", to_name), ("Vehicle No:", pk.vehicle_no or ""),
@@ -171,11 +177,13 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             for k in range(rows - 1):
                 if k < len(left):
                     txt(x0 + 5 * mm, yy, left[k][0], 9.5, color=(0.25, 0.25, 0.25))
-                    txt(x0 + 42 * mm, yy, str(left[k][1])[:42].upper() if k == 1 else str(left[k][1])[:42], 10, True,
+                    lv = str(left[k][1])[:60].upper() if k == 1 else str(left[k][1])[:60]
+                    txt(x0 + 42 * mm, yy, lv, fitw(lv, 10, 74 * mm), True,
                         color=red if left[k][0].startswith("Pallet") else (0, 0, 0))
                 if k < len(rightc):
                     txt(x0 + 118 * mm, yy, rightc[k][0], 9.5, color=(0.25, 0.25, 0.25))
-                    txt(x0 + 150 * mm, yy, str(rightc[k][1])[:22].upper() if k == 1 else str(rightc[k][1])[:22], 10, True)
+                    rv = str(rightc[k][1])[:40].upper() if k == 1 else str(rightc[k][1])[:40]
+                    txt(x0 + 150 * mm, yy, rv, fitw(rv, 10, 34 * mm), True)
                 yy -= 5.6 * mm * F
             txt(x0 + 5 * mm, yy, "Pallets Loaded:", 9.5, color=(0.25, 0.25, 0.25))
             txt(x0 + 42 * mm, yy, f"{len(lines)}  (returnable)", 10, True)

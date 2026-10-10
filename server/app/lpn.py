@@ -444,6 +444,8 @@ def resolve_any(db: Session, scanned: str, plant: str):
     """Returns ('LPN', lpn, pallet|None) or ('PALLET', None, pallet) or (None, None, None)."""
     s = scanned.strip()
     l = db.get(models.Lpn, s)
+    if not l and "." in s and not s.startswith(("{", "AIS1|")):   # full ERP label F.2948.P10266528972 -> part card P10266528972
+        l = db.get(models.Lpn, s.rpartition(".")[2].upper())
     if l:
         return "LPN", l, (db.get(models.Pallet, l.pallet_no) if l.pallet_no else None)
     _, pal = services.resolve_tag(db, s)
@@ -491,6 +493,9 @@ def _pick_lpn(db, pk, l, pal, user_id):
             raise RuleError(f"LPN {l.lpn_no} already dispatched ({l.picklist_no})")
         if l.picklist_no and l.picklist_no != pk.picklist_no and l.status == "PICKED":
             raise RuleError(f"LPN {l.lpn_no} is loaded on {l.picklist_no}")
+        if l.status == "RESERVED" and l.reserved_for and l.reserved_for != pk.picklist_no and str(l.reserved_for).startswith("GCS-"):
+            other = db.get(models.PickList, l.reserved_for)
+            raise RuleError(f"LPN {l.lpn_no} belongs to GCS {other.gcs_no if other else l.reserved_for} - wrong vehicle")
         l.status, l.picklist_no, l.reserved_for, l.pallet_no = "PICKED", pk.picklist_no, pk.picklist_no, pal.pallet_no
         db.add(models.PickListLpn(picklist_no=pk.picklist_no, lpn_no=l.lpn_no, pallet_no=pal.pallet_no, part_no=l.part_no, qty=l.qty, user_id=user_id, pdi_result="OK"))
         return True
@@ -529,8 +534,13 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
         raise RuleError(f"Pick list is {pk.status}")
     kind, l, pal = resolve_any(db, scanned, plant)
     if kind is None and is_gcs(pk) and looks_like_lpn(scanned):
-        l = models.Lpn(lpn_no=scanned.strip()[:40], plant_code=plant, part_no=pk.part_no or "?", qty=0, status="AVAILABLE", subinventory="GCS")
+        lno = scanned.strip().rpartition(".")[2].upper()[:40] if "." in scanned else scanned.strip()[:40]
+        l = models.Lpn(lpn_no=lno, plant_code=plant, part_no="?", qty=0, status="AVAILABLE", subinventory="GCS")
         db.add(l); db.flush(); kind = "LPN"
+    if kind == "LPN" and is_gcs(pk):           # check against the part cards listed in the GCS file
+        exp = db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no)
+        if exp.count() and not exp.filter(models.GcsLpn.lpn_no == l.lpn_no).count():
+            alerts.append(f"LPN {l.lpn_no} is NOT in GCS {pk.gcs_no} - check the invoice / part card")
     if pallet_scan:                      # operator scanned both (links LPN to pallet)
         k2, l2, p2 = resolve_any(db, pallet_scan, plant)
         if kind == "PALLET" and k2 == "LPN":

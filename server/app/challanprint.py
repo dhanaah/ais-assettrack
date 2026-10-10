@@ -31,7 +31,7 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
     if dt in ("EMPTY_RETURN", "STOCK_TRANSFER") and to_plant:
         c_name, c_addr, c_gstin, c_state = to_plant.name, to_plant.address or to_plant.city or "", to_plant.gstin or "", to_plant.state or ""
     else:
-        c_name = (cust.name if cust else pk.customer_code)
+        c_name = (cust.name if cust else (pk.customer_name or pk.customer_code))
         c_addr = ", ".join(x for x in ((cust.ship_to if cust else None), (cust.city if cust else None)) if x) or (pk.customer_location or "")
         c_gstin, c_state = (cust.gstin or "") if cust else "", (cust.state or "") if cust else ""
     if dt == "EMPTY_RETURN":

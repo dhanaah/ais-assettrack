@@ -439,5 +439,47 @@ with TestClient(app) as c:
           f"challan PDF: 3 copies, HSN, description + value per pallet from the Pallet Type master ({len(rd.pages)} pages)")
     check(c.get("/api/v1/picklists/NOPE/challan.pdf", headers=W).status_code == 404, "challan PDF refused without a challan")
     check(gcsprint.amount_in_words(223580.88) == "Two Lakh Twenty Three Thousand Five Hundred Eighty and paise Eighty Eight only", "amount in words (Indian numbering)")
+    print("20. Real ERP GCS files (one row per case / LPN): merge to invoice lines, expected part cards, loading check")
+    fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+    real = [(n, open(os.path.join(fx, n), "rb").read()) for n in sorted(os.listdir(fx)) if n.endswith(".csv")]
+    with SessionLocal() as db:
+        db.add(models.Customer(code="WEBASTO", name="Webasto Roofsystems India Private Limited", plant_code="CHN"))
+        for i in range(41, 47):
+            db.add(models.Pallet(pallet_no=f"CHN-P0{i}", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH"))
+        db.commit()
+        res = gcssvc.pull(db, fetch=lambda: real)
+    check(res["created"] == 2, f"2 real GCS files -> 2 loading sheets: {res}")
+    d = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712814", headers=W).json(); k = d["picklist"]; it = d["items"]
+    check(len(it) == 1 and it[0]["cases"] == 6 and it[0]["qty_per_case"] == 120 and it[0]["qty"] == 720 and abs(it[0]["amount"] - 1105304.16) < 0.01,
+          f"6 case rows -> 1 invoice line: 6 cases x 120 = 720, amount {it[0]['amount'] if it else '-'}")
+    check(k["qty"] == 6 and k["vehicle_no"] == "TN87B1498" and k["vehicle_type"] == "LCV23" and k["customer_code"] == "WEBASTO" and k["customer_location"] == "KANCHEEPURAM"
+          and k["gp_date"].startswith("2026-10-09T14:42:22") and k["transporter_name"] == "SRI RAGAVENDRA TRANSPORT" and it[0]["cust_part"] == "5711605A",
+          "header: 6 pallets expected, vehicle, type, customer matched by name, location, entry time, transporter, customer part")
+    k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
+    check(k2["qty"] == 2 and k2["customer_name"].startswith("RENAULT NISSAN") and k2["invoice_no"] == "604118430 +1", "12823: 2 invoices, 2 pallets, customer name kept")
+    no20 = "GCS-CHN-FGCHN262712814"
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "F.2948.P10266528972", "pallet": "CHN-P041"})
+    check(e["status"] == "APPLIED" and "P10266528972" in e["result"] and "x120" in e["result"], f"full LPN label scanned -> part card P10266528972 x120 known from the GCS: {e['result'][:70]}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "P10266512005", "pallet": "CHN-P042"})
+    check(e["status"] == "REJECTED" and "wrong vehicle" in e["result"], f"part card of GCS 12823 refused on 12814: {e['result'][:70]}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "P99999999", "pallet": "CHN-P043"})
+    check(e["status"] in ("APPLIED", "EXCEPTION") and "NOT in GCS" in (e.get("result") or "") + str(e.get("alerts") or ""), f"part card not in the GCS file -> warning: {str(e)[:110]}")
+    r = c.post(f"/api/v1/picklists/{no20}/confirm", headers=H).json()
+    gc = r.get("gcs_check") or {}
+    check(r["status"] == "APPROVED" and len(gc.get("missing_lpns", [])) == 5 and gc.get("extra_lpns") == ["P99999999"] and gc.get("expected_pallets") == 6,
+          f"finish loading reports the gap: 5 part cards not scanned, 1 extra, 6 pallets expected vs {gc.get('loaded_pallets')}")
+    rd = PdfReader(_io.BytesIO(c.get(f"/api/v1/picklists/{no20}/gcs.pdf", headers=W).content)); gt = rd.pages[0].extract_text()
+    check(all(x in gt for x in ("FGCHN2627/12814", "WEBASTO ROOFSYSTEMS", "LCV23", "5711605A", "720.00", "1,105,304.16")), "gate pass PDF from the real file")
+    hdr, *rows = real[0][1].decode().splitlines()
+    cols = hdr.split(","); ci = cols.index("CANCELLED_DATE")
+    import csv as _csv
+    rr = list(_csv.reader(rows)); rr = [x for x in rr if x]
+    for x in rr:
+        x[ci] = "10-OCT-2026"
+    buf = _io.StringIO(); w = _csv.writer(buf); w.writerow(cols); w.writerows(rr)
+    with SessionLocal() as db:
+        res = gcssvc.pull(db, fetch=lambda: [("cancel.csv", buf.getvalue().encode())])
+    k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
+    check(res.get("cancelled") == 1 and k2["status"] == "CANCELLED", f"GCS cancelled in the ERP (CANCELLED_DATE) -> loading sheet cancelled: {res}")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

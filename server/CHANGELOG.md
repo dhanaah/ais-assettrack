@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.7 (2026-10-10) — real ERP GCS file format (HHT app 2.1.3)
+- GCS CSV as exported by the ERP: GATE_PASS_NUMBER, VEHICLE_NUM, ENTRY_TIME, CUST_ITEM_NUMBER, QUANTITY_PER_CASE, LINE_QUANTITY, GR_NUMBER, LPN_NUMBER, DRIVER_CONTACT_NO, TRANSPORT_MODE, STATUS, CANCELLED_DATE ... recognised; "-" = empty
+- One row per case is merged into one gate pass line per invoice + item (cases, qty, amount added up)
+- Expected part cards per GCS (new table gcs_lpns) from LPN_NUMBER; part cards pre-registered with item and qty; expected pallets = distinct pallets in LPN_NUMBER
+- Loading check: full ERP label or part card number accepted; part card of another GCS refused ("wrong vehicle"); part card not in the file -> warning; Finish loading lists part cards not scanned / extra (HHT result screen + audit)
+- Customer matched to the master by CUSTOMER_NAME, else REMARKS as code; customer name from the file printed when not in the master
+- GCS cancelled in the ERP (CANCELLED_DATE / STATUS) cancels the loading sheet when nothing was loaded
+- Pallet numbers with a 1-letter type (F) recognised (AIS-CHN-F-02948-...); long names shrink to fit on the gate pass
 ## 1.10.6 (2026-10-10) — returnable pallet challan PDF, Pallet Type master, official AIS logo (HHT app 2.1.2)
 - Delivery challan PDF (GST Rule 55) in the gate pass style: ORIGINAL FOR CONSIGNEE / DUPLICATE FOR TRANSPORTER / TRIPLICATE FOR CONSIGNOR in one PDF (plant master "Challan copies"), consignor / consignee GSTIN, place of supply, gate pass / vehicle / vehicle type / transporter / invoices / e-way bill, goods by pallet type with HSN, qty, value per pallet, total value + in words, total pallet weight, purpose / return clause, every pallet number (full ID, 4 columns), Prepared by / Security / Received by; multi-page with page X of Y per copy
 - Printed automatically with the gate pass when loading finishes; web Pick Lists "📄 Challan" opens the PDF (also for Yard empty returns: title "Return of Empty Pallets", consignee = owner plant)
