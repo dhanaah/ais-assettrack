@@ -228,6 +228,12 @@ def pull(request: Request, since: datetime | None = None, p: Principal = Depends
     require_client_version(request.headers.get("x-app-version"))
     if not p.plant:
         raise HTTPException(400, "Only plant users pull")
+    try:
+        from .. import bench
+        from ..db import SessionLocal
+        bench.pull_if_stale(SessionLocal)
+    except Exception:
+        pass
     pq = db.query(models.Pallet).filter((models.Pallet.home_plant == p.plant) | (models.Pallet.location_plant == p.plant))
     if since:
         pq = pq.filter(models.Pallet.updated_at >= since)

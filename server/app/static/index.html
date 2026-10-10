@@ -95,7 +95,9 @@ function formData(f){const o={};new FormData(f).forEach((v,k)=>{o[k]=v});f.query
 
 const PAGES=[['dash','Dashboard',null],['reminders','Customer Reminders',['REPORTS_PLANT','REPORTS_ALL']],['pallets','Pallets',null],['picklists','Pick Lists',null],['pdi','PDI Status',null],['stock','WMS Stock & LPN',null],['moves','Zones (in plant)',null],['misses','Missed Scans',null],['position','Plant Position',['REPORTS_PLANT','REPORTS_ALL']],['live','Live Transactions',['REPORTS_PLANT','REPORTS_ALL']],['slips','Return Slips',null],['blankets','Blanket & Sub-inv',null],['bench','Dispatch Bench link',['INTEGRATION_CONFIG','REPORTS_ALL']],['masters','Masters','GLOBAL_MASTERS'],['users','Users',['PLANT_USERS_ADMIN','INTEGRATION_CONFIG','USER_ADMIN']],['import','Import','GLOBAL_MASTERS'],['sync','Sync Monitor',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN']],['reports','Reports',null],['audit','Audit',['AUDIT_LOG']],['activity','Activity',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN','REPORTS_PLANT']]];
 const GROUPS=[['Dashboard',['dash']],['Operations',['picklists','pdi','slips','pallets']],['Stock & Movement',['stock','moves','misses']],['Monitor',['position','live','reminders']],['Masters',['masters','blankets','users','import','bench']],['Audit',['activity','sync','reports','audit']]];
+let BENCH_MODE=true;
 function can(p){if(!p)return true;return (Array.isArray(p)?p:[p]).some(x=>ME.perms.includes(x))}
+const BENCH_HIDDEN=['pdi','stock','blankets'];   // only used when AssetTrack plans its own part dispatches
 
 async function render(){
  const m=$('#main');m.innerHTML='';
@@ -103,10 +105,10 @@ async function render(){
   const f=h('form',{className:'card login'},h('img',{src:'/static/icon-192.png',alt:'AIS',style:'height:70px;margin:0 auto 6px;display:block'}),h('img',{src:'/static/wordmark.png',alt:'AssetTrack',style:'max-width:280px;margin:0 auto 12px;display:block'}),h('h2',{},'Sign in'),field('User ID','user_id'),h('br'),field('Password','password','','password'),h('br'),h('button',{className:'p',type:'submit'},'Login'));
   f.onsubmit=async e=>{e.preventDefault();try{const d=formData(f);const r=await api('/auth/login',{method:'POST',body:{...d,device_id:'WEB'}});T=r.token;localStorage.setItem('tok',T);if(r.must_change_pw)msg('Please change your password (Users > My account)');render()}catch(x){msg(x.message,1)}};
   m.append(f);return}
- try{ME=await api('/auth/me')}catch{return}
+ try{ME=await api('/auth/me');BENCH_MODE=(ME.picklist_source||'BENCH')==='BENCH'}catch{return}
  $('#who').textContent=`${ME.name} · ${ME.plant||'ALL PLANTS'} · ${ME.roles.join(', ')}`;$('#logout').style.display='';
  const nav=$('#nav');nav.style.display='';nav.innerHTML='';
- GROUPS.forEach(([g,ids])=>{const items=ids.map(id=>PAGES.find(p=>p[0]===id)).filter(p=>can(p[2]));if(!items.length)return;
+ GROUPS.forEach(([g,ids])=>{const items=ids.map(id=>PAGES.find(p=>p[0]===id)).filter(p=>can(p[2])&&!(BENCH_MODE&&BENCH_HIDDEN.includes(p[0])));if(!items.length)return;
   if(items.length===1&&ids.length===1){nav.append(h('button',{className:PAGE===items[0][0]?'on':'',on:{click:()=>{PAGE=items[0][0];render()}}},items[0][1]));return}
   const cur=items.find(p=>p[0]===PAGE);const dd=h('div',{className:'dd'+(cur?' on':'')},h('button',{className:cur?'on':'',on:{click:e=>{e.stopPropagation();document.querySelectorAll('.dd.open').forEach(x=>x!==dd&&x.classList.remove('open'));dd.classList.toggle('open')}}},g+(cur?' · '+cur[1]:''),h('span',{className:'car'},'▾')),h('div',{className:'menu'},items.map(p=>h('button',{className:PAGE===p[0]?'sel':'',on:{click:()=>{PAGE=p[0];render()}}},p[1]))));nav.append(dd)});
  document.body.onclick=()=>document.querySelectorAll('.dd.open').forEach(x=>x.classList.remove('open'));
@@ -213,7 +215,10 @@ async function picklists(m){
   ['OPEN','SO_PENDING','PDI_PENDING'].includes(r.status)&&(can('PICKLIST_CREATE')||can('EMPTY_RETURN'))?h('button',{className:'d',on:{click:()=>{if(confirm('Cancel '+r.picklist_no+' and release its pallets / LPN reservations?'))act(`/picklists/${r.picklist_no}/cancel`)}}},'Cancel'):'',
   r.challan_no?h('button',{className:'s',on:{click:()=>window.open(`/print/challan/${r.picklist_no}?tok=${T}`)}},'🖨 Challan'):'' )))}
  async function act(p,b={}){try{const r=await api(p,{method:'POST',body:b});msg(r.so_message||r.gcs_message||r.message||('Done · '+(r.status||'')));load()}catch(x){msg(x.message,1)}}
- if(can('PICKLIST_CREATE')||can('EMPTY_RETURN')){
+ if(BENCH_MODE){const st=can(['INTEGRATION_CONFIG','REPORTS_ALL'])?await api('/integrations/dispatch-bench').catch(()=>null):null;
+  m.append(h('div',{className:'card',style:'border-left:5px solid var(--accent)'},h('h2',{},'Dispatch plans come from the Dispatch Planning Bench'),h('p',{className:'muted'},'Pick lists are planned and picked in the Bench and pulled here automatically (every '+(st?st.settings.bench_interval_sec:'few')+' s, and whenever an HHT syncs). AssetTrack creates only Empty Pallet Returns - on the HHT at the Pallet Yard. Last pull: '+(st?(fmt(st.status.last_ok)||'never'):'—')+(st&&st.status.last_error?' · error: '+st.status.last_error:'')),
+   st&&can('INTEGRATION_CONFIG')?h('button',{className:'s',on:{click:async()=>{try{const x=await api('/integrations/dispatch-bench/pull',{method:'POST'});msg(`Pulled: ${x.dispatches} dispatches · ${x.created} new · ${x.updated} updated`);load()}catch(e){msg(e.message,1)}}}},'Pull from Bench now'):''))}
+ if(!BENCH_MODE&&(can('PICKLIST_CREATE')||can('EMPTY_RETURN'))){
   const bl=ME.plant?await api('/blankets?active_only=true'):[];const plants=await api('/plants');
   const dt=field('Dispatch type','dispatch_type','CUSTOMER','select',{opts:[['CUSTOMER','Direct customer (invoice)'],['STOCK_TRANSFER','Stock transfer (invoice)'],['EMPTY_RETURN','Empty pallets to origin plant'],['PALLET_ONLY','Pallets only (no parts)']]});
   const bsel=field('Blanket / part / PO','blanket_id','','select',{opts:[['','— select —'],...bl.map(b=>[b.id,`${b.customer_code} · ${b.part_no} · PO ${b.po_number} · open ${b.open_qty} · stock ${b.free_stock}`])]});

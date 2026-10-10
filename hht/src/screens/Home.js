@@ -9,7 +9,7 @@ import { checkUpdate, openUpdate } from '../lib/update';
 import { getActiveServer } from '../lib/api';
 
 const TILES = [
-  ['dock', 'Dock Out-ward Scan', 'LPN or pallet to a pick list', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline', 'dock'],
+  ['dock', 'Dock Out-ward Scan', 'Bind pallets to the Bench trip', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline', 'dock'],
   ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', ['#14b8a6', '#0f766e'], 'shield-checkmark-outline', 'pdi'],
   ['move', 'Internal Movement', 'Yard · Production · FGWH · Packing', 'INTERNAL_MOVE', ['#22c55e', '#15803d'], 'swap-horizontal-outline'],
   ['receipt', 'Other-plant Receipt', 'Loaded pallets at FGWH / Packing', 'PLANT_RECEIPT', ['#8b5cf6', '#6d28d9'], 'download-outline'],
@@ -41,7 +41,7 @@ async function counts() {
 }
 
 export default function Home({ me, sync, nav, onLogout, onLookup }) {
-  const perms = me.perms || [];
+  const perms = me.perms || []; const benchMode = (me.picklist_source || 'BENCH') === 'BENCH';
   const [n, setN] = useState({}); const [upd, setUpd] = useState(null);
   useEffect(() => { let on = true; const load = () => counts().then(x => on && setN(x)).catch(() => { }); load(); const t = setInterval(load, 15000); return () => { on = false; clearInterval(t); }; }, [sync.lastSync, sync.pending]);
   useEffect(() => { if (sync.online) checkUpdate().then(u => u && u.newer && setUpd(u)); }, [sync.online]);
@@ -67,7 +67,7 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
           <View key={l} style={{ alignItems: 'center' }}><Text style={{ fontSize: Math.round(22 * T.scale), fontWeight: '800', color: c }}>{v}</Text><Text style={[S.mute, { fontSize: 11 }]}>{l}</Text></View>))}
       </View>
       <View style={[S.card, { paddingVertical: 10 }]}><Text style={[S.mute, { marginBottom: 4 }]}>Quick lookup - scan any pallet, tag or LPN</Text><ScanInput autoFocus={false} placeholder="Scan to look up" onScan={(code) => onLookup && onLookup(code)} /></View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>{TILES.filter(t => !t[3] || perms.includes(t[3])).map(tile)}</View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>{TILES.filter(t => (!t[3] || perms.includes(t[3])) && !(benchMode && t[0] === 'pdi')).map(tile)}</View>
       <TouchableOpacity onPress={() => nav('settings')} style={{ marginTop: 16 }}><Text style={[S.mute, { textAlign: 'center' }]}>Settings · Printer · Sound · Full resync</Text></TouchableOpacity>
       <Footer />
     </Page></Screen>);

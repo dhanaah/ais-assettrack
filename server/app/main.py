@@ -80,7 +80,7 @@ def health():
     except Exception:
         db_ok = False
     return {"app": config.APP_NAME, "version": config.APP_VERSION, "developer": config.DEVELOPER, "db": "ok" if db_ok else "error",
-            "integration_mode": integration.MODE, "ports": config.SERVER_PORTS, "min_client": config.API_MIN_CLIENT}
+            "integration_mode": integration.MODE, "ports": config.SERVER_PORTS, "min_client": config.API_MIN_CLIENT, "picklist_source": config.PICKLIST_SOURCE}
 
 
 APK_DIR = Path(os.environ.get("PALLET_APK_DIR") or (Path(os.environ["PALLET_DB_URL"][10:]).parent / "apk" if os.environ.get("PALLET_DB_URL", "").startswith("sqlite:///") else config.BASE_DIR / "apk"))

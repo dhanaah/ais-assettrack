@@ -60,6 +60,10 @@ def create_picklist(body: PickListIn, request: Request, p: Principal = Depends(c
     if not p.plant:
         raise HTTPException(400, "Plant user required")
     dt = (body.dispatch_type or "CUSTOMER").upper()
+    from .. import config
+    if config.PICKLIST_SOURCE == "BENCH" and dt != "EMPTY_RETURN":
+        raise HTTPException(400, "Dispatch pick lists are planned in the Dispatch Planning Bench and pulled automatically - "
+                                 "AssetTrack only creates Empty Pallet Returns (HHT > Empty Pallet Return at the Yard)")
     if body.qty <= 0:
         raise HTTPException(400, "Pallet qty must be > 0")
     no = body.picklist_no or services.doc_number(db, p.plant, "RT" if dt == "EMPTY_RETURN" else "PL")

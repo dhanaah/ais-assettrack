@@ -22,7 +22,7 @@ def get_settings(db: Session) -> dict:
     for s in db.query(models.Setting).filter(models.Setting.key.in_(KEYS)).all():
         out[s.key] = s.value
     out["bench_enabled"] = (out["bench_enabled"] or "0") == "1"
-    out["bench_interval_sec"] = int(out["bench_interval_sec"] or 60)
+    out["bench_interval_sec"] = max(10, int(out["bench_interval_sec"] or 30))
     out["bench_days"] = int(out["bench_days"] or 3)
     return out
 
@@ -149,6 +149,30 @@ def status() -> dict:
     return dict(_state)
 
 
+_lock = threading.Lock()
+
+
+def pull_if_stale(SessionLocal, max_age_sec: int = 15):
+    """Called when an HHT syncs: if the last Bench pull is older than max_age_sec, pull now in the background so the
+    HHT gets the newest trips on its very next sync."""
+    last = _state.get("last_run")
+    if last and (utcnow() - last).total_seconds() < max_age_sec:
+        return
+    if not _lock.acquire(blocking=False):
+        return
+
+    def run():
+        try:
+            with SessionLocal() as db:
+                if get_settings(db)["bench_enabled"]:
+                    pull(db)
+        except Exception as e:
+            _state["last_error"] = str(e)[:300]
+        finally:
+            _lock.release()
+    threading.Thread(target=run, name="bench-pull-on-demand", daemon=True).start()
+
+
 def start_scheduler(SessionLocal):
     def loop():
         while True:
@@ -160,6 +184,6 @@ def start_scheduler(SessionLocal):
                     wait = cfg["bench_interval_sec"]
             except Exception as e:
                 _state["last_error"] = str(e)[:300]; log.warning("bench pull: %s", e); wait = 60
-            time.sleep(max(20, wait))
+            time.sleep(max(10, wait))
     t = threading.Thread(target=loop, name="dispatch-bench-pull", daemon=True)
     t.start()

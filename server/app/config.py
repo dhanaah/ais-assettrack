@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 API_MIN_CLIENT = os.getenv("PALLET_MIN_CLIENT", "1.6.0")   # HHT app must be >= this (settings.env PALLET_MIN_CLIENT) - older apps are told to update
 DEVELOPER = "Developed by DT"
 
@@ -64,5 +64,9 @@ EVENT_RETENTION_DAYS = 730
 # Admin bootstrap (created on first run if no users exist)
 BOOTSTRAP_ADMIN_USER = os.getenv("PALLET_ADMIN_USER", "admin")
 BOOTSTRAP_ADMIN_PASS = os.getenv("PALLET_ADMIN_PASS", "Admin@123")
+
+# Where dispatch pick lists come from. BENCH (default): only the Dispatch Planning Bench creates them (pulled every few
+# seconds); AssetTrack itself creates only Empty Pallet Returns. APP: AssetTrack can also release part / pallet pick lists.
+PICKLIST_SOURCE = os.getenv("PALLET_PICKLIST_SOURCE", "BENCH").upper()
 
 SERVER_PORTS = []   # filled by the tray app: every port the server listens on (HHT failover)

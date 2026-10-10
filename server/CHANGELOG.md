@@ -1,4 +1,8 @@
 # Changelog — AIS AssetTrack Server
+## 1.9.1 (2026-10-10) — pick lists only from the Dispatch Planning Bench
+- PALLET_PICKLIST_SOURCE=BENCH (default): AssetTrack no longer releases dispatch pick lists; they are planned in the Bench and pulled every 30 s (configurable, min 10 s) and additionally whenever an HHT syncs. AssetTrack creates only Empty Pallet Returns (HHT, Yard)
+- Web: Pick Lists page shows the Bench status and "Pull from Bench now" instead of the release form; PDI Status, WMS Stock and Blanket pages hidden (set PALLET_PICKLIST_SOURCE=APP to get the old behaviour back)
+- HHT 2.0.1: PDI tile hidden in Bench mode, sync every 30 s, dock wording "Bench trip"
 ## 1.9.0 (2026-10-10) — HHT 2.0.0 professional release + in-app updates
 - Server announces the newest APK placed in server\apk\ (/api/v1/app/latest, /apk/<file>); web header shows "HHT app vX" download; get_apk.bat copies the APK there
 - HHT 2.0.0: audio + haptic feedback engine (OK / warning / error tones generated in-app), scanner field with ready indicator and last read, camera torch, home screen with live counts (open pick lists, PDI waiting, open slips, to-sync, scans today) and quick lookup, update banner, idle auto-lock with password unlock, crash guard with copyable details, large-text / glove mode, "Test connection" on login, logout warns about unsynced scans, consistent segmented controls / switches / empty states / busy buttons / pull-to-refresh across all screens

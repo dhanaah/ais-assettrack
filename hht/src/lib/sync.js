@@ -72,6 +72,6 @@ export async function pushAndResult(event_id) {
 }
 
 let timer;
-export function startAutoSync() { stopAutoSync(); timer = setInterval(() => { if (state.online) syncNow().catch(() => {}); }, 60000); }
+export function startAutoSync() { stopAutoSync(); timer = setInterval(() => { if (state.online) syncNow().catch(() => {}); }, 30000); }   // every 30 s: Bench trips reach the HHT quickly
 export function stopAutoSync() { if (timer) clearInterval(timer); timer = null; }
 function cryptoId() { return globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : 'hb-' + Date.now() + '-' + Math.random().toString(16).slice(2); }

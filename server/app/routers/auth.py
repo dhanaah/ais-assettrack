@@ -59,14 +59,15 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     db.commit()
     return {"token": make_token(u), "user_id": u.user_id, "name": u.full_name, "plant": u.plant_code,
             "roles": u.role_codes, "perms": sorted(perms), "supervisor": u.supervisor_allowed,
-            "must_change_pw": u.must_change_pw, "server_version": config.APP_VERSION, "min_client": config.API_MIN_CLIENT}
+            "must_change_pw": u.must_change_pw, "server_version": config.APP_VERSION, "min_client": config.API_MIN_CLIENT,
+            "picklist_source": config.PICKLIST_SOURCE}
 
 
 @router.get("/me")
 def me(p: Principal = Depends(current_user)):
     u = p.user
     return {"user_id": u.user_id, "name": u.full_name, "plant": u.plant_code, "roles": u.role_codes,
-            "perms": sorted(p.perms), "supervisor": u.supervisor_allowed, "must_change_pw": u.must_change_pw}
+            "perms": sorted(p.perms), "supervisor": u.supervisor_allowed, "must_change_pw": u.must_change_pw, "picklist_source": config.PICKLIST_SOURCE}
 
 
 @router.post("/change-password")

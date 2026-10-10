@@ -77,7 +77,7 @@ export default function Dock({ onBack, yard = false }) {
 
   if (!pk) return (<Screen><Header title={yard ? 'Empty Pallet Return' : 'Dock Out-ward Scan'} sub={yard ? 'Other plants\' empty pallets, loaded at the Yard' : 'Select a pick list'} onBack={onBack} /><Page onRefresh={async () => { await syncNow(); load(); }}>
     {yard ? <Btn title="New empty return (scan at Yard)" icon="add-circle-outline" onPress={newReturn} /> : null}
-    {lists.length === 0 ? <Empty icon="list-outline" text={yard ? 'No open Yard loading' : 'No open pick lists'} hint={yard ? 'Start a new empty return above.' : 'Release one on the web app, then pull down to refresh.'} /> : null}
+    {lists.length === 0 ? <Empty icon="list-outline" text={yard ? 'No open Yard loading' : 'No open trips'} hint={yard ? 'Start a new empty return above.' : 'Trips planned in the Dispatch Planning Bench appear here within a minute. Pull down to refresh.'} /> : null}
     {lists.map(k => <TouchableOpacity key={k.picklist_no} style={S.card} onPress={() => open(k)}>
       <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{k.picklist_no}</Text><Pill s={k.dispatch_type || 'PALLET_ONLY'} /></View>
       <Text style={S.mute}>{label(k)} · pallets {isYard(k) ? k.scanned : `${k.scanned}/${k.qty}`}{isPart(k) ? ` · picked ${k.picked_qty}` : ''}</Text></TouchableOpacity>)}
