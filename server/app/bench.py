@@ -1,7 +1,8 @@
-"""HMIL Planning Bench link (pull). The Bench owns trip planning, LPN reservation, PDI and sub-inventory moves.
-AssetTrack pulls each Bench dispatch + its picked LPNs and creates a pick list (HB-<plant>-<dispatch_id>) on which the
-HHT binds pallets to the picked LPNs, then challan, gate and the pallet return cycle continue in AssetTrack.
-Bench endpoints used (no change needed in hmil_server): POST /api/auth/login, GET /api/dispatches/recent, GET /api/picks.
+"""Dispatch Planning Bench link (pull) - all customers (formerly HMIL Planning Bench, Hyundai only).
+The Bench owns trip planning, LPN reservation, PDI and sub-inventory moves. AssetTrack pulls each Bench dispatch + its
+picked LPNs and creates a pick list (DB-<plant>-<dispatch_id>; older ones HB-...) on which the HHT binds pallets to the
+picked LPNs, then challan, gate and the pallet return cycle continue in AssetTrack.
+Bench endpoints used: POST /api/auth/login, GET /api/dispatches/recent, GET /api/picks.
 Developed by DT
 """
 import json, logging, threading, time
@@ -64,13 +65,19 @@ def _get(cfg, path):
         return _http("GET", base + path, _login(cfg))
 
 
-def customer_for(cfg, bench_plant: str) -> str:
-    """bench_customer_map: 'HVF1=HMIL1;HVF2=HMIL2' (Bench plant -> AssetTrack customer code). Default: same code."""
+def bench_customer(d: dict) -> str:
+    """Customer of a Bench dispatch: customer_code / customer / plant (older Hyundai-only Bench sends its HMIL plant)."""
+    return str(d.get("customer_code") or d.get("customer") or d.get("plant") or "").strip()
+
+
+def customer_for(cfg, bench_code: str) -> str:
+    """bench_customer_map: 'HVF1=HMIL1;MSIL-GGN=MSIL1' (Bench customer / plant code -> AssetTrack customer code).
+    Not in the map: the Bench code is used as it is."""
     m = {}
     for part in (cfg.get("bench_customer_map") or "").replace(",", ";").split(";"):
         if "=" in part:
             a, b = part.split("=", 1); m[a.strip().upper()] = b.strip()
-    return m.get((bench_plant or "").upper(), bench_plant or "HMIL")
+    return m.get((bench_code or "").upper(), bench_code or "?")
 
 
 def pull(db: Session, fetch=None) -> dict:
@@ -79,7 +86,7 @@ def pull(db: Session, fetch=None) -> dict:
     _state["last_run"] = utcnow()
     if not fetch:
         if not cfg["bench_url"] or not cfg["bench_user"]:
-            raise RuntimeError("HMIL Bench link not configured (URL / user)")
+            raise RuntimeError("Dispatch Bench link not configured (URL / user)")
         fetch = lambda path: _get(cfg, path)
     plant = (cfg["bench_plant"] or "").upper()
     if not db.get(models.Plant, plant):
@@ -97,8 +104,9 @@ def pull(db: Session, fetch=None) -> dict:
                 continue
         except Exception:
             pass
-        no = f"HB-{plant}-{did}"
-        pk = db.get(models.PickList, no)
+        pk = (db.query(models.PickList).filter(models.PickList.plant_code == plant, models.PickList.ext_ref == did,
+                                               models.PickList.source.in_(["DISPATCH_BENCH", "HMIL_BENCH"])).first())
+        no = pk.picklist_no if pk else f"DB-{plant}-{did}"
         if pk and pk.status not in ("OPEN",):
             continue                 # already confirmed / dispatched in AssetTrack: frozen
         picks = fetch(f"/api/picks?dispatch_id={did}").get("picks", [])
@@ -108,8 +116,8 @@ def pull(db: Session, fetch=None) -> dict:
             if lpn:
                 lp[lpn] = pr        # last pick wins (repicks replace)
         if not pk:
-            pk = models.PickList(picklist_no=no, plant_code=plant, customer_code=customer_for(cfg, d.get("plant")), dispatch_type="CUSTOMER",
-                                 source="HMIL_BENCH", ext_ref=did, qty=0, part_qty=0, status="OPEN", created_by="HMIL_BENCH",
+            pk = models.PickList(picklist_no=no, plant_code=plant, customer_code=customer_for(cfg, bench_customer(d)), dispatch_type="CUSTOMER",
+                                 source="DISPATCH_BENCH", ext_ref=did, qty=0, part_qty=0, status="OPEN", created_by="DISPATCH_BENCH",
                                  remarks=f"Bench trip {d.get('trip_id')} · {d.get('shift_name') or ''} · {d.get('segment') or ''}".strip(" ·"))
             db.add(pk); db.flush(); created += 1
         else:
@@ -153,5 +161,5 @@ def start_scheduler(SessionLocal):
             except Exception as e:
                 _state["last_error"] = str(e)[:300]; log.warning("bench pull: %s", e); wait = 60
             time.sleep(max(20, wait))
-    t = threading.Thread(target=loop, name="hmil-bench-pull", daemon=True)
+    t = threading.Thread(target=loop, name="dispatch-bench-pull", daemon=True)
     t.start()

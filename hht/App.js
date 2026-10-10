@@ -42,7 +42,7 @@ export default function App() {
   const logout = async () => { await logActivity('LOGOUT', me?.user_id); await setToken(null); await kv.set('me', null); stopAutoSync(); setMe(null); };
   const screens = {
     home: <Home me={me} sync={sync} nav={go} onLogout={logout} />,
-    dock: <Dock onBack={back} />, yard: <Yard onBack={back} />, slip: <ReturnSlip onBack={back} deviceId={deviceId} />,
+    dock: <Dock onBack={back} />, yardret: <Dock onBack={back} yard />, yard: <Yard onBack={back} />, slip: <ReturnSlip onBack={back} deviceId={deviceId} />,
     gatein: <GateIn onBack={back} />, gateout: <GateOut onBack={back} />, damage: <Damage onBack={back} />, lookup: <Lookup onBack={back} />,
     move: <Move onBack={back} />, receipt: <Receipt onBack={back} />, pdi: <Pdi onBack={back} />, misses: <Misses onBack={back} />,
     pending: <Pending onBack={back} />, settings: <Settings onBack={back} deviceId={deviceId} onTheme={setThemeKey} />,

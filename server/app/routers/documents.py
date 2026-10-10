@@ -180,25 +180,99 @@ def reduce_qty(no: str, body: QtyIn, request: Request, p: Principal = Depends(ne
     return row(k)
 
 
+# ---------------------------------------------------------------- empty return loaded at the Pallet Yard (HHT)
+class YardReturnIn(BaseModel):
+    to_plant: str                      # owner (home) plant of the pallets
+    vehicle_no: str | None = None
+    transporter_code: str | None = None
+    remarks: str | None = None
+
+
+def _yard_return_stock(db: Session, plant: str) -> dict:
+    """Other plants' pallets that can be sent back from here: {owner plant: count}."""
+    out = {}
+    for pal in db.query(models.Pallet).filter(models.Pallet.location_plant == plant, models.Pallet.home_plant != plant,
+                                              models.Pallet.status.in_(["HELD", "IN_WIP"])).all():
+        out[pal.home_plant] = out.get(pal.home_plant, 0) + 1
+    return out
+
+
+@router.get("/picklists/yard-return/options")
+def yard_return_options(p: Principal = Depends(hht("EMPTY_RETURN")), db: Session = Depends(get_db)):
+    if not p.plant:
+        raise HTTPException(400, "Plant user required")
+    stock = _yard_return_stock(db, p.plant)
+    names = {x.code: x.name for x in db.query(models.Plant).all()}
+    return [{"plant": k, "name": names.get(k, k), "pallets": v} for k, v in sorted(stock.items())]
+
+
+@router.post("/picklists/yard-return")
+def yard_return_create(body: YardReturnIn, request: Request, p: Principal = Depends(hht("EMPTY_RETURN")), db: Session = Depends(get_db)):
+    """Start loading empty pallets back to their owner plant at the Pallet Yard. Quantity = what is scanned."""
+    if not p.plant:
+        raise HTTPException(400, "Plant user required")
+    to = (body.to_plant or "").upper()
+    if not db.get(models.Plant, to) or to == p.plant:
+        raise HTTPException(400, "Select the owner plant of the pallets")
+    if not _yard_return_stock(db, p.plant).get(to):
+        raise HTTPException(400, f"No pallets of {to} held here")
+    no = services.doc_number(db, p.plant, "RT")
+    k = models.PickList(picklist_no=no, plant_code=p.plant, customer_code=to, to_plant=to, dispatch_type="EMPTY_RETURN", qty=0,
+                        load_point="YARD", vehicle_no=(body.vehicle_no or "").upper().replace(" ", "") or None,
+                        transporter_code=body.transporter_code, created_by=p.user_id, remarks=body.remarks, status="OPEN")
+    db.add(k)
+    audit(db, p, "YARD_RETURN_CREATE", "picklist", no, None, body.model_dump(), request)
+    db.commit()
+    return row(k) | {"scanned": 0}
+
+
+def _return_challan(db: Session, k: models.PickList, p: Principal, request: Request):
+    """EMPTY_RETURN: only a challan (no SO / invoice); EBS generates challan + e-way bill. Returns (ok, message)."""
+    pallets = [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()]
+    ok, cno, ewb, msg = integration.create_return_challan(db, k, pallets)
+    if not ok:
+        return False, msg
+    k.challan_no, k.ewaybill_no, k.status = cno, ewb, "CHALLANED"
+    for pn in pallets:
+        pal = db.get(models.Pallet, pn)
+        if pal:
+            pal.challan_ref = cno
+    audit(db, p, "RETURN_CHALLAN_CREATE", "picklist", k.picklist_no, None, {"challan_no": cno, "ewaybill": ewb, "pallets": len(pallets)}, request)
+    return True, msg
+
+
 @router.post("/picklists/{no}/confirm")
-def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht("DOCK_SCAN")), db: Session = Depends(get_db)):
-    """Pick List Control: scanned count must equal qty; freeze list -> READY."""
+def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
+    """Pick List Control: scanned count must equal qty; freeze list -> READY.
+    Yard empty return: 'Finish loading' - qty = scanned pallets, then the EBS challan + e-way bill is made at once."""
     k = db.get(models.PickList, no)
     if not k:
         raise HTTPException(404, "Not found")
     p.require_plant(k.plant_code)
+    if k.load_point == "YARD":
+        p.require_any("EMPTY_RETURN", "DOCK_SCAN")
+    else:
+        p.require("DOCK_SCAN")
     if k.status not in ("OPEN", "SO_PENDING"):
         raise HTTPException(400, f"Pick list is {k.status}")
     scanned = db.query(models.PickListLine).filter_by(picklist_no=no).count()
+    if k.load_point == "YARD":
+        if scanned < 1:
+            raise HTTPException(400, "Scan at least one pallet")
+        k.qty = scanned; k.status = "READY"
+        audit(db, p, "YARD_RETURN_LOADED", "picklist", no, None, {"pallets": scanned}, request)
+        ok, msg = _return_challan(db, k, p, request)
+        db.commit()
+        return row(k) | {"challan_message": None if ok else f"Challan not made yet: {msg} - press Challan on the web Pick Lists page"}
     if k.dispatch_type in lpnsvc.PART_TYPES:
         got = lpnsvc.picked_qty(db, no)
         if got != k.part_qty:
             raise HTTPException(400, f"Pick List Control failed: part {k.part_no} picked {got} vs {k.part_qty}")
-        if scanned < 1 or (k.source != "HMIL_BENCH" and scanned > k.qty):
+        if scanned < 1 or (not lpnsvc.is_bench(k) and scanned > k.qty):
             raise HTTPException(400, f"Pick List Control failed: {scanned} pallets vs planned {k.qty}")
         k.qty = scanned
-        # HMIL Bench trips: the Bench already did reservation, PDI and sub-inventory -> straight to READY
-        k.status = "READY" if k.source == "HMIL_BENCH" else "PDI_PENDING"   # else QA / PDI next; SO only after PDI
+        # Dispatch Bench trips: the Bench already did reservation, PDI and sub-inventory -> straight to READY
+        k.status = "READY" if lpnsvc.is_bench(k) else "PDI_PENDING"   # else QA / PDI next; SO only after PDI
         audit(db, p, "PICKLIST_CONFIRM", "picklist", no, request=request)
         db.commit()
         return row(k)
@@ -224,19 +298,12 @@ def challan(no: str, request: Request, p: Principal = Depends(need("CHALLAN_REQU
         raise HTTPException(400, f"Challan Control: already challaned ({k.challan_no})")
     plant = db.get(models.Plant, k.plant_code)
     if k.dispatch_type == "EMPTY_RETURN":     # only a challan (no SO / invoice); EBS generates challan + e-way bill
-        pallets = [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=no).all()]
-        ok, cno, ewb, msg = integration.create_return_challan(db, k, pallets)
+        ok, msg = _return_challan(db, k, p, request)
         if not ok:
             raise HTTPException(502, f"EBS return challan / e-way bill failed: {msg}")
-        k.challan_no, k.ewaybill_no, k.status = cno, ewb, "CHALLANED"
-        for pn in pallets:
-            pal = db.get(models.Pallet, pn)
-            if pal:
-                pal.challan_ref = cno
-        audit(db, p, "RETURN_CHALLAN_CREATE", "picklist", no, None, {"challan_no": cno, "ewaybill": ewb}, request)
         db.commit()
         return row(k) | {"source": "ORACLE"}
-    if k.dispatch_type in lpnsvc.PART_TYPES and k.source != "HMIL_BENCH":   # challan goes with the EBS invoice
+    if k.dispatch_type in lpnsvc.PART_TYPES and not lpnsvc.is_bench(k):   # challan goes with the EBS invoice
         if not k.so_number:
             raise HTTPException(400, "SO not yet created in EBS")
         if not k.invoice_no:

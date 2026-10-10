@@ -20,6 +20,11 @@ ZONES = ("YARD", "PRODUCTION", "FGWH", "PACKING")
 MOVES = {("YARD", "PRODUCTION"), ("PRODUCTION", "FGWH"), ("PRODUCTION", "PACKING"), ("FGWH", "PACKING"), ("PACKING", "YARD")}
 MOVE_LOAD = {"PRODUCTION": "EMPTY", "FGWH": "LOADED", "PACKING": "LOADED", "YARD": "EMPTY"}   # default load after arriving
 DISPATCH_ZONES = ("FGWH", "PACKING")
+BENCH = "DISPATCH_BENCH"                       # pick lists pulled from the Dispatch Planning Bench (all customers)
+
+
+def is_bench(pk) -> bool:
+    return (pk.source or "") in (BENCH, "HMIL_BENCH")
 RECEIPT_ZONES = ("FGWH", "PACKING")        # other-plant material is received here (never at the empty-only Yard)
 
 
@@ -458,7 +463,7 @@ def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
         t = db.get(models.Tag, pal.current_tag)
         if t and t.status == "RETIRED":
             raise RuleError(f"Tag {t.tag_no} is retired")
-    if pk.source != "HMIL_BENCH" and db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
+    if not is_bench(pk) and db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
         raise RuleError(f"Pallet quantity {pk.qty} already reached")
     services.move(db, pal, "ALLOCATED", event_type="DOCK_SCAN", user_id=user_id, device_id=device_id, event_id=event_id, plant=plant, ref=pk.picklist_no)
     pal.picklist_no = pk.picklist_no
@@ -468,9 +473,9 @@ def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
 def _pick_lpn(db, pk, l, pal, user_id):
     if l.plant_code != pk.plant_code:
         raise RuleError(f"LPN {l.lpn_no} belongs to plant {l.plant_code}")
-    bench = pk.source == "HMIL_BENCH"
+    bench = is_bench(pk)
     if bench and l.reserved_for != pk.picklist_no and l.picklist_no != pk.picklist_no:
-        raise RuleError(f"LPN {l.lpn_no} is not on HMIL Bench trip {pk.ext_ref}" + (f" (it is on {l.reserved_for})" if l.reserved_for else ""))
+        raise RuleError(f"LPN {l.lpn_no} is not on Dispatch Bench trip {pk.ext_ref}" + (f" (it is on {l.reserved_for})" if l.reserved_for else ""))
     if not bench and l.part_no != pk.part_no:
         raise RuleError(f"LPN {l.lpn_no} is part {l.part_no}; pick list needs {pk.part_no}")
     if l.status == "PICKED" and l.picklist_no == pk.picklist_no:
@@ -527,7 +532,9 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
             alerts.append(record_miss(db, pallet=pal, plant=plant, detected_at="EMPTY_RETURN", missed_point="WIP_EMPTY", expected="EMPTY",
                                       action="AUTO_CORRECTED", user_id=user_id, device_id=device_id, current_ref=pk.picklist_no,
                                       message=f"{pal.pallet_no} shown LOADED but scanned for empty return - WIP consumption not recorded"))
-        if db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
+        if pk.load_point == "YARD":            # loading at the Pallet Yard: open quantity, pallet must be in the yard
+            alerts += zone_check(db, pal, ("YARD",), plant, "YARD_RETURN", user_id=user_id, device_id=device_id, ref=pk.picklist_no)
+        elif db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
             raise RuleError(f"Pallet quantity {pk.qty} already reached")
         services.move(db, pal, "ALLOCATED", event_type="EMPTY_RETURN_SCAN", user_id=user_id, device_id=device_id, event_id=event_id,
                       plant=plant, ref=pk.picklist_no, force=True)
@@ -551,7 +558,7 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
         return f"LPN {l.lpn_no} ({l.part_no} x{l.qty}) on {pal.pallet_no}", alerts
     # pallet scanned -> fetch its LPNs
     lq = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED"]))
-    lp = (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if pk.source == "HMIL_BENCH" else lq.filter(models.Lpn.part_no == pk.part_no)).all()
+    lp = (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if is_bench(pk) else lq.filter(models.Lpn.part_no == pk.part_no)).all()
     if not lp:
         others = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED"])).all()
         if others:

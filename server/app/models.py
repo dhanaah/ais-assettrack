@@ -218,8 +218,9 @@ class PickList(Base):
     qty: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="DRAFT", index=True)
     # OPEN -> (scan) -> PDI_PENDING -> PDI_TXN_PENDING -> SO_PENDING -> READY -> CHALLANED -> APPROVED -> DISPATCHED | CANCELLED
-    # EMPTY_RETURN: OPEN -> READY -> CHALLANED -> APPROVED -> DISPATCHED (no PDI / SO)
-    source: Mapped[str | None] = mapped_column(String(15), default="APP")   # APP | HMIL_BENCH
+    # EMPTY_RETURN: OPEN -> READY -> CHALLANED -> APPROVED -> DISPATCHED (no PDI / SO); Yard loading: challan made at "Finish loading"
+    source: Mapped[str | None] = mapped_column(String(15), default="APP")   # APP | DISPATCH_BENCH (old: HMIL_BENCH)
+    load_point: Mapped[str | None] = mapped_column(String(10))            # YARD = empty return loaded at the Pallet Yard
     ext_ref: Mapped[str | None] = mapped_column(String(40), index=True)    # e.g. Bench dispatch id
     dispatch_type: Mapped[str] = mapped_column(String(15), default="PALLET_ONLY")   # CUSTOMER STOCK_TRANSFER EMPTY_RETURN PALLET_ONLY
     to_plant: Mapped[str | None] = mapped_column(String(10))           # stock transfer / empty return destination

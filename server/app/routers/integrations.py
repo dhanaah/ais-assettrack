@@ -1,4 +1,4 @@
-"""Integration settings & manual triggers (HMIL Planning Bench pull). Developed by DT"""
+"""Integration settings & manual triggers (Dispatch Planning Bench pull - all customers). Developed by DT"""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -20,7 +20,8 @@ class BenchIn(BaseModel):
     bench_days: int | None = 3
 
 
-@router.get("/hmil-bench")
+@router.get("/dispatch-bench")
+@router.get("/hmil-bench", include_in_schema=False)          # old name kept
 def get_bench(p: Principal = Depends(current_user), db: Session = Depends(get_db)):
     if not (p.has("INTEGRATION_CONFIG") or p.has("REPORTS_ALL") or p.has("REPORTS_PLANT")):
         raise HTTPException(403, "Not allowed")
@@ -29,24 +30,26 @@ def get_bench(p: Principal = Depends(current_user), db: Session = Depends(get_db
     return {"settings": cfg, "status": bench.status()}
 
 
-@router.post("/hmil-bench")
+@router.post("/dispatch-bench")
+@router.post("/hmil-bench", include_in_schema=False)
 def save_bench(body: BenchIn, request: Request, p: Principal = Depends(need("INTEGRATION_CONFIG")), db: Session = Depends(get_db)):
     d = body.model_dump()
     if d.get("bench_plant"):
         d["bench_plant"] = d["bench_plant"].upper()
     bench.save_settings(db, d)
-    audit(db, p, "BENCH_SETTINGS", "settings", "hmil-bench", None, body.model_dump(exclude={"bench_password"}), request)
+    audit(db, p, "BENCH_SETTINGS", "settings", "dispatch-bench", None, body.model_dump(exclude={"bench_password"}), request)
     db.commit()
     return {"ok": True}
 
 
-@router.post("/hmil-bench/pull")
+@router.post("/dispatch-bench/pull")
+@router.post("/hmil-bench/pull", include_in_schema=False)
 def pull_now(request: Request, p: Principal = Depends(need("INTEGRATION_CONFIG")), db: Session = Depends(get_db)):
     try:
         res = bench.pull(db)
     except Exception as e:
         bench._state["last_error"] = str(e)[:300]
-        raise HTTPException(502, f"HMIL Bench pull failed: {e}")
-    audit(db, p, "BENCH_PULL", "settings", "hmil-bench", None, res, request)
+        raise HTTPException(502, f"Dispatch Bench pull failed: {e}")
+    audit(db, p, "BENCH_PULL", "settings", "dispatch-bench", None, res, request)
     db.commit()
     return res

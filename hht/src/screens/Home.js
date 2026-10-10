@@ -9,6 +9,7 @@ const TILES = [
   ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', ['#14b8a6', '#0f766e'], 'shield-checkmark-outline'],
   ['move', 'Internal Movement', 'Yard · Production · FGWH · Packing', 'INTERNAL_MOVE', ['#22c55e', '#15803d'], 'swap-horizontal-outline'],
   ['receipt', 'Other-plant Receipt', 'Loaded pallets at FGWH / Packing', 'PLANT_RECEIPT', ['#8b5cf6', '#6d28d9'], 'download-outline'],
+  ['yardret', 'Empty Pallet Return', 'Load other plants\' pallets at Yard → challan', 'EMPTY_RETURN', ['#84cc16', '#4d7c0f'], 'return-up-back-outline'],
   ['gateout', 'OUT Gate', 'Scan GCS / challan QR', 'OUT_GATE_SCAN', ['#6366f1', '#4338ca'], 'exit-outline'],
   ['slip', 'Return Slip (B1 / B2)', 'Create slip at IN gate', 'RETURN_SLIP_B', ['#a855f7', '#7e22ce'], 'document-text-outline'],
   ['gatein', 'IN Gate', 'Scan return slip QR', 'IN_GATE_SCAN', ['#c026d3', '#a21caf'], 'enter-outline'],

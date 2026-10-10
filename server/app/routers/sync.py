@@ -50,10 +50,13 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
         if t == "HEARTBEAT":
             return "APPLIED", "ok"
         if t in ("PALLET_SCAN_DOCK", "PALLET_UNSCAN_DOCK"):
-            p.require("DOCK_SCAN")
             pk = db.get(models.PickList, pl["picklist_no"])
             if not pk or pk.plant_code != plant:
                 raise services.RuleError("Pick list not found for this plant")
+            if pk.load_point == "YARD":          # empty return loaded at the Pallet Yard
+                p.require_any("EMPTY_RETURN", "DOCK_SCAN")
+            else:
+                p.require("DOCK_SCAN")
             if t == "PALLET_UNSCAN_DOCK":
                 return "APPLIED", lpnsvc.dock_unscan(db, pk, pl["scanned"], plant, user_id=p.user_id, device_id=e.device_id, event_id=e.event_id)
             msg, alerts = lpnsvc.dock_scan(db, pk, pl["scanned"], plant, pallet_scan=pl.get("pallet"), user_id=p.user_id,
@@ -205,6 +208,7 @@ def pull(since: datetime | None = None, p: Principal = Depends(current_user), db
     tags = [] if since else [{"tag": t.tag_no, "pallet": t.pallet_no, "status": t.status} for t in db.query(models.Tag).filter_by(plant_code=p.plant).all()]
     picklists = [{"picklist_no": k.picklist_no, "customer": k.customer_code, "type": k.pallet_type, "qty": k.qty, "status": k.status,
                   "dispatch_type": k.dispatch_type, "part_no": k.part_no, "part_qty": k.part_qty, "to_plant": k.to_plant,
+                  "source": k.source, "load_point": k.load_point, "vehicle_no": k.vehicle_no,
                   "picked_qty": lpnsvc.picked_qty(db, k.picklist_no),
                   "scanned": db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count()}
                  for k in db.query(models.PickList).filter(models.PickList.plant_code == p.plant,

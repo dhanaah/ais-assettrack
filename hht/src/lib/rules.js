@@ -34,7 +34,8 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
     if (!['HELD', 'IN_WIP'].includes(pallet.status)) return { ok: false, msg: `${pallet.pallet_no} is ${pallet.status}` };
     if (await localScanExists(picklist_no, pallet.pallet_no)) return { ok: false, msg: 'Already scanned', dup: true };
     if (pallet.load === 'LOADED') warn.push(`${pallet.pallet_no} shown LOADED - WIP consumption not scanned`);
-    if ((await localScans(picklist_no)).length >= pk.qty) return { ok: false, msg: `Pallet qty ${pk.qty} reached` };
+    if (pk.load_point === 'YARD') { if (pallet.zone && pallet.zone !== 'YARD') warn.push(`${pallet.pallet_no} shown in ${pallet.zone} - move to Yard not scanned, will be recorded`); }
+    else if ((await localScans(picklist_no)).length >= pk.qty) return { ok: false, msg: `Pallet qty ${pk.qty} reached` };
     return { ok: true, pallet, lpns: [], warn };
   }
   if (!PART_TYPES.includes(pk.dispatch_type)) {
@@ -47,7 +48,7 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
   const picked = (await lpnScans(picklist_no)).reduce((a, x) => a + (x.qty || 0), 0);
   const okLpn = (l) => {
     if (pk.part_no && l.part !== pk.part_no) return `LPN ${l.lpn} is ${l.part}; list needs ${pk.part_no}`;
-    if (!pk.part_no && l.reserved_for !== picklist_no && l.picklist !== picklist_no) return `LPN ${l.lpn} is not on this HMIL Bench trip`;
+    if (!pk.part_no && l.reserved_for !== picklist_no && l.picklist !== picklist_no) return `LPN ${l.lpn} is not on this Dispatch Bench trip`;
     if (l.status === 'RESERVED' && l.reserved_for && l.reserved_for !== picklist_no) return `LPN ${l.lpn} reserved for ${l.reserved_for}`;
     if (!['AVAILABLE', 'RESERVED'].includes(l.status)) return `LPN ${l.lpn} is ${l.status}`;
     return null;

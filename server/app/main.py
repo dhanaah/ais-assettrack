@@ -43,6 +43,9 @@ async def lifespan(app: FastAPI):
     add_missing_columns()
     with SessionLocal() as db:
         seed(db)
+        # HMIL Planning Bench became the Dispatch Planning Bench (all customers)
+        db.query(models.PickList).filter(models.PickList.source == "HMIL_BENCH").update({"source": "DISPATCH_BENCH"}, synchronize_session=False)
+        db.commit()
     import os
     if os.getenv("PALLET_BENCH_SCHEDULER", "1") == "1":
         bench.start_scheduler(SessionLocal)

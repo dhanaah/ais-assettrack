@@ -212,29 +212,62 @@ with TestClient(app) as c:
     check(e["status"] in ("APPLIED", "EXCEPTION"), "allowed route Yard -> Production")
     e = ev(c, Y, "PALLET_MOVE", {"scanned": "CHN-P007", "to_zone": "FGWH"})
     check(e["status"] == "REJECTED" and "MOVE_TO_FGWH" in e["result"], "route not granted -> rejected")
-    print("13. HMIL Planning Bench pull")
+    print("13. Dispatch Planning Bench pull (all customers)")
     from app import bench
-    r = c.post("/api/v1/integrations/hmil-bench", headers=A, json={"bench_enabled": False, "bench_url": "http://bench:8765", "bench_user": "svc",
+    r = c.post("/api/v1/integrations/dispatch-bench", headers=A, json={"bench_enabled": False, "bench_url": "http://bench:8765", "bench_user": "svc",
                                                                    "bench_password": "x", "bench_plant": "CHN", "bench_customer_map": "HVF1=HMIL"})
     check(r.status_code == 200, "bench settings saved by central admin")
-    fake = {"/api/dispatches/recent?limit=300": {"dispatches": [{"id": 501, "trip_id": 77, "plant": "HVF1", "vehicle": "TN 22 X 9", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()}]},
+    fake = {"/api/dispatches/recent?limit=300": {"dispatches": [{"id": 501, "trip_id": 77, "plant": "HVF1", "vehicle": "TN 22 X 9", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()},
+                                                                   {"id": 502, "trip_id": 78, "customer_code": "MSIL1", "vehicle": "HR55A1", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()}]},
+            "/api/picks?dispatch_id=502": {"picks": []},
             "/api/picks?dispatch_id=501": {"picks": [{"picked_lpn": "BL1", "item_code": "WS-9", "qty": 20, "sub_inv": "HMIL-FG"},
                                                       {"picked_lpn": "BL2", "item_code": "DR-3", "qty": 30, "sub_inv": "HMIL-FG"}]}}
     with SessionLocal() as db:
         res = bench.pull(db, fetch=lambda path: fake[path])
-    check(res["created"] == 1 and res["lpns"] == 2, f"bench dispatch 501 -> pick list HB-CHN-501 with 2 LPN ({res})")
-    pk = c.get("/api/v1/picklists/HB-CHN-501", headers=W).json()["picklist"]
+    check(res["created"] == 2 and res["lpns"] == 2, f"bench dispatches 501/502 -> pick lists DB-CHN-501 (2 LPN) and DB-CHN-502 ({res})")
+    k2 = c.get("/api/v1/picklists/DB-CHN-502", headers=W).json()["picklist"]
+    check(k2["customer_code"] == "MSIL1" and k2["source"] == "DISPATCH_BENCH", "non-Hyundai customer taken from the Bench dispatch")
+    with SessionLocal() as db:
+        res2 = bench.pull(db, fetch=lambda path: fake[path])
+    check(res2["created"] == 0, "second pull updates, no duplicate pick lists")
+    check(c.get("/api/v1/integrations/hmil-bench", headers=A).status_code == 200, "old /hmil-bench address still answers")
+    pk = c.get("/api/v1/picklists/DB-CHN-501", headers=W).json()["picklist"]
     check(pk["customer_code"] == "HMIL" and pk["part_qty"] == 50 and pk["vehicle_no"] == "TN22X9", "customer map, qty and vehicle from Bench")
-    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "HB-CHN-501", "scanned": "L10", "pallet": "CHN-P004"})
-    check(e["status"] == "REJECTED" and "not on HMIL Bench trip" in e["result"], "LPN not on the Bench trip refused")
-    e1 = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "HB-CHN-501", "scanned": "BL1", "pallet": "CHN-P004"})
-    e2 = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "HB-CHN-501", "scanned": "BL2", "pallet": "CHN-P004"})
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "DB-CHN-501", "scanned": "L10", "pallet": "CHN-P004"})
+    check(e["status"] == "REJECTED" and "not on Dispatch Bench trip" in e["result"], "LPN not on the Bench trip refused")
+    e1 = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "DB-CHN-501", "scanned": "BL1", "pallet": "CHN-P004"})
+    e2 = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "DB-CHN-501", "scanned": "BL2", "pallet": "CHN-P004"})
     check(e1["status"] != "REJECTED" and e2["status"] != "REJECTED", f"2 Bench LPN bound to one pallet: {e2['result'][:60]}")
-    r = c.post("/api/v1/picklists/HB-CHN-501/confirm", headers=H).json()
+    r = c.post("/api/v1/picklists/DB-CHN-501/confirm", headers=H).json()
     check(r["status"] == "READY", "Bench trip skips AssetTrack PDI/SO -> READY")
-    r = c.post("/api/v1/picklists/HB-CHN-501/challan", headers=W).json()
+    r = c.post("/api/v1/picklists/DB-CHN-501/challan", headers=W).json()
     check(r.get("challan_no"), f"challan {r.get('challan_no')} without EBS invoice wait")
     z = c.get("/api/v1/zones", headers=H).json()
     check("FGWH" in z["zones"], f"zone view: {z['zones']}")
+    print("14. Empty pallet return loaded at the Pallet Yard")
+    with SessionLocal() as db:
+        for pn, zone in (("PUN-P010", "YARD"), ("PUN-P011", "YARD"), ("PUN-P012", "PACKING")):
+            db.add(models.Pallet(pallet_no=pn, home_plant="PUN", location_plant="CHN", status="HELD", zone=zone, load_state="EMPTY"))
+        db.commit()
+    r = c.post("/api/v1/picklists/yard-return", headers=W, json={"to_plant": "PUN"})
+    check(r.status_code == 403, "yard loading only from the HHT")
+    o = c.get("/api/v1/picklists/yard-return/options", headers=H).json()
+    check(any(x["plant"] == "PUN" and x["pallets"] >= 3 for x in o), f"owner plants with pallets held here: {o}")
+    k = c.post("/api/v1/picklists/yard-return", headers=H, json={"to_plant": "PUN", "vehicle_no": "tn 09 y 7"}).json()
+    yno = k["picklist_no"]
+    check(k["load_point"] == "YARD" and k["vehicle_no"] == "TN09Y7" and k["qty"] == 0, f"{yno} started at Yard, open quantity")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": yno, "scanned": "CHN-P005"})
+    check(e["status"] == "REJECTED" and "belongs to CHN" in e["result"], "own pallet refused - only the owner plant's pallets")
+    for pn in ("PUN-P010", "PUN-P011"):
+        e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": yno, "scanned": pn})
+        check(e["status"] == "APPLIED", f"{pn} loaded at Yard")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": yno, "scanned": "PUN-P012"})
+    check(e["status"] == "EXCEPTION" and "MOVE_PACKING_YARD" in e["result"], f"pallet still shown in Packing -> loaded, missed move recorded: {e['result'][:70]}")
+    pull = c.get("/api/v1/sync/pull", headers=H).json()
+    check(any(x["picklist_no"] == yno and x["load_point"] == "YARD" for x in pull["picklists"]), "HHT gets the Yard loading list")
+    r = c.post(f"/api/v1/picklists/{yno}/confirm", headers=H).json()
+    check(r["status"] == "CHALLANED" and r["qty"] == 3 and r["challan_no"] and r["ewaybill_no"], f"Finish loading -> challan {r.get('challan_no')} + e-way bill for 3 pallets")
+    p10 = c.get("/api/v1/pallets/PUN-P010", headers=H).json(); p10 = p10.get("pallet") or p10
+    check(p10["status"] == "ALLOCATED" and p10["challan_ref"] == r["challan_no"], "pallet carries the challan")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

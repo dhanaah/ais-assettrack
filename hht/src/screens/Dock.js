@@ -1,7 +1,8 @@
 // Dock out-ward scan. Part pick list: scan LPN (fetches its pallet) or pallet (fetches all its LPNs), any order.
-// Empty return: scan other-plant empty pallets. Pick List Control -> confirm (online). Missed-scan alerts shown at once. Developed by DT
+// Empty return: scan other-plant empty pallets. Pick List Control -> confirm (online). Missed-scan alerts shown at once.
+// yard mode: empty pallets of another plant loaded at the Pallet Yard - start (owner plant + vehicle), scan, Finish loading -> challan. Developed by DT
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Alert, TextInput } from 'react-native';
 import { S, C, Btn, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen, Page } from '../ui/kit';
 import { listPicklists, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity } from '../lib/db';
 import { validateDockScan2 } from '../lib/rules';
@@ -9,13 +10,21 @@ import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
 
 const isPart = (k) => ['CUSTOMER', 'STOCK_TRANSFER'].includes(k?.dispatch_type);
-const label = (k) => k.dispatch_type === 'EMPTY_RETURN' ? `Empty return → ${k.to_plant}` : isPart(k) ? (k.part_no ? `${k.customer} · ${k.part_no} × ${k.part_qty}` : `HMIL Bench trip · ${k.customer} · ${k.part_qty} pcs`) : `Customer ${k.customer} · pallets only`;
+const isYard = (k) => k?.load_point === 'YARD';
+const label = (k) => k.dispatch_type === 'EMPTY_RETURN' ? `Empty pallets → ${k.to_plant}${isYard(k) ? ' · Yard loading' + (k.vehicle_no ? ' · ' + k.vehicle_no : '') : ''}` : isPart(k) ? (k.part_no ? `${k.customer} · ${k.part_no} × ${k.part_qty}` : `Dispatch Bench trip · ${k.customer} · ${k.part_qty} pcs`) : `Customer ${k.customer} · pallets only`;
 
-export default function Dock({ onBack }) {
+export default function Dock({ onBack, yard = false }) {
   const [lists, setLists] = useState([]); const [pk, setPk] = useState(null); const [scans, setScans] = useState([]); const [lpns, setLpns] = useState([]);
   const [waitLpn, setWaitLpn] = useState(null); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
-  const load = async () => setLists(await listPicklists(['OPEN']));
+  const [opts, setOpts] = useState(null); const [owner, setOwner] = useState(null); const [veh, setVeh] = useState('');
+  const load = async () => setLists((await listPicklists(['OPEN'])).filter(k => yard ? isYard(k) : !isYard(k)));
   useEffect(() => { load(); }, []);
+  const newReturn = async () => { try { setOpts(await api('/picklists/yard-return/options')); setOwner(null); setVeh(''); } catch (e) { toast(e.offline ? 'Starting a return needs the server (offline)' : e.message, 'err'); } };
+  const start = async () => {
+    if (!owner) return toast('Select the owner plant', 'err');
+    try { const k = await api('/picklists/yard-return', { method: 'POST', body: { to_plant: owner, vehicle_no: veh || null } }); logActivity('YARD_RETURN_START', k.picklist_no, owner); setOpts(null); await syncNow(); const fresh = (await listPicklists(['OPEN'])).find(x => x.picklist_no === k.picklist_no); await load(); if (fresh) open(fresh); }
+    catch (e) { toast(e.message, 'err'); }
+  };
   const refresh = async (k = pk) => { setScans(await localScans(k.picklist_no)); setLpns(await lpnScans(k.picklist_no)); };
   const open = async (k) => { setPk(k); setWaitLpn(null); setAlert(null); await refresh(k); };
 
@@ -46,19 +55,31 @@ export default function Dock({ onBack }) {
     else { await removeLocalScan(pk.picklist_no, item.pallet_no); await removeLpnScans(pk.picklist_no, { pallet: item.pallet_no }); await setPalletLocal(item.pallet_no, { status: pk.dispatch_type === 'EMPTY_RETURN' ? 'HELD' : 'AVAILABLE', picklist: null }); }
     await enqueue('PALLET_UNSCAN_DOCK', { picklist_no: pk.picklist_no, scanned: isLpn ? item.lpn : item.pallet_no }, !sync.online); await refresh(); if (sync.online) syncNow().catch(() => {}); } }]);
   const picked = lpns.reduce((a, x) => a + (x.qty || 0), 0);
-  const complete = isPart(pk) ? picked === pk?.part_qty && scans.length > 0 : scans.length === pk?.qty;
+  const complete = isPart(pk) ? picked === pk?.part_qty && scans.length > 0 : isYard(pk) ? scans.length > 0 : scans.length === pk?.qty;
   const confirm = async () => {
     if (!complete) return toast(isPart(pk) ? `Pick List Control: part ${picked} vs ${pk.part_qty}` : `Pick List Control: ${scans.length} scanned vs qty ${pk.qty}`, 'err');
     if (!sync.online) return toast('Confirm needs the server (offline). Scans are saved; confirm when online.', 'warn');
-    try { await syncNow(); const r = await api(`/picklists/${pk.picklist_no}/confirm`, { method: 'POST' }); toast(`${pk.picklist_no} is ${r.status}${r.status === 'PDI_PENDING' ? ' → QA / PDI next' : ''}`); logActivity('PICKLIST_CONFIRM', pk.picklist_no, r.status); setPk(null); await syncNow(); load(); }
+    if (isYard(pk) && !(await new Promise(res => Alert.alert('Finish loading', `${scans.length} empty pallets → ${pk.to_plant}. Make the challan now?`, [{ text: 'Cancel', onPress: () => res(false) }, { text: 'Finish & challan', onPress: () => res(true) }])))) return;
+    try { await syncNow(); const r = await api(`/picklists/${pk.picklist_no}/confirm`, { method: 'POST' });
+      if (isYard(pk)) { if (r.challan_no) Alert.alert('Challan ready', `Challan ${r.challan_no}\nE-way bill ${r.ewaybill_no || '-'}\n${r.qty} pallets → ${pk.to_plant}\n\nPrint it from the web Pick Lists page; logistics approval and OUT gate as usual.`); else Alert.alert('Loading finished', r.challan_message || 'Challan pending'); }
+      else toast(`${pk.picklist_no} is ${r.status}${r.status === 'PDI_PENDING' ? ' → QA / PDI next' : ''}`); logActivity('PICKLIST_CONFIRM', pk.picklist_no, r.status); setPk(null); await syncNow(); load(); }
     catch (e) { toast(e.message, 'err'); }
   };
 
-  if (!pk) return (<Screen><Header title="Dock Out-ward Scan" sub="Select a pick list" onBack={onBack} /><Page>
-    {lists.length === 0 ? <Text style={S.mute}>No open pick lists in cache. Release one on the web app, then sync.</Text> : null}
+  if (!pk && opts) return (<Screen><Header title="New empty pallet return" sub="Loading at the Pallet Yard" onBack={() => setOpts(null)} /><Page>
+    <Text style={S.h2}>Owner plant of the pallets</Text>
+    {opts.length === 0 ? <Text style={S.mute}>No other plant's pallets are held here.</Text> : null}
+    {opts.map(o => <TouchableOpacity key={o.plant} style={[S.card, owner === o.plant ? { borderWidth: 2, borderColor: C.ok } : null]} onPress={() => setOwner(o.plant)}>
+      <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{o.plant}</Text><Pill s={`${o.pallets} held`} /></View><Text style={S.mute}>{o.name}</Text></TouchableOpacity>)}
+    <Text style={S.mute}>Vehicle no. (optional now, needed before OUT gate)</Text><TextInput style={S.input} value={veh} onChangeText={t => setVeh(t.toUpperCase())} autoCapitalize="characters" placeholder="TN01AB1234" />
+    <Btn title="Start loading" icon="play-outline" onPress={start} color={owner ? C.ok : C.accent} /></Page><Toast msg={msg} /></Screen>);
+
+  if (!pk) return (<Screen><Header title={yard ? 'Empty Pallet Return' : 'Dock Out-ward Scan'} sub={yard ? 'Other plants\' empty pallets, loaded at the Yard' : 'Select a pick list'} onBack={onBack} /><Page>
+    {yard ? <Btn title="New empty return (scan at Yard)" icon="add-circle-outline" onPress={newReturn} /> : null}
+    {lists.length === 0 ? <Text style={S.mute}>{yard ? 'No open Yard loading. Start a new empty return.' : 'No open pick lists in cache. Release one on the web app, then sync.'}</Text> : null}
     {lists.map(k => <TouchableOpacity key={k.picklist_no} style={S.card} onPress={() => open(k)}>
       <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{k.picklist_no}</Text><Pill s={k.dispatch_type || 'PALLET_ONLY'} /></View>
-      <Text style={S.mute}>{label(k)} · pallets {k.scanned}/{k.qty}{isPart(k) ? ` · picked ${k.picked_qty}` : ''}</Text></TouchableOpacity>)}
+      <Text style={S.mute}>{label(k)} · pallets {isYard(k) ? k.scanned : `${k.scanned}/${k.qty}`}{isPart(k) ? ` · picked ${k.picked_qty}` : ''}</Text></TouchableOpacity>)}
     <Btn title="Refresh" secondary icon="refresh" onPress={async () => { await syncNow(); load(); }} /></Page><Toast msg={msg} /></Screen>);
 
   const byPallet = scans.map(p => ({ ...p, lpns: lpns.filter(l => l.pallet === p.pallet_no) }));
@@ -66,7 +87,7 @@ export default function Dock({ onBack }) {
     <View style={[S.pad, { paddingBottom: 0 }]}>
       <Glass style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
         {isPart(pk) ? <Ring value={`${picked}/${pk.part_qty}`} label={pk.part_no ? `${pk.part_no} picked` : 'Bench LPN qty'} color={picked === pk.part_qty ? C.ok : C.accent} size={92} /> : null}
-        <Ring value={`${scans.length}/${pk.qty}`} label="pallets" color={complete ? C.ok : C.accent} size={92} />
+        <Ring value={isYard(pk) ? `${scans.length}` : `${scans.length}/${pk.qty}`} label={isYard(pk) ? 'empty pallets loaded' : 'pallets'} color={complete ? C.ok : C.accent} size={92} />
       </Glass>
       {waitLpn ? <Text style={{ color: C.amber, fontWeight: '700', marginTop: 6 }}>LPN {waitLpn.lpn} waiting → scan its PALLET</Text> : null}
       {alert ? <TouchableOpacity onPress={() => setAlert(null)} style={{ backgroundColor: C.warn, borderRadius: 12, padding: 10, marginTop: 6 }}><Text style={{ color: '#fff', fontWeight: '700' }}>⚠ {alert}</Text><Text style={{ color: '#fff', fontSize: 11 }}>tap to dismiss · recorded in Missed Scans</Text></TouchableOpacity> : null}
@@ -77,6 +98,6 @@ export default function Dock({ onBack }) {
         <TouchableOpacity onLongPress={() => remove(item, false)} style={{ flexDirection: 'row' }}><Text style={{ flex: 1, fontWeight: '700' }}>{index + 1}. {item.pallet_no}</Text><Text style={S.mute}>{item.ts.slice(11, 19)}</Text></TouchableOpacity>
         {item.lpns.map(l => <TouchableOpacity key={l.lpn} onLongPress={() => remove(l, true)}><Text style={[S.mute, { marginLeft: 14 }]}>• {l.lpn} × {l.qty}</Text></TouchableOpacity>)}
       </View>)} />
-    <View style={S.pad}><Btn title={isPart(pk) ? 'Confirm → send to PDI' : 'Confirm load list (Pick List Control)'} icon="checkmark-circle-outline" onPress={confirm} color={complete ? C.ok : C.accent} /><Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Long-press a pallet or LPN to remove</Text></View>
+    <View style={S.pad}><Btn title={isPart(pk) ? 'Confirm → send to PDI' : isYard(pk) ? 'Finish loading → make challan' : 'Confirm load list (Pick List Control)'} icon="checkmark-circle-outline" onPress={confirm} color={complete ? C.ok : C.accent} /><Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Long-press a pallet or LPN to remove</Text></View>
     <Toast msg={msg} /></Screen>);
 }
