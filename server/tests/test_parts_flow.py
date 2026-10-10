@@ -424,6 +424,13 @@ with TestClient(app) as c:
     last = rd.pages[-1].extract_text()
     check(len(rd.pages) >= 3 and f"{len(rd.pages)} of {len(rd.pages)}" in last and "SECURITY" in last and "ANF-00219" in "".join(p.extract_text() for p in rd.pages),
           f"74 lines + 121 pallets -> {len(rd.pages)} pages, every line / pallet printed, signs on the last page")
+    with SessionLocal() as db:                          # returnable pallet challan PDF (Rule 55): 3 copies, HSN / value from plant
+        pl = db.get(models.Plant, "CHN"); pl.pallet_hsn = "7326"; pl.pallet_value = 4500.0; db.commit()
+    r = c.get(f"/api/v1/picklists/{no}/challan.pdf", headers=W)
+    rd = PdfReader(_io.BytesIO(r.content)); ct = "\n".join(pg.extract_text() for pg in rd.pages)
+    check(r.status_code == 200 and all(x in ct for x in ("ORIGINAL FOR CONSIGNEE", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR CONSIGNOR", "CHN/00003", "7326", "Rule 55")),
+          f"challan PDF: 3 copies with challan no, HSN, Rule 55 ({len(rd.pages)} pages)")
+    check(c.get("/api/v1/picklists/NOPE/challan.pdf", headers=W).status_code == 404, "challan PDF refused without a challan")
     check(gcsprint.amount_in_words(223580.88) == "Two Lakh Twenty Three Thousand Five Hundred Eighty and paise Eighty Eight only", "amount in words (Indian numbering)")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

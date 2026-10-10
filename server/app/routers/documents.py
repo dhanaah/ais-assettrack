@@ -387,6 +387,22 @@ def gcs_pdf(no: str, p: Principal = Depends(current_user), db: Session = Depends
     return FileResponse(path, media_type="application/pdf", filename=os.path.basename(path))
 
 
+@router.get("/picklists/{no}/challan.pdf")
+def challan_pdf(no: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Returnable pallet delivery challan (Rule 55) - original / duplicate / triplicate in one PDF. Built fresh each time."""
+    from .. import gcsprint
+    from ..challanprint import build_challan_pdf
+    from fastapi.responses import FileResponse
+    k = db.get(models.PickList, no)
+    if not k or not k.challan_no:
+        raise HTTPException(404, "No challan on this pick list yet")
+    p.require_plant(k.plant_code)
+    path = gcsprint.challan_path(k)
+    with open(path, "wb") as f:
+        f.write(build_challan_pdf(db, k, p.user))
+    return FileResponse(path, media_type="application/pdf", filename=os.path.basename(path))
+
+
 @router.post("/picklists/{no}/challan")
 def challan(no: str, request: Request, p: Principal = Depends(need("CHALLAN_REQUEST")), db: Session = Depends(get_db)):
     k = db.get(models.PickList, no)

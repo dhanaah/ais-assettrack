@@ -47,6 +47,9 @@ class PlantIn(BaseModel):
     gcs_print_mode: str | None = "OFF"
     gcs_copies: int | None = 1
     gcs_font_pct: int | None = 88
+    pallet_hsn: str | None = None
+    pallet_value: float | None = None
+    challan_copies: int | None = 3
     active: bool = True
     notes: str | None = None
 

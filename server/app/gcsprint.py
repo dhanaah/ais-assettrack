@@ -55,6 +55,11 @@ def amount_in_words(v: float) -> str:
     return f"{_words(r)}" + (f" and paise {_words99(p)}" if p else "") + " only"
 
 
+def challan_path(pk) -> str:
+    import re
+    return os.path.join(docs_dir(), f"CHALLAN_{re.sub(r'[^A-Za-z0-9]+', '_', pk.challan_no or pk.picklist_no)}.pdf")
+
+
 def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_text: str, scale: float | None = None) -> bytes:
     """Same layout as the ERP 'Finished Goods Materials Gate Pass' (header, details block, invoice table with totals and
     amount in words) plus AssetTrack: OUT-gate QR, returnable pallet challan, the pallets loaded (6 columns, short number)
@@ -300,10 +305,10 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
 
 
 # ---------------------------------------------------------------- printing
-def print_pdf(path: str, plant: models.Plant) -> tuple[bool, str]:
+def print_pdf(path: str, plant: models.Plant, copies: int | None = None) -> tuple[bool, str]:
     mode = (plant.gcs_print_mode or "OFF").upper()
     target = (plant.gcs_printer or "").strip()
-    copies = max(1, int(plant.gcs_copies or 1))
+    copies = max(1, int(copies or plant.gcs_copies or 1))
     if mode == "OFF" or not target:
         return False, "automatic printing is OFF for this plant (Masters > Plants > GCS printer)"
     try:
@@ -345,8 +350,14 @@ def generate_and_print(SessionLocal, picklist_no: str, user_pk: int | None, qr_t
         path = pdf_path(pk)
         with open(path, "wb") as f:
             f.write(data)
+        cpath = None
+        if pk.challan_no:                      # returnable pallet challan (original / duplicate / triplicate) prints with it
+            from .challanprint import build_challan_pdf
+            cpath = challan_path(pk)
+            with open(cpath, "wb") as f:
+                f.write(build_challan_pdf(db, pk, user))
         mode = (plant.gcs_print_mode or "OFF").upper(); printer = plant.gcs_printer
-    res = {"pdf": os.path.basename(path), "print": "off" if not do_print or mode == "OFF" or not printer else f"queued on {printer}"}
+    res = {"pdf": os.path.basename(path), "challan_pdf": os.path.basename(cpath) if cpath else None, "print": "off" if not do_print or mode == "OFF" or not printer else f"queued on {printer}"}
     if do_print and mode != "OFF" and printer:
         def bg():
             with SessionLocal() as db:
@@ -354,6 +365,9 @@ def generate_and_print(SessionLocal, picklist_no: str, user_pk: int | None, qr_t
                 pl = db.get(models.Plant, pk.plant_code)
                 ok, msg = print_pdf(path, pl)
                 integration._log(db, "PRINT", "GCS", picklist_no, ok, msg); db.commit()
+                if cpath:
+                    ok2, msg2 = print_pdf(cpath, pl, copies=1)     # the copies are inside the challan PDF
+                    integration._log(db, "PRINT", "CHALLAN", picklist_no, ok2, msg2); db.commit()
                 log.info("GCS print %s: %s", picklist_no, msg)
         threading.Thread(target=bg, daemon=True).start()
     return res

@@ -40,6 +40,9 @@ class Plant(Base):
     gcs_print_mode: Mapped[str | None] = mapped_column(String(10), default="OFF")     # OFF | WINDOWS | RAW9100
     gcs_copies: Mapped[int | None] = mapped_column(Integer, default=1)
     gcs_font_pct: Mapped[int | None] = mapped_column(Integer)          # gate pass font size % (default 88 = option B compact)
+    pallet_hsn: Mapped[str | None] = mapped_column(String(10))           # HSN of returnable pallets on the challan
+    pallet_value: Mapped[float | None] = mapped_column(Float)            # declared value per pallet (Rs) on the challan
+    challan_copies: Mapped[int | None] = mapped_column(Integer)          # 3 = original / duplicate / triplicate (Rule 55)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(String(250))
 
