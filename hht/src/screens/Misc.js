@@ -7,7 +7,7 @@ import { THEMES, THEME_KEYS } from '../ui/theme';
 import { api, getServer, setServer } from '../lib/api';
 import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity, getLpn, lpnsOnPallet } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
-import { listPaired, connect, printerAvailable } from '../lib/printer';
+import { listPaired, connect, printerAvailable, testPrint, setPaperWidth } from '../lib/printer';
 
 const needOnline = (toast) => { if (!sync.online) { toast('This step needs the server (gate documents are online-only). Use manual gate pass + supervisor PIN if the outage continues.', 'err'); return false; } return true; };
 
@@ -93,15 +93,20 @@ export function Pending({ onBack }) {
 }
 
 export function Settings({ onBack, deviceId, onTheme }) {
-  const [srv, setSrv] = useState(getServer()); const [printers, setPrinters] = useState([]); const [sel, setSel] = useState(null); const [msg, toast] = useToast();
-  useEffect(() => { kv.get('printer').then(setSel); }, []);
+  const [srv, setSrv] = useState(getServer()); const [printers, setPrinters] = useState([]); const [sel, setSel] = useState(null); const [selName, setSelName] = useState(null); const [paper, setPaper] = useState('58'); const [busy, setBusy] = useState(false); const [msg, toast] = useToast();
+  useEffect(() => { kv.get('printer').then(setSel); kv.get('printer_name').then(setSelName); kv.get('printer_width').then(w => setPaper(w || '58')); }, []);
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>
     <View style={S.card}><Text style={S.h2}>Server name</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" placeholder="assettrack" /><Text style={S.mute}>Ports 80 / 8001 / 8002 / 8003 are tried automatically.</Text><Btn title="Save" secondary onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId}</Text></View>
     <View style={S.card}><Text style={S.h2}>Theme</Text><Text style={S.mute}>Current: {THEMES[T.key].name}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{THEME_KEYS.map(k => <TouchableOpacity key={k} onPress={async () => { applyTheme(k); await kv.set('theme', k); onTheme && onTheme(k); toast('Theme: ' + THEMES[k].name); }} style={[S.btnS, { flex: 1, minWidth: '45%', marginTop: 0, backgroundColor: T.key === k ? C.accent : undefined }]}><Text style={[S.btnSText, T.key === k ? { color: '#fff' } : null]}>{THEMES[k].name}</Text></TouchableOpacity>)}</View></View>
-    <View style={S.card}><Text style={S.h2}>Bluetooth printer {printerAvailable() ? '' : '(module not in this build)'}</Text><Text style={S.mute}>Selected: {sel || 'none'}</Text>
-      <Btn title="List paired printers" secondary onPress={async () => { try { setPrinters(await listPaired()); } catch (e) { toast(e.message, 'err'); } }} />
-      {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { try { await connect(p.address); setSel(p.address); toast('Connected ' + p.name); } catch (e) { toast(e.message, 'err'); } }} style={[S.btnS, { alignItems: 'flex-start' }]}><Text style={S.btnSText}>{p.name}  {p.address}</Text></TouchableOpacity>)}</View>
+    <View style={S.card}><Text style={S.h2}>Bluetooth printer {printerAvailable() ? '' : '(module not in this build)'}</Text>
+      <Text style={S.mute}>Selected: {selName ? `${selName} (${sel})` : (sel || 'none')}</Text>
+      <Text style={[S.mute, { marginTop: 4 }]}>1. Switch the printer on. 2. Pair it once in Android Settings > Bluetooth. 3. List and tap it here. 4. Test print.</Text>
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>{[['58', '2" / 58 mm (SEZNIK)'], ['80', '3" / 80 mm']].map(([w, l]) => <TouchableOpacity key={w} onPress={async () => { setPaper(w); await setPaperWidth(w); }} style={[S.btnS, { flex: 1, marginTop: 0, backgroundColor: paper === w ? C.accent : undefined }]}><Text style={[S.btnSText, paper === w ? { color: '#fff' } : null]}>{l}</Text></TouchableOpacity>)}</View>
+      <Btn title="List paired printers" secondary icon="bluetooth-outline" onPress={async () => { try { const l = await listPaired(); setPrinters(l); if (!l.length) toast('No paired Bluetooth devices - pair the printer in Android Settings first', 'warn'); } catch (e) { toast(e.message, 'err'); } }} />
+      {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { setBusy(true); try { await connect(p.address); await kv.set('printer_name', p.name); setSel(p.address); setSelName(p.name); toast('Connected ' + p.name); } catch (e) { toast('Cannot connect: ' + e.message, 'err'); } finally { setBusy(false); } }} style={[S.btnS, { alignItems: 'flex-start', backgroundColor: sel === p.address ? C.ok : undefined }]}><Text style={[S.btnSText, sel === p.address ? { color: '#fff' } : null]}>{p.name}  {p.address}</Text></TouchableOpacity>)}
+      {sel ? <Btn title={busy ? 'Printing…' : 'Test print'} icon="print-outline" onPress={async () => { setBusy(true); try { await testPrint(await kv.get('plant')); toast('Test sent - check the printer'); logActivity('PRINT_TEST', sel, 'ok'); } catch (e) { toast('Test print failed: ' + e.message, 'err'); logActivity('PRINT_TEST', sel, e.message); } finally { setBusy(false); } }} /> : null}
+      <Text style={[S.mute, { marginTop: 6 }]}>Blank paper after a test = the printer does not use ESC/POS; tell DT the printer model.</Text></View>
     <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done'); }} /></View>
     <Footer />
   </Page><Toast msg={msg} /></Screen>);

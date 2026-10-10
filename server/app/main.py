@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from . import config, models, integration, bench
+from . import config, models, integration, bench, reminders  # noqa: F401 (reminders registers email_log)
 from .db import engine, Base, SessionLocal, add_missing_columns
 from .security import ROLE_SEED, NEW_PERMS, hash_pw
 from .routers import auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations
@@ -54,7 +54,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=config.APP_NAME, version=config.APP_VERSION, lifespan=lifespan,
               description=f"{config.DEVELOPER} · Returnable pallet asset tracking for AIS Glass")
-for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations):
+from .routers import dashboard, reminders as reminders_router
+for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations, dashboard, reminders_router):
     app.include_router(r.router)
 app.include_router(external.admin)
 app.add_middleware(ActivityMiddleware)
@@ -77,7 +78,7 @@ def health():
     except Exception:
         db_ok = False
     return {"app": config.APP_NAME, "version": config.APP_VERSION, "developer": config.DEVELOPER, "db": "ok" if db_ok else "error",
-            "integration_mode": integration.MODE, "ports": config.SERVER_PORTS}
+            "integration_mode": integration.MODE, "ports": config.SERVER_PORTS, "min_client": config.API_MIN_CLIENT}
 
 
 @app.post("/api/v1/jobs/retry")

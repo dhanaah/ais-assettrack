@@ -1,4 +1,14 @@
 # Changelog — AIS AssetTrack Server
+## 1.8.0 (2026-10-10) — management dashboard, customer reminders, hardening, SQL Server kit
+- Dashboard: KPI tiles + charts (pallet position by plant, customer holding by age, dispatched vs returned per week, turnaround days, missed scans per week, by role), plant / window filters, table view per chart; GET /api/v1/dashboard
+- Excel export of every report: /api/v1/reports/export/<name>.xlsx (pallets, customer-holding, overdue, plant-position, missed-scans, picklists, return-slips, lpn-stock, movements)
+- Daily Exception Report (A4 print) per plant: missed scans, rejected HHT scans, slips with issues, overdue pallets, stuck pick lists, WMS age
+- Customer reminders: daily email to customers holding pallets past the limit (customer master: email, limit, every N days, escalation days); escalation copies plant admins / logistics; Monitor > Customer Reminders page with preview, send now, log; dry run until SMTP is set in settings.env
+- HHT minimum version (PALLET_MIN_CLIENT): older apps get "update the app" at login / sync; Sync Monitor shows OFFLINE / UPDATE badges per device
+- Supervisor PIN must be unique within the plant (no ambiguity about who approved)
+- pytest suite (tests/test_suite.py) gates the EXE and APK builds in CI; server log rotates at 5 MB
+- Deployment kit for IT: docs/DEPLOY_SERVER_IT.md, settings.env.example, sql/migrate_sqlite_to_mssql.py
+- HHT 1.9.0: Bluetooth printing rebuilt for portable ESC/POS printers (SEZNIK DEV 2" set up): ESC/POS bytes built in the app, logo + QR as raster, paper 58/80 mm, Settings > Printer with pair list and Test print
 ## 1.7.1 (2026-10-10) — review fixes: secret, sync hardening, backup
 - Server secret (login tokens, return-slip QR check codes) is now random per installation (secret.key next to the database) instead of the built-in default that is public on GitHub; old labels still verify
 - Sync: heartbeats no longer stored as events (was one row per HHT per minute); the same event arriving twice at once is answered from the first result instead of a server error; applied events older than 2 years purged by the retry job; SQLite waits up to 30 s when busy

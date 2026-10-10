@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, config
 from ..db import get_db
-from ..security import check_pw, hash_pw, make_token, current_user, Principal, load_perms, audit
+from ..security import check_pw, hash_pw, make_token, current_user, Principal, load_perms, audit, require_client_version, pin_in_use
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -30,6 +30,8 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     u = db.query(models.User).filter(models.User.user_id == body.user_id.strip().lower()).first()
     if not u or not u.active:
         raise HTTPException(401, "Invalid user or password")
+    if body.device_id:
+        require_client_version(body.app_version)
     if u.locked_until and u.locked_until > datetime.utcnow():
         raise HTTPException(423, f"Account locked until {u.locked_until:%H:%M} UTC")
     if not check_pw(body.password, u.password_hash):
@@ -87,6 +89,8 @@ def set_pin(body: SetPinIn, p: Principal = Depends(current_user), db: Session = 
         raise HTTPException(403, "Not a supervisor")
     if not body.pin.isdigit() or len(body.pin) < 4:
         raise HTTPException(400, "PIN must be 4+ digits")
+    if pin_in_use(db, u.plant_code, body.pin, u.id):
+        raise HTTPException(400, "This PIN is already used by another supervisor of your plant - choose a different one")
     u.supervisor_pin_hash = hash_pw(body.pin)
     audit(db, p, "SET_PIN", "user", u.user_id)
     db.commit()

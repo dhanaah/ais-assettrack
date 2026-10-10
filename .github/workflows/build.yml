@@ -12,7 +12,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt pytest
+      - name: Test suite (80+ end-to-end checks) - the build stops here if anything fails
+        run: pytest
       - name: Import check + API smoke (SQLite, STUB integrations)
         run: |
           python -c "from app.main import app; print('import ok')"
@@ -26,6 +28,7 @@ jobs:
         with: { name: server-package, path: AIS_AssetTrack_Server.zip }
 
   server-exe:
+    needs: server
     runs-on: windows-latest
     defaults: { run: { working-directory: server } }
     steps:
@@ -51,6 +54,7 @@ jobs:
         with: { name: server-exe, path: server/dist/AssetTrack_Server }
 
   hht-apk:
+    needs: server
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/hht-v') || github.ref == 'refs/heads/main'
     defaults: { run: { working-directory: hht } }

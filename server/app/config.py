@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.7.1"
-API_MIN_CLIENT = "1.0.0"          # HHT app must be >= this
+APP_VERSION = "1.8.0"
+API_MIN_CLIENT = os.getenv("PALLET_MIN_CLIENT", "1.6.0")   # HHT app must be >= this (settings.env PALLET_MIN_CLIENT) - older apps are told to update
 DEVELOPER = "Developed by DT"
 
 BASE_DIR = Path(__file__).resolve().parent.parent

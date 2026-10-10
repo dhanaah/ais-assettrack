@@ -120,6 +120,25 @@ def current_user(request: Request, creds: HTTPAuthorizationCredentials = Depends
     return Principal(user, load_perms(db, user))
 
 
+def _ver(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in (v or "0").split("-")[0].split("."))
+    except ValueError:
+        return (0,)
+
+
+def client_ok(version: str | None) -> bool:
+    return not version or _ver(version) >= _ver(config.API_MIN_CLIENT)
+
+
+UPDATE_MSG = "This AssetTrack app is too old - install the latest APK from the AssetTrack server (version {min} or newer)."
+
+
+def require_client_version(version: str | None):
+    if not client_ok(version):
+        raise HTTPException(426, UPDATE_MSG.format(min=config.API_MIN_CLIENT))
+
+
 HHT_ONLY_MSG = ("Operations are allowed only from the HHT app. The web / server is for masters, uploads, "
                 "reports, dashboard, live view and challan printing.")
 
@@ -131,6 +150,8 @@ def is_hht(request: Request) -> bool:
 def require_hht(request: Request):
     if config.HHT_ONLY and not is_hht(request):
         raise HTTPException(status.HTTP_403_FORBIDDEN, HHT_ONLY_MSG)
+    if is_hht(request):
+        require_client_version(request.headers.get("x-app-version"))
 
 
 def hht(perm: str | None = None):
@@ -161,8 +182,19 @@ def audit(db: Session, p: Principal | None, action: str, entity: str | None = No
         ip=request.client.host if request and request.client else None))
 
 
+def pin_in_use(db: Session, plant: str | None, pin: str, except_user_pk: int | None = None) -> models.User | None:
+    """Another active supervisor of the same plant (or central) already has this PIN -> it would be ambiguous."""
+    q = db.query(models.User).filter(models.User.supervisor_allowed == True, models.User.active == True)
+    if plant:
+        q = q.filter((models.User.plant_code == plant) | (models.User.plant_code.is_(None)))
+    for u in q.all():
+        if u.id != except_user_pk and u.supervisor_pin_hash and check_pw(pin, u.supervisor_pin_hash):
+            return u
+    return None
+
+
 def verify_supervisor_pin(db: Session, plant: str | None, pin: str) -> models.User | None:
-    """Return the supervisor user whose PIN matches (same plant or central)."""
+    """Return the supervisor user whose PIN matches (same plant or central). PINs are unique per plant (see pin_in_use)."""
     q = db.query(models.User).filter(models.User.supervisor_allowed == True, models.User.active == True)
     if plant:
         q = q.filter((models.User.plant_code == plant) | (models.User.plant_code.is_(None)))

@@ -211,8 +211,10 @@ def purge_old_events(db: Session, days: int | None = None) -> int:
 
 
 @router.get("/pull")
-def pull(since: datetime | None = None, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+def pull(request: Request, since: datetime | None = None, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
     """Reference cache for the HHT. `since` = last pull time -> delta of pallets; masters always full (small)."""
+    from ..security import require_client_version
+    require_client_version(request.headers.get("x-app-version"))
     if not p.plant:
         raise HTTPException(400, "Only plant users pull")
     pq = db.query(models.Pallet).filter((models.Pallet.home_plant == p.plant) | (models.Pallet.location_plant == p.plant))

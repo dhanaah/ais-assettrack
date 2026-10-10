@@ -36,6 +36,7 @@ tbody tr:hover td{background:rgba(255,255,255,.45)}
 .AVAILABLE,.APPLIED,.DONE,.OK,.CONFIRMED,.PDI_OK,.EMPTY,.AUTO_CORRECTED{background:var(--ok-2);color:var(--ok)}.AT_CUSTOMER,.OPEN,.IN_GATE,.LOADED,.CUSTOMER,.STOCK_TRANSFER,.PICKED,.SENT{background:var(--info-2);color:var(--accent-d)}
 .ALLOCATED,.IN_RETURN,.IN_TRANSIT,.IN_WIP,.RESERVED,.PDI_PENDING,.PDI_TXN_PENDING,.EMPTY_RETURN,.ALERT,.READY,.SO_PENDING,.CHALLANED,.APPROVED,.PENDING_VERIFICATION,.RECEIVING,.PENDING,.EXCEPTION{background:var(--amber-2);color:var(--amber)}
 .HELD,.DAMAGED,.REJECTED,.REJECT,.MISSING,.BLOCKED,.CANCELLED,.FAILED,.OVERDUE,.FOREIGN,.SHORT,.UNKNOWN,.CROSS_CUSTOMER,.EXCESS{background:var(--warn-2);color:var(--warn)}
+.ESCALATION{background:var(--warn-2);color:var(--warn)}.REMINDER,.DRY{background:var(--info-2);color:var(--accent-d)}
 .DISCONTINUED,.CLOSED,.DISPATCHED,.PALLET_ONLY,.UNDER_REPAIR,.SYSTEM{background:var(--grey-2);color:#334155}.WEB{background:var(--info-2);color:var(--accent-d)}.HHT{background:var(--ok-2);color:var(--ok)}.EXT{background:rgba(124,58,237,.16);color:#6d28d9}
 .kpis{display:flex;flex-wrap:nowrap;gap:10px;margin-bottom:16px;overflow-x:auto;padding-bottom:2px}.kpis>.kpi{flex:1 1 0;min-width:96px}
 .kpi{position:relative;overflow:hidden;z-index:0;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--edge);border-radius:14px;padding:10px 12px 10px 14px;box-shadow:var(--shadow)}
@@ -60,6 +61,16 @@ pre{background:rgba(255,255,255,.6);padding:10px;border-radius:10px;white-space:
 @media (prefers-color-scheme:dark){.dd .menu{background:rgba(17,24,39,.95)}}
 .chk{display:flex!important;flex-direction:row!important;justify-content:flex-start!important;align-items:center;gap:8px;font-weight:400;margin:4px 0;text-transform:none;letter-spacing:0;font-size:13px}.chk input{width:auto!important;flex:0 0 auto;margin:0}
 input[type=checkbox],input[type=radio]{min-width:0;width:16px;height:16px;padding:0;accent-color:#1e3a8a}
+
+:root{--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;--s8:#e34948;--bad:#e34948;--good:#1baf7a;--surface:#fcfcfb;--grid:rgba(15,23,42,.10)}
+@media (prefers-color-scheme:dark){:root{--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;--bad:#e66767;--good:#199e70;--surface:#1a1a19;--grid:rgba(255,255,255,.12)}}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:16px;margin-bottom:16px}.grid2 .card{margin-bottom:0}
+.viz{position:relative}.viz svg{width:100%;height:auto;display:block;font-family:Inter,system-ui,sans-serif}.viz .lg{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--mute);margin:4px 0 2px}.viz .lg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.viz .tip{position:absolute;pointer-events:none;background:rgba(15,23,42,.92);color:#fff;font-size:12px;padding:6px 9px;border-radius:8px;display:none;z-index:3;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.viz .hd{display:flex;justify-content:space-between;align-items:baseline}.viz .hd h2{margin:0 0 6px}.viz .hd button{font-size:11px;padding:3px 9px}
+.viz text{fill:var(--mute);font-size:11px}.viz text.v{fill:var(--fg);font-weight:600}.viz .ax{stroke:var(--grid);stroke-width:1}
+.kpi.bad::before{background:var(--bad)}.kpi.bad b{color:var(--bad)}.kpi.good::before{background:var(--good)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}.toolbar .sp{flex:1}
 .rolebox{display:flex;flex-wrap:wrap;gap:8px}.rolechip{border:1px solid var(--edge);border-radius:999px;padding:6px 12px!important;background:var(--glass);cursor:pointer}.rolechip:has(input:checked){background:linear-gradient(90deg,#1e3a8a,#dc2626);color:#fff;border-color:transparent}
 </style>
 </head>
@@ -79,11 +90,11 @@ function logout(){T=null;localStorage.removeItem('tok');ME=null;render()}
 function pill(s){return h('span',{className:'pill '+s},s||'')}
 function fmt(d){return d?String(d).replace('T',' ').slice(0,16):''}
 function table(cols,rows,act){const t=h('table',{},h('thead',{},h('tr',{},cols.map(c=>h('th',{},c[0])),act?h('th',{},''):'')));const tb=h('tbody');rows.forEach(r=>tb.append(h('tr',{},cols.map(c=>h('td',{},typeof c[1]==='function'?c[1](r):(r[c[1]]??''))),act?h('td',{},act(r)):'')));t.append(tb);return h('div',{className:'tw'},t)}
-function field(lbl,name,val='',type='text',extra={}){const i=type==='select'?h('select',{name,...extra},extra.opts.map(o=>h('option',{value:o[0],selected:o[0]==val},o[1]))):h('input',{name,value:val,type,...extra});return h('label',{},lbl,i)}
+function field(lbl,name,val='',type='text',extra={}){const {opts,...rest}=extra;const i=type==='select'?h('select',{name,...rest},(opts||[]).map(o=>h('option',{value:o[0],selected:o[0]==val},o[1]))):h('input',{name,value:val,type,...rest});return h('label',{},lbl,i)}
 function formData(f){const o={};new FormData(f).forEach((v,k)=>{o[k]=v});f.querySelectorAll('input[type=checkbox]').forEach(c=>o[c.name]=c.checked);return o}
 
-const PAGES=[['dash','Dashboard',null],['pallets','Pallets',null],['picklists','Pick Lists',null],['pdi','PDI Status',null],['stock','WMS Stock & LPN',null],['moves','Zones (in plant)',null],['misses','Missed Scans',null],['position','Plant Position',['REPORTS_PLANT','REPORTS_ALL']],['live','Live Transactions',['REPORTS_PLANT','REPORTS_ALL']],['slips','Return Slips',null],['blankets','Blanket & Sub-inv',null],['bench','Dispatch Bench link',['INTEGRATION_CONFIG','REPORTS_ALL']],['masters','Masters','GLOBAL_MASTERS'],['users','Users',['PLANT_USERS_ADMIN','INTEGRATION_CONFIG','USER_ADMIN']],['import','Import','GLOBAL_MASTERS'],['sync','Sync Monitor',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN']],['reports','Reports',null],['audit','Audit',['AUDIT_LOG']],['activity','Activity',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN','REPORTS_PLANT']]];
-const GROUPS=[['Dashboard',['dash']],['Operations',['picklists','pdi','slips','pallets']],['Stock & Movement',['stock','moves','misses']],['Monitor',['position','live']],['Masters',['masters','blankets','users','import','bench']],['Audit',['activity','sync','reports','audit']]];
+const PAGES=[['dash','Dashboard',null],['reminders','Customer Reminders',['REPORTS_PLANT','REPORTS_ALL']],['pallets','Pallets',null],['picklists','Pick Lists',null],['pdi','PDI Status',null],['stock','WMS Stock & LPN',null],['moves','Zones (in plant)',null],['misses','Missed Scans',null],['position','Plant Position',['REPORTS_PLANT','REPORTS_ALL']],['live','Live Transactions',['REPORTS_PLANT','REPORTS_ALL']],['slips','Return Slips',null],['blankets','Blanket & Sub-inv',null],['bench','Dispatch Bench link',['INTEGRATION_CONFIG','REPORTS_ALL']],['masters','Masters','GLOBAL_MASTERS'],['users','Users',['PLANT_USERS_ADMIN','INTEGRATION_CONFIG','USER_ADMIN']],['import','Import','GLOBAL_MASTERS'],['sync','Sync Monitor',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN']],['reports','Reports',null],['audit','Audit',['AUDIT_LOG']],['activity','Activity',['AUDIT_LOG','REPORTS_ALL','PLANT_USERS_ADMIN','REPORTS_PLANT']]];
+const GROUPS=[['Dashboard',['dash']],['Operations',['picklists','pdi','slips','pallets']],['Stock & Movement',['stock','moves','misses']],['Monitor',['position','live','reminders']],['Masters',['masters','blankets','users','import','bench']],['Audit',['activity','sync','reports','audit']]];
 function can(p){if(!p)return true;return (Array.isArray(p)?p:[p]).some(x=>ME.perms.includes(x))}
 
 async function render(){
@@ -100,21 +111,84 @@ async function render(){
   const cur=items.find(p=>p[0]===PAGE);const dd=h('div',{className:'dd'+(cur?' on':'')},h('button',{className:cur?'on':'',on:{click:e=>{e.stopPropagation();document.querySelectorAll('.dd.open').forEach(x=>x!==dd&&x.classList.remove('open'));dd.classList.toggle('open')}}},g+(cur?' · '+cur[1]:''),h('span',{className:'car'},'▾')),h('div',{className:'menu'},items.map(p=>h('button',{className:PAGE===p[0]?'sel':'',on:{click:()=>{PAGE=p[0];render()}}},p[1]))));nav.append(dd)});
  document.body.onclick=()=>document.querySelectorAll('.dd.open').forEach(x=>x.classList.remove('open'));
  m.append(h('div',{className:'muted',style:'margin:-4px 0 10px;font-size:12px'},'📱 Scans, movements, PDI, gate and return operations are done on the HHT only. This web is for masters, uploads, release & challan, reports, live view and monitoring.'));
- try{await ({dash,pallets,picklists,slips,masters,users,imp,sync,reports,audit,activity,pdi,stock,moves,misses,blankets,position,live,bench})[PAGE==='import'?'imp':PAGE](m)}catch(x){m.append(h('div',{className:'card'},'Error: '+x.message))}
+ try{await ({dash,pallets,picklists,slips,masters,users,imp,sync,reports,audit,activity,pdi,stock,moves,misses,blankets,position,live,bench,reminders})[PAGE==='import'?'imp':PAGE](m)}catch(x){m.append(h('div',{className:'card'},'Error: '+x.message))}
 }
 $('#logout').onclick=logout;
 
+// ---------- charts (inline SVG, no library; palette & marks per the AIS viz spec)
+const VZ=['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'].map(v=>`var(${v})`);
+const svg=(t,a={},...c)=>{const e=document.createElementNS('http://www.w3.org/2000/svg',t);for(const k in a)e.setAttribute(k,a[k]);c.flat().forEach(x=>e.append(x));return e};
+const nice=v=>{if(!v)return 1;const p=Math.pow(10,Math.floor(Math.log10(v)));const f=v/p;return (f<=1?1:f<=2?2:f<=5?5:10)*p};const niceMax=(v,t=4)=>nice(Math.max(v,1)/t)*t;
+const fmtN=v=>v>=1000?(v/1000).toFixed(v>=10000?0:1)+'K':String(v);
+function tableView(rows,x,series){return table([[x.label||'',x.key],...series.map(sr=>[sr.label,sr.key])],rows)}
+/** Column chart. series: [{key,label,color}] ; stacked or grouped. Hover tooltip, legend for 2+ series, table toggle. */
+function barChart({title,rows,x,series,stacked=false,height=230,note}){
+ const W=640,H=height,ml=40,mr=12,mt=10,mb=34,iw=W-ml-mr,ih=H-mt-mb;
+ const box=h('div',{className:'card viz'});const hd=h('div',{className:'hd'},h('h2',{},title));const body=h('div');let tbl=false;
+ const tog=h('button',{className:'s',on:{click:()=>{tbl=!tbl;draw()}}},'table');hd.append(tog);box.append(hd,body);
+ const tip=h('div',{className:'tip'});box.append(tip);
+ function draw(){body.innerHTML='';if(tbl){body.append(tableView(rows,x,series));return}
+  if(!rows.length){body.append(h('p',{className:'muted'},'No data yet'));return}
+  const tot=r=>stacked?series.reduce((a,sr)=>a+(+r[sr.key]||0),0):Math.max(...series.map(sr=>+r[sr.key]||0));
+  const ticks=4;const max=niceMax(Math.max(...rows.map(tot)),ticks);const sv=svg('svg',{viewBox:`0 0 ${W} ${H}`});
+  for(let i=0;i<=ticks;i++){const y=mt+ih-ih*i/ticks;sv.append(svg('line',{x1:ml,x2:W-mr,y1:y,y2:y,class:'ax'}),svg('text',{x:ml-6,y:y+4,'text-anchor':'end'},fmtN(Math.round(max*i/ticks))))}
+  const bw=iw/rows.length,n=stacked?1:series.length,gap=2,thick=Math.min(24,(bw*0.7-gap*(n-1))/n);
+  rows.forEach((r,i)=>{const cx=ml+bw*i+bw/2;const grp=thick*n+gap*(n-1);let y0=mt+ih;
+   series.forEach((sr,j)=>{const v=+r[sr.key]||0;const hh=ih*v/max;if(stacked){const y=y0-hh;if(v>0)sv.append(svg('path',{d:roundTop(cx-thick/2,y,thick,Math.max(0,hh-(j<series.length-1&&hh>gap?gap:0)),j===lastIdx(r)?4:0),fill:sr.color||VZ[j]}));y0=y}
+    else{const bx=cx-grp/2+j*(thick+gap);if(v>0)sv.append(svg('path',{d:roundTop(bx,mt+ih-hh,thick,hh,4),fill:sr.color||VZ[j]}))}});
+   const t=tot(r);if(stacked&&t>0)sv.append(svg('text',{x:cx,y:y0-4,'text-anchor':'middle',class:'v'},fmtN(t)));if(!stacked&&series.length===1&&t>0)sv.append(svg('text',{x:cx,y:mt+ih-ih*t/max-4,'text-anchor':'middle',class:'v'},t));
+   const lab=String(r[x.key]??'');sv.append(svg('text',{x:cx,y:H-mb+16,'text-anchor':'middle'},lab.length>9?lab.slice(0,8)+'…':lab));
+   const hit=svg('rect',{x:ml+bw*i,y:mt,width:bw,height:ih,fill:'transparent'});
+   hit.addEventListener('mousemove',e=>{tip.style.display='block';const b=box.getBoundingClientRect();tip.style.left=(e.clientX-b.left+12)+'px';tip.style.top=(e.clientY-b.top-10)+'px';tip.innerHTML=`<b>${lab}</b><br>`+series.map((sr,j)=>`<span style="display:inline-block;width:8px;height:8px;background:${sr.color||VZ[j]};border-radius:2px;margin-right:5px"></span>${sr.label}: <b>${r[sr.key]??0}</b>`).join('<br>')+(r._extra?'<br>'+r._extra:'')});
+   hit.addEventListener('mouseleave',()=>tip.style.display='none');sv.append(hit)});
+  function lastIdx(r){for(let j=series.length-1;j>=0;j--)if(+r[series[j].key]>0)return j;return -1}
+  body.append(sv);if(series.length>1)body.append(h('div',{className:'lg'},series.map((sr,j)=>h('span',{},h('i',{style:'background:'+(sr.color||VZ[j])}),sr.label))));if(note)body.append(h('div',{className:'muted'},note))}
+ draw();return box}
+function roundTop(x,y,w,hh,r){r=Math.min(r,hh/2,w/2);if(r<=0)return `M${x},${y}h${w}v${hh}h${-w}z`;return `M${x},${y+r}a${r},${r} 0 0 1 ${r},${-r}h${w-2*r}a${r},${r} 0 0 1 ${r},${r}v${hh-r}h${-w}z`}
+/** Line chart: 2px lines, >=8px end markers with surface ring, crosshair tooltip. */
+function lineChart({title,rows,x,series,height=230,note}){
+ const W=640,H=height,ml=40,mr=14,mt=12,mb=34,iw=W-ml-mr,ih=H-mt-mb;
+ const box=h('div',{className:'card viz'});const hd=h('div',{className:'hd'},h('h2',{},title));const body=h('div');let tbl=false;
+ hd.append(h('button',{className:'s',on:{click:()=>{tbl=!tbl;draw()}}},'table'));box.append(hd,body);const tip=h('div',{className:'tip'});box.append(tip);
+ function draw(){body.innerHTML='';if(tbl){body.append(tableView(rows,x,series));return}
+  if(rows.length<2){body.append(h('p',{className:'muted'},'Not enough data yet'));return}
+  const max=niceMax(Math.max(1,...rows.flatMap(r=>series.map(sr=>+r[sr.key]||0))));const sv=svg('svg',{viewBox:`0 0 ${W} ${H}`});
+  for(let i=0;i<=4;i++){const y=mt+ih-ih*i/4;sv.append(svg('line',{x1:ml,x2:W-mr,y1:y,y2:y,class:'ax'}),svg('text',{x:ml-6,y:y+4,'text-anchor':'end'},fmtN(Math.round(max*i/4))))}
+  const px=i=>ml+iw*i/(rows.length-1),py=v=>mt+ih-ih*(v/max);
+  series.forEach((sr,j)=>{const col=sr.color||VZ[j];sv.append(svg('path',{d:rows.map((r,i)=>(i?'L':'M')+px(i)+','+py(+r[sr.key]||0)).join(''),fill:'none',stroke:col,'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+   const last=rows.length-1;sv.append(svg('circle',{cx:px(last),cy:py(+rows[last][sr.key]||0),r:5,fill:col,stroke:'var(--surface)','stroke-width':2}));
+   sv.append(svg('text',{x:px(last)-4,y:py(+rows[last][sr.key]||0)-9,'text-anchor':'end',class:'v'},rows[last][sr.key]??0))});
+  rows.forEach((r,i)=>{const lab=String(r[x.key]??'');if(i%Math.ceil(rows.length/8)===0||i===rows.length-1)sv.append(svg('text',{x:px(i),y:H-mb+16,'text-anchor':'middle'},lab));
+   const hit=svg('rect',{x:px(i)-iw/(rows.length-1)/2,y:mt,width:iw/(rows.length-1),height:ih,fill:'transparent'});const cross=svg('line',{x1:px(i),x2:px(i),y1:mt,y2:mt+ih,stroke:'var(--grid)','stroke-width':1,style:'display:none'});sv.append(cross);
+   hit.addEventListener('mousemove',e=>{cross.style.display='';tip.style.display='block';const b=box.getBoundingClientRect();tip.style.left=(e.clientX-b.left+12)+'px';tip.style.top=(e.clientY-b.top-10)+'px';tip.innerHTML=`<b>${lab}</b><br>`+series.map((sr,j)=>`<span style="display:inline-block;width:8px;height:8px;background:${sr.color||VZ[j]};border-radius:2px;margin-right:5px"></span>${sr.label}: <b>${r[sr.key]??0}</b>`).join('<br>')});
+   hit.addEventListener('mouseleave',()=>{cross.style.display='none';tip.style.display='none'});sv.append(hit)});
+  body.append(sv);if(series.length>1)body.append(h('div',{className:'lg'},series.map((sr,j)=>h('span',{},h('i',{style:'background:'+(sr.color||VZ[j])}),sr.label))));if(note)body.append(h('div',{className:'muted'},note))}
+ draw();return box}
+const xlsBtn=(name,plant,label)=>h('button',{className:'s',on:{click:()=>window.open(`${API}/reports/export/${name}.xlsx?tok=${T}${plant?'&plant='+plant:''}`)}},'⬇ '+(label||name));
+
+let DASH={plant:'',weeks:12};
 async function dash(m){
- if(ME.plant){try{const [z,w,ms]=await Promise.all([api('/zones'),api('/wms/status'),api('/scan-misses/summary')]);const open=ms.reduce((a,x)=>a+x.open,0);
-  m.append(h('div',{className:'kpis'},...Object.entries(z.zones).map(([k,v])=>h('div',{className:'kpi'},h('b',{},(v.LOADED||0)+' / '+(v.EMPTY||0)),h('span',{},k+' · LOADED / EMPTY'))),
-   h('div',{className:'kpi',style:w.stale?'border:2px solid var(--warn)':''},h('b',{},w.age_hours==null?'—':w.age_hours+' h'),h('span',{},'WMS STOCK AGE'+(w.stale?' · UPLOAD NOW':''))),
-   h('div',{className:'kpi',style:open?'border:2px solid var(--warn)':''},h('b',{},open),h('span',{},'MISSED SCANS OPEN'))));
-  if(z.yard_loaded_violations)msg(z.yard_loaded_violations+' LOADED pallet(s) shown in Pallet Yard - check',1)}catch(x){}}
- const av=await api('/reports/availability'),hold=await api('/reports/customer-holding'),tot={};
- for(const p in av)for(const s in av[p])tot[s]=(tot[s]||0)+av[p][s];
- m.append(h('div',{className:'kpis'},['AVAILABLE','ALLOCATED','AT_CUSTOMER','IN_RETURN','IN_TRANSIT','HELD','IN_WIP','DAMAGED'].map(s=>h('div',{className:'kpi'},h('b',{},tot[s]||0),h('span',{},s.replace('_',' '))))));
- m.append(h('div',{className:'card'},h('h2',{},'Plant-wise availability'),table([['Plant','plant'],...['AVAILABLE','ALLOCATED','AT_CUSTOMER','IN_RETURN','HELD','HELD_FROM_OTHER','DAMAGED','UNDER_REPAIR','DISCONTINUED'].map(s=>[s.replace(/_/g,' '),r=>r[s]||''])],Object.keys(av).sort().map(p=>({plant:p,...av[p]})))));
- m.append(h('div',{className:'card'},h('h2',{},'Customer holding & aging'),table([['Plant','plant'],['Customer','customer'],['Name','name'],['Qty','qty'],['0-30','b0_30'],['31-60','b31_60'],['61+','b61'],['Max days','max_days'],['Limit','limit_days'],['',r=>r.overdue?pill('OVERDUE'):'']],hold)));
+ const plants=ME.plant?[]:await api('/plants');
+ const tb=h('div',{className:'toolbar'});
+ if(!ME.plant)tb.append(field('Plant','plant',DASH.plant,'select',{opts:[['','All plants'],...plants.map(x=>[x.code,x.code+' '+x.name])],on:{change:e=>{DASH.plant=e.target.value;render()}}}));
+ tb.append(field('Trend window','weeks',DASH.weeks,'select',{opts:[[8,'8 weeks'],[12,'12 weeks'],[26,'26 weeks'],[52,'52 weeks']],on:{change:e=>{DASH.weeks=+e.target.value;render()}}}),h('span',{className:'sp'}),
+  h('span',{className:'muted'},'Export: '),xlsBtn('pallets',DASH.plant,'Pallets'),xlsBtn('customer-holding',DASH.plant,'Holding'),xlsBtn('overdue',DASH.plant,'Overdue'),xlsBtn('missed-scans',DASH.plant,'Missed scans'),xlsBtn('movements',DASH.plant,'Movements'));
+ m.append(tb);
+ const d=await api(`/dashboard?weeks=${DASH.weeks}${DASH.plant?'&plant='+DASH.plant:''}`);const k=d.kpis;
+ const kpi=(v,l,cls)=>h('div',{className:'kpi'+(cls?' '+cls:'')},h('b',{},v),h('span',{},l));
+ m.append(h('div',{className:'kpis'},kpi(k.total,'PALLETS'+(k.plants>1?' · '+k.plants+' PLANTS':'')),kpi(k.home,'AT HOME PLANT','good'),kpi(k.at_customer,'AT CUSTOMERS'),kpi(k.overdue,'OVERDUE AT CUSTOMERS',k.overdue?'bad':''),
+  kpi(k.away_plants+k.in_transit,'AT OTHER PLANTS / IN TRANSIT'),kpi(k.damaged,'DAMAGED / REPAIR',k.damaged?'bad':''),kpi(k.open_misses,'MISSED SCANS OPEN',k.open_misses?'bad':''),kpi(k.open_picklists,'OPEN PICK LISTS'),kpi(k.open_slips,'OPEN RETURN SLIPS'),
+  ...(k.wms?[kpi(k.wms.age_hours==null?'never':k.wms.age_hours+' h','WMS STOCK AGE',k.wms.stale?'bad':'good')]:[])));
+ if(k.wms&&k.wms.stale)msg('WMS stock is stale - upload the latest stock before releasing pick lists',1);
+ const g=h('div',{className:'grid2'});
+ g.append(barChart({title:'Where are the pallets',rows:d.position,x:{key:'plant',label:'Plant'},stacked:true,series:[{key:'home',label:'At home'},{key:'at_customer',label:'At customers'},{key:'other_plant',label:'At other plants'},{key:'in_transit',label:'In transit'},{key:'damaged',label:'Damaged / repair',color:'var(--s8)'}]}));
+ g.append(barChart({title:'Customer holding by age (top 12)',rows:d.holding.map(r=>({...r,label:(r.name||r.customer).slice(0,14),_extra:`overdue <b>${r.overdue}</b> · limit ${r.limit} d · max ${r.max_days} d`})),x:{key:'label',label:'Customer'},stacked:true,series:[{key:'b0_30',label:'0-30 days'},{key:'b31_60',label:'31-60 days',color:'var(--s4)'},{key:'b61',label:'61+ days',color:'var(--s8)'}],note:'Hover a bar for the overdue count against that customer\'s holding limit.'}));
+ g.append(barChart({title:'Dispatched vs returned per week',rows:d.trend,x:{key:'week',label:'Week of'},series:[{key:'dispatched',label:'Dispatched'},{key:'returned',label:'Returned',color:'var(--s3)'}]}));
+ g.append(barChart({title:'Pallet turnaround (days) by month of return',rows:d.turnaround.map(r=>({...r,_extra:`${r.cycles} cycles · longest ${r.max_days} d`})),x:{key:'month',label:'Month'},series:[{key:'avg_days',label:'Average days out'}],note:'Average days from OUT gate to return, for pallets that came back that month.'}));
+ g.append(lineChart({title:'Missed scans per week',rows:d.misses_trend,x:{key:'week',label:'Week of'},series:[{key:'count',label:'Missed scans',color:'var(--s2)'}]}));
+ const side=h('div',{className:'card'},h('h2',{},'Who is missing scans'),table([['Responsible role','role'],['Open','open'],['Total (window)','total']],d.misses_by_role),h('h3',{},'Open pick lists by status'),table([['Status',r=>pill(r.status)],['Count','count']],d.picklists));
+ g.append(side);m.append(g);
+ m.append(h('div',{className:'muted'},`As of ${fmt(d.as_of)} UTC · ${DASH.plant||ME.plant||'all plants'} · trends over the last ${DASH.weeks} weeks`));
 }
 
 async function pallets(m){
@@ -291,14 +365,30 @@ async function imp(m){
  m.append(h('div',{className:'card'},h('h2',{},'Import masters from Excel'),h('p',{className:'muted'},'Use Pallet_Tracking_Master_Template. Sheets: 1_Plants, 3_Users, 4_Customers, 5_Transporters, 6_Pallets, 7_Tags, 8_Blanket_Orders, 9_SubInv_Rules. Existing records are updated by code; the EXAMPLE row is skipped.'),f,out))}
 
 async function sync(m){
- const r=await api('/sync/monitor'),ig=await api('/reports/integration');
- m.append(h('div',{className:'card'},h('h2',{},'Devices'),table([['Device','device_id'],['Plant','plant'],['Last seen',r=>fmt(r.last_seen)],['Last user','last_user'],['App','app_version'],['Pending (reported)','pending'],['Blocked',r=>r.blocked?pill('REJECTED'):'']],r.devices,d=>can('PLANT_USERS_ADMIN')?h('button',{className:d.blocked?'s':'d',on:{click:async()=>{await api(`/sync/devices/${d.device_id}/block?blocked=${!d.blocked}`,{method:'POST'});render()}}},d.blocked?'Unblock':'Block'):'')));
+ const r=await api('/sync/monitor'),ig=await api('/reports/integration');const HEALTH=await fetch(API+'/health').then(x=>x.json()).catch(()=>({}));const vlt=(a,b)=>{const p=x=>String(x).split('.').map(n=>+n||0);const A=p(a),B=p(b);for(let i=0;i<3;i++){if((A[i]||0)<(B[i]||0))return true;if((A[i]||0)>(B[i]||0))return false}return false};
+ m.append(h('div',{className:'card'},h('h2',{},'Devices'),table([['Device','device_id'],['Plant','plant'],['Last seen',r=>fmt(r.last_seen)],['Last user','last_user'],['App',r=>h('span',{},r.app_version||'',' ',(HEALTH.min_client&&r.app_version&&vlt(r.app_version,HEALTH.min_client))?h('span',{className:'pill REJECTED'},'UPDATE'):'')],['Pending (reported)','pending'],['Status',r=>r.blocked?pill('BLOCKED'):(!r.last_seen||Date.now()-new Date(r.last_seen+'Z').getTime()>15*60e3)?h('span',{className:'pill HELD'},'OFFLINE'):h('span',{className:'pill AVAILABLE'},'ONLINE')]],r.devices,d=>can('PLANT_USERS_ADMIN')?h('button',{className:d.blocked?'s':'d',on:{click:async()=>{await api(`/sync/devices/${d.device_id}/block?blocked=${!d.blocked}`,{method:'POST'});render()}}},d.blocked?'Unblock':'Block'):'')));
  m.append(h('div',{className:'card'},h('h2',{},'Rejected / exception events'),table([['Time',r=>fmt(r.ts)],['Device','device'],['User','user'],['Plant','plant'],['Type','type'],['Status',r=>pill(r.status)],['Result','result'],['Payload','payload']],r.exceptions)));
  m.append(h('div',{className:'card'},h('h2',{},'Integration (mode: '+ig.mode+')'),can('INTEGRATION_CONFIG')?h('button',{className:'s',on:{click:async()=>{const x=await api('/reports/integration/retry',{method:'POST'});msg(`Retried: ${x.done} done, ${x.failed} failed`);render()}}},'Retry pending now'):'',h('h3',{},'Retry queue'),table([['Kind','kind'],['Ref','ref'],['Created',r=>fmt(r.created)],['Attempts','attempts'],['Status',r=>pill(r.status)],['Last error','last_error']],ig.retry_queue),h('h3',{},'Recent calls'),table([['Time',r=>fmt(r.ts)],['System','system'],['Op','op'],['Ref','ref'],['OK',r=>r.ok?'✓':'✗'],['Message','message']],ig.log)));
 }
 
+async function reminders(m){
+ const r=await api('/reminders'+(ME.plant?'':''));const canRun=can(['INTEGRATION_CONFIG','PLANT_USERS_ADMIN','LOGISTICS_APPROVE']);
+ m.append(h('div',{className:'kpis'},h('div',{className:'kpi '+(r.smtp.configured?'good':'bad')},h('b',{},r.smtp.configured?'ON':'DRY RUN'),h('span',{},r.smtp.configured?'EMAIL VIA '+r.smtp.host:'SMTP NOT SET - EMAILS PREPARED, NOT SENT')),h('div',{className:'kpi'},h('b',{},r.items.length),h('span',{},'CUSTOMERS WITH OVERDUE PALLETS')),h('div',{className:'kpi'},h('b',{},r.items.filter(x=>x.due).length),h('span',{},'DUE TO BE SENT NOW')),h('div',{className:'kpi'},h('b',{},r.items.filter(x=>x.kind==='ESCALATION').length),h('span',{},'ESCALATIONS')),h('div',{className:'kpi'},h('b',{},r.last_run?fmt(r.last_run):'—'),h('span',{},'LAST DAILY RUN · '+String(r.smtp.run_hour).padStart(2,'0')+':00'))));
+ const bar=h('div',{className:'toolbar'},canRun?h('button',{className:'p',on:{click:async()=>{try{const x=await api('/reminders/run',{method:'POST'});msg(`Sent ${x.sent} · dry ${x.dry} · skipped ${x.skipped} · failed ${x.failed}`,x.failed>0);render()}catch(e){msg(e.message,1)}}}},'Send due reminders now'):'',
+  canRun?h('button',{className:'s',on:{click:async()=>{if(!confirm('Send to EVERY customer with overdue pallets, ignoring the reminder interval?'))return;try{const x=await api('/reminders/run?force=true',{method:'POST'});msg(`Sent ${x.sent} · dry ${x.dry} · skipped ${x.skipped} · failed ${x.failed}`,x.failed>0);render()}catch(e){msg(e.message,1)}}}},'Force send all'):'',
+  h('span',{className:'sp'}),h('span',{className:'muted'},'Settings: customer master (email to / cc, holding limit, reminder every N days, escalation days) · SMTP in settings.env'));
+ m.append(bar);
+ m.append(h('div',{className:'card'},h('h2',{},'What would be sent'),table([['Plant','plant'],['Customer','customer'],['Name','name'],['Kind',x=>pill(x.kind)],['Overdue / total',x=>`${x.overdue} / ${x.total}`],['Limit d','limit'],['Every d','every'],['To',x=>x.to.join('; ')||h('span',{className:'pill REJECTED'},'NO EMAIL')],['Cc',x=>x.cc.join('; ')],['Last sent',x=>fmt(x.last_sent)],['Due now',x=>x.due?'✓':'']],r.items,x=>h('button',{className:'s',on:{click:()=>window.open(`${API}/reminders/preview/${x.plant}/${x.customer}?tok=${T}`)}},'Preview'))));
+ const lg=await api('/reminders/log');
+ m.append(h('div',{className:'card'},h('h2',{},'Email log'),table([['Time',x=>fmt(x.ts)],['Plant','plant_code'],['Customer','customer_code'],['Kind','kind'],['To','to'],['Pallets',x=>`${x.overdue} / ${x.pallets}`],['Status',x=>pill(x.status)],['Note','error']],lg,x=>h('button',{className:'s',on:{click:()=>window.open(`${API}/reminders/log/${x.id}?tok=${T}`)}},'View'))));
+}
+
 async function reports(m){
  const ov=await api('/reports/overdue'),ts=await api('/reports/tag-stock'),th=await api('/reports/tag-history');
+ const plant=ME.plant||'';const pl=ME.plant?null:(await api('/plants'));let dp=ME.plant||(pl&&pl[0]?pl[0].code:'');
+ const tb=h('div',{className:'toolbar'},h('span',{className:'muted'},'Excel: '),...[['pallets','Pallets'],['customer-holding','Holding'],['overdue','Overdue'],['plant-position','Position'],['missed-scans','Missed scans'],['picklists','Pick lists'],['return-slips','Return slips'],['lpn-stock','LPN stock'],['movements','Movements 90d']].map(([n,l])=>h('button',{className:'s',on:{click:()=>window.open(`${API}/reports/export/${n}.xlsx?tok=${T}${plant?'&plant='+plant:''}`)}},'⬇ '+l)),h('span',{className:'sp'}),
+  pl?field('Plant','dp',dp,'select',{opts:pl.map(x=>[x.code,x.code]),on:{change:e=>dp=e.target.value}}):'',h('button',{className:'p',on:{click:()=>window.open(`${API}/reports/daily-exceptions?tok=${T}&plant=${dp}`)}},'🖨 Daily exception report'));
+ m.append(tb);
  m.append(h('div',{className:'card'},h('h2',{},'Overdue pallets at customers'),table([['Pallet','pallet_no'],['Plant','plant'],['Customer','customer'],['Name','customer_name'],['Days','days'],['Limit','limit'],['Challan','challan'],['Chargeable',r=>r.chargeable?'Y':'N']],ov)));
  m.append(h('div',{className:'card'},h('h2',{},'Tag stock'),table([['Plant','plant'],['In stock','IN_STOCK'],['Assigned','ASSIGNED'],['Retired','RETIRED']],Object.entries(ts).map(([k,v])=>({plant:k,...v})))));
  m.append(h('div',{className:'card'},h('h2',{},'Tag change history'),table([['Time',r=>fmt(r.ts)],['Plant','plant'],['Pallet','pallet_no'],['Old tag','old_tag'],['New tag','new_tag'],['Reason','reason'],['User','user']],th)));

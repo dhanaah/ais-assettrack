@@ -282,6 +282,13 @@ def run_retries(db: Session, max_attempts: int = 50) -> dict:
         purge_old_events(db)
     except Exception as e:
         _log(db, "APP", "PURGE_EVENTS", None, False, str(e)[:200])
+    try:
+        from . import reminders
+        r = reminders.daily_tick(db)
+        if r:
+            _log(db, "MAIL", "REMINDERS", None, r["failed"] == 0, str(r)[:200])
+    except Exception as e:
+        _log(db, "MAIL", "REMINDERS", None, False, str(e)[:200])
     for q in db.query(RetryQueue).filter_by(status="PENDING").all():
         q.attempts += 1
         ok = False; msg = ""

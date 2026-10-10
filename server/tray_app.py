@@ -21,6 +21,11 @@ LOG = os.path.join(BASE_DIR, "assettrack_server.log")
 
 def log(msg):
     try:
+        if os.path.exists(LOG) and os.path.getsize(LOG) > 5 * 1024 * 1024:      # keep the log small: rotate at 5 MB
+            try:
+                os.replace(LOG, LOG + ".1")
+            except OSError:
+                pass
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.datetime.now():%Y-%m-%d %H:%M:%S}] {msg}\n")
     except Exception:
