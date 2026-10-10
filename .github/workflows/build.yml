@@ -77,16 +77,19 @@ jobs:
         run: |
           V=$(node -p "require('./app.json').expo.version")
           cp android/app/build/outputs/apk/release/app-release.apk ../AIS_AssetTrack_HHT_v${V}.apk
+          echo "V=$V" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with: { name: hht-apk, path: AIS_AssetTrack_HHT_*.apk }
       - name: Fixed-name copy (permanent link .../releases/latest/download/AIS_AssetTrack_HHT.apk)
-        if: startsWith(github.ref, 'refs/tags/hht-v')
-        run: cp ../AIS_AssetTrack_HHT_v*.apk ../AIS_AssetTrack_HHT.apk
-      - name: Attach APK to release
-        if: startsWith(github.ref, 'refs/tags/hht-v')
+        run: cp ../AIS_AssetTrack_HHT_v${V}.apk ../AIS_AssetTrack_HHT.apk
+      - name: Publish APK as GitHub release hht-v<version> (created by the build, re-used for the same version)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: hht-v${{ env.V }}
+          name: AIS AssetTrack HHT v${{ env.V }}
+          target_commitish: ${{ github.sha }}
+          body: "AIS AssetTrack HHT app v${{ env.V }}. Download AIS_AssetTrack_HHT.apk (or the versioned file) and install on the HHT. Developed by DT"
           files: |
-            AIS_AssetTrack_HHT_*.apk
+            AIS_AssetTrack_HHT_v${{ env.V }}.apk
             AIS_AssetTrack_HHT.apk
           make_latest: true
