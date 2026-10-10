@@ -20,3 +20,10 @@ Masters > Plants: set "GCS auto print" and the printer.
    Without it, Windows uses the PDF app registered on the server PC.
  - Printer IP, direct: the printer's IP (port 9100); most network laser printers print the PDF directly.
 Every finished loading prints the GCS PDF (QR + challan number + security sign). The PDFs are kept in gcs_docs\.
+
+GCS CSV ON THE FTP (one row per invoice line)
+---------------------------------------------
+GCS No,Vehicle No,Customer Code,Invoice No,Invoice Date,SO No,Item Code,Item Description,Qty,Pallets,PDI By,PDI Login,Shift Supervisor,Supervisor Login
+GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0201,10-10-2026,SO-501,WS-1,Windshield front,40,2,Ravi Kumar,ravi.k,Suresh Babu,suresh.b
+GCS-CHN-9001,TN09XY4321,MSIL1,INV/26/0202,10-10-2026,SO-502,BL-9,Backlite,20,1,,,,
+Rows with the same GCS No become ONE loading sheet; every row is an invoice line (invoice, item, qty) on the GCS sheet.
