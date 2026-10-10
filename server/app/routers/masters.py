@@ -48,7 +48,6 @@ class PlantIn(BaseModel):
     gcs_copies: int | None = 1
     gcs_font_pct: int | None = 88
     pallet_hsn: str | None = None
-    pallet_value: float | None = None
     challan_copies: int | None = 3
     active: bool = True
     notes: str | None = None
@@ -263,6 +262,40 @@ def upsert_transporter(body: TransporterIn, request: Request, p: Principal = Dep
     for k, v in body.model_dump(exclude={"code"}).items():
         setattr(obj, k, v)
     audit(db, p, "TRANSPORTER_UPSERT", "transporter", body.code, old, body.model_dump(), request)
+    db.commit()
+    return row(obj)
+
+
+# ---------------------------------------------------------------- pallet types (value / HSN for the challan)
+@router.get("/pallet-types")
+def list_pallet_types(p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    rows = [row(x) for x in db.query(models.PalletType).order_by(models.PalletType.code).all()]
+    have = {r["code"] for r in rows}
+    used = [t for (t,) in db.query(models.Pallet.pallet_type).distinct().all() if t]
+    return {"types": rows, "missing": sorted(t for t in used if t.upper() not in have)}   # types on pallets with no master yet
+
+
+class PalletTypeIn(BaseModel):
+    code: str; description: str | None = None; hsn: str | None = None; value: float | None = None
+    length_mm: int | None = None; width_mm: int | None = None; height_mm: int | None = None
+    weight_kg: float | None = None; colour: str | None = None
+    material: str | None = None; active: bool = True; notes: str | None = None
+
+
+@router.post("/pallet-types")
+def upsert_pallet_type(body: PalletTypeIn, request: Request, p: Principal = Depends(need("GLOBAL_MASTERS")), db: Session = Depends(get_db)):
+    code = body.code.strip().upper()
+    if not code:
+        raise HTTPException(400, "Pallet type code required")
+    if any(v is not None and v < 0 for v in (body.value, body.length_mm, body.width_mm, body.height_mm, body.weight_kg)):
+        raise HTTPException(400, "Value, size and weight cannot be negative")
+    obj = db.get(models.PalletType, code)
+    old = row(obj) if obj else None
+    if not obj:
+        obj = models.PalletType(code=code); db.add(obj)
+    for k, v in body.model_dump(exclude={"code"}).items():
+        setattr(obj, k, v)
+    audit(db, p, "PALLET_TYPE_UPSERT", "pallet_type", code, old, body.model_dump(), request)
     db.commit()
     return row(obj)
 

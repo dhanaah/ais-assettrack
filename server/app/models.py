@@ -40,8 +40,7 @@ class Plant(Base):
     gcs_print_mode: Mapped[str | None] = mapped_column(String(10), default="OFF")     # OFF | WINDOWS | RAW9100
     gcs_copies: Mapped[int | None] = mapped_column(Integer, default=1)
     gcs_font_pct: Mapped[int | None] = mapped_column(Integer)          # gate pass font size % (default 88 = option B compact)
-    pallet_hsn: Mapped[str | None] = mapped_column(String(10))           # HSN of returnable pallets on the challan
-    pallet_value: Mapped[float | None] = mapped_column(Float)            # declared value per pallet (Rs) on the challan
+    pallet_hsn: Mapped[str | None] = mapped_column(String(10))           # default HSN on the challan (pallet type master wins)
     challan_copies: Mapped[int | None] = mapped_column(Integer)          # 3 = original / duplicate / triplicate (Rule 55)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(String(250))
@@ -158,6 +157,24 @@ class Tag(Base):
     pallet_no: Mapped[str | None] = mapped_column(ForeignKey("pallets.pallet_no"), index=True)
     assigned_at: Mapped[datetime | None] = mapped_column(DateTime)
     retired_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class PalletType(Base):
+    """Pallet type master: description, HSN and declared value per pallet used on the returnable pallet challan."""
+    __tablename__ = "pallet_types"
+    code: Mapped[str] = mapped_column(String(15), primary_key=True)      # ANF, RW, ... (3rd part of AIS-CHN-ANF-00001-0000001)
+    description: Mapped[str | None] = mapped_column(String(80))
+    hsn: Mapped[str | None] = mapped_column(String(10))
+    value: Mapped[float | None] = mapped_column(Float)                   # declared value per pallet, Rs
+    length_mm: Mapped[int | None] = mapped_column(Integer)               # L x W x H in mm
+    width_mm: Mapped[int | None] = mapped_column(Integer)
+    height_mm: Mapped[int | None] = mapped_column(Integer)
+    weight_kg: Mapped[float | None] = mapped_column(Float)               # empty pallet weight
+    colour: Mapped[str | None] = mapped_column(String(30))
+    material: Mapped[str | None] = mapped_column(String(30))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    notes: Mapped[str | None] = mapped_column(String(250))
 
 
 class Pallet(Base):

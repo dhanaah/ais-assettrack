@@ -425,11 +425,18 @@ with TestClient(app) as c:
     check(len(rd.pages) >= 3 and f"{len(rd.pages)} of {len(rd.pages)}" in last and "SECURITY" in last and "ANF-00219" in "".join(p.extract_text() for p in rd.pages),
           f"74 lines + 121 pallets -> {len(rd.pages)} pages, every line / pallet printed, signs on the last page")
     with SessionLocal() as db:                          # returnable pallet challan PDF (Rule 55): 3 copies, HSN / value from plant
-        pl = db.get(models.Plant, "CHN"); pl.pallet_hsn = "7326"; pl.pallet_value = 4500.0; db.commit()
+        pl = db.get(models.Plant, "CHN"); pl.pallet_hsn = "7326"; db.commit()
+        types_on_list = sorted({(db.get(models.Pallet, l.pallet_no).pallet_type or "PALLET").upper() for l in db.query(models.PickListLine).filter_by(picklist_no=no)})
+    r = c.post("/api/v1/pallet-types", headers=M, json={"code": types_on_list[0].lower(), "description": "Steel returnable rack", "value": 4500.5,
+                                                                "length_mm": 1200, "width_mm": 1000, "height_mm": 1100, "weight_kg": 85, "colour": "Blue"})
+    check(r.status_code == 200 and r.json()["code"] == types_on_list[0] and r.json()["value"] == 4500.5, f"pallet type master saved (code upper-cased): {types_on_list[0]}")
+    check(c.post("/api/v1/pallet-types", headers=M, json={"code": "X1", "value": -5}).status_code == 400, "negative value refused")
+    pt = c.get("/api/v1/pallet-types", headers=W).json()
+    check(any(t["code"] == types_on_list[0] for t in pt["types"]) and "missing" in pt, f"pallet types listed; types without master: {pt['missing']}")
     r = c.get(f"/api/v1/picklists/{no}/challan.pdf", headers=W)
     rd = PdfReader(_io.BytesIO(r.content)); ct = "\n".join(pg.extract_text() for pg in rd.pages)
-    check(r.status_code == 200 and all(x in ct for x in ("ORIGINAL FOR CONSIGNEE", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR CONSIGNOR", "CHN/00003", "7326", "Rule 55")),
-          f"challan PDF: 3 copies with challan no, HSN, Rule 55 ({len(rd.pages)} pages)")
+    check(r.status_code == 200 and all(x in ct for x in ("ORIGINAL FOR CONSIGNEE", "DUPLICATE FOR TRANSPORTER", "TRIPLICATE FOR CONSIGNOR", "CHN/00003", "7326", "Rule 55", "Steel returnable rack", "1200x1000x1100 mm", "85 kg", "Blue", "4,500.50", "Total Pallet Weight")),
+          f"challan PDF: 3 copies, HSN, description + value per pallet from the Pallet Type master ({len(rd.pages)} pages)")
     check(c.get("/api/v1/picklists/NOPE/challan.pdf", headers=W).status_code == 404, "challan PDF refused without a challan")
     check(gcsprint.amount_in_words(223580.88) == "Two Lakh Twenty Three Thousand Five Hundred Eighty and paise Eighty Eight only", "amount in words (Indian numbering)")
 print(f"\nALL {ok_n} CHECKS PASSED")

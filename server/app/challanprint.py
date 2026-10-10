@@ -43,14 +43,30 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
         purpose = (f"Returnable packing material (pallets) sent with finished glass{' (stock transfer)' if dt == 'STOCK_TRANSFER' else ''}. "
                    f"Not a sale - no consideration involved. To be returned within {holding} days; pallets not returned in time "
                    f"or returned damaged are chargeable as per agreement.")
-    hsn = (plant.pallet_hsn if plant else None) or ""
-    unit_val = (plant.pallet_value if plant else None) or None
-    # summary by pallet type
+    def_hsn = (plant.pallet_hsn if plant else None) or ""
+    # summary by pallet type - description / HSN / value per pallet from the Pallet Type master
     by_type = {}
     for l in lines:
         t = (pals.get(l.pallet_no).pallet_type if pals.get(l.pallet_no) else None) or (l.pallet_no.split("-")[2] if l.pallet_no.count("-") == 4 else "PALLET")
-        by_type[t] = by_type.get(t, 0) + 1
-    total_val = (unit_val or 0) * len(lines)
+        by_type[t.upper()] = by_type.get(t.upper(), 0) + 1
+    tm = {x.code: x for x in db.query(models.PalletType).filter(models.PalletType.code.in_(list(by_type))).all()} if by_type else {}
+    summary = []
+    for t, q in sorted(by_type.items()):
+        m = tm.get(t)
+        v = m.value if m and m.value is not None else None
+        spec = []
+        if m and (m.length_mm or m.width_mm or m.height_mm):
+            spec.append(f"{m.length_mm or '-'}x{m.width_mm or '-'}x{m.height_mm or '-'} mm")
+        if m and m.weight_kg:
+            spec.append(f"{m.weight_kg:g} kg")
+        if m and m.colour:
+            spec.append(m.colour)
+        summary.append(((f"{(m.description if m and m.description else 'Returnable pallet')} - {t}", "  ·  ".join(spec)), (m.hsn if m and m.hsn else def_hsn), t, q, v, (v * q) if v is not None else None))
+    has_val = any(r[4] is not None for r in summary)
+    total_val = sum(r[5] or 0 for r in summary)
+    missing_val = [r[2] for r in summary if r[4] is None]
+    kg = [(tm[t].weight_kg * q) if tm.get(t) and tm[t].weight_kg else None for t, q in sorted(by_type.items())]
+    total_kg = sum(x for x in kg if x) if any(kg) else None
     invs = [i.invoice_no for i in db.query(models.PickListItem).filter_by(picklist_no=pk.picklist_no).all() if i.invoice_no]
     invs = list(dict.fromkeys(invs))
     n_copies = max(1, min(3, copies or (plant.challan_copies if plant and plant.challan_copies else 3)))
@@ -166,20 +182,29 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
             return y - hh
 
         def table_row(y, vals, bold=False):
+            """A cell value may be (main text, second line) - e.g. description + L x W x H / weight / colour."""
+            two = any(isinstance(v, tuple) and v[1] for v in vals)
+            rh = RH * (1.75 if two else 1)
             x = x0
             c.setStrokeColorRGB(*ink); c.setLineWidth(0.5)
             for k, v in enumerate(vals):
                 w = cw[k] * mm
-                c.line(x, y, x, y - RH)
+                c.line(x, y, x, y - rh)
+                sub = ""
+                if isinstance(v, tuple):
+                    v, sub = v
+                base = y - RH + 1.5 * mm * F if two else y - rh + 1.5 * mm * F
                 if v != "":
                     size = fit(v, 8.5, bold, w - 2.5 * mm)
                     if k in right or (bold and k == 3):
-                        txt(x + w - 1.5 * mm, y - RH + 1.5 * mm * F, v, size, bold, align="r")
+                        txt(x + w - 1.5 * mm, base, v, size, bold, align="r")
                     else:
-                        txt(x + 1.5 * mm, y - RH + 1.5 * mm * F, v, size, bold)
+                        txt(x + 1.5 * mm, base, v, size, bold)
+                if sub:
+                    txt(x + 1.5 * mm, base - 3.6 * mm * F, sub, fit(sub, 7, False, w - 2.5 * mm), color=(0.35, 0.35, 0.35))
                 x += w
-            c.line(x0 + tw, y, x0 + tw, y - RH); c.line(x0, y - RH, x0 + tw, y - RH)
-            return y - RH
+            c.line(x0 + tw, y, x0 + tw, y - rh); c.line(x0, y - rh, x0 + tw, y - rh)
+            return y - rh
 
         def footer():
             txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · pick list {pk.picklist_no} · printed {now:%d-%m-%Y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
@@ -198,15 +223,22 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
             y = page_top(True)
             y = details(y)
             y = table_head(y)
-            for k, (t, q) in enumerate(sorted(by_type.items())):
-                if y - RH < BOTTOM:
+            for k, (desc, hsn, t, q, v, tv) in enumerate(summary):
+                if y - RH * 1.75 < BOTTOM:
                     y = table_head(new_page())
-                y = table_row(y, [str(k + 1), f"Returnable pallet - type {t}", hsn, t, str(q), money(unit_val), money(unit_val * q) if unit_val else ""])
-            y = table_row(y, ["", "", "", "Total:", str(len(lines)), "", money(total_val) if unit_val else ""], bold=True)
-            if unit_val:
+                y = table_row(y, [str(k + 1), desc, hsn, t, str(q), money(v), money(tv)])
+            y = table_row(y, ["", "", "", "Total:", str(len(lines)), "", money(total_val) if has_val else ""], bold=True)
+            if missing_val:
+                y -= 4.5 * mm
+                txt(x0 + 2 * mm, y, f"Value not set in the Pallet Type master for: {', '.join(missing_val)}", 7.5, color=red)
+            if has_val:
                 y -= 6 * mm
                 txt(x0 + 2 * mm, y, "Value (In Words):", 9.5, color=(0.25, 0.25, 0.25))
                 txt(x0 + 35 * mm, y, "Rupees " + amount_in_words(total_val), 9.5, True)
+            if total_kg:
+                y -= 5 * mm
+                txt(x0 + 2 * mm, y, "Total Pallet Weight:", 9.5, color=(0.25, 0.25, 0.25))
+                txt(x0 + 35 * mm, y, f"{total_kg:,.1f} kg" + ("   (weight missing in the master for some types)" if not all(kg) else ""), 9.5, True)
             y -= 6 * mm
             # purpose (wrapped)
             words, cur, plines = purpose.split(), "", []
