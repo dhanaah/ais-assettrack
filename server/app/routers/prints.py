@@ -152,11 +152,13 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     RED = ' style="color:#c8102e;font-weight:700"'
     items = gcssvc.items_loaded(db, k.picklist_no); has_cards = any(lpn_by.values())
     invs = list(dict.fromkeys(i["invoice_no"] for i in items if i["invoice_no"]))
-    item_tbl = ("<table><tr><th>#</th><th>Invoice no</th><th>Inv date</th><th>SO no</th><th>Item</th><th>Description</th><th>Qty</th><th>Loaded</th><th>Pallets</th></tr>"
-                + "".join(f"<tr><td>{i['line_no']}</td><td><b>{i['invoice_no'] or ''}</b></td><td>{i['invoice_date'].strftime('%d-%m-%Y') if i['invoice_date'] else ''}</td><td>{i['so_number'] or ''}</td>"
-                          f"<td><b>{i['part_no'] or ''}</b></td><td>{i['part_desc'] or ''}</td><td>{'' if i['qty'] is None else i['qty']}</td>"
-                          f"<td{RED if has_cards and i['qty'] and i['loaded'] < i['qty'] else ''}>{i['loaded'] if has_cards else '—'}</td><td>{'' if i['pallets'] is None else i['pallets']}</td></tr>" for i in items)
-                + f"<tr><th colspan='6' style='text-align:right'>TOTAL · {len(invs)} invoice(s)</th><th>{sum(i['qty'] or 0 for i in items)}</th><th>{sum(i['loaded'] or 0 for i in items) if has_cards else '—'}</th><th>{sum(i['pallets'] or 0 for i in items) or ''}</th></tr></table>") if items else ""
+    fn = lambda v, d=0: "" if v in (None, "") else (f"{v:,.{d}f}" if d else f"{v:,}")
+    tot = lambda key: sum((i.get(key) or 0) for i in items)
+    item_tbl = ("<table><tr><th>Sl</th><th>Inv No.</th><th>Inv Date</th><th>Item Code</th><th>Cust Part No</th><th>No of Case</th><th>Qty/Case</th><th>Act Qty</th><th>Line Amount</th><th>Pallet Type</th></tr>"
+                + "".join(f"<tr><td>{n}</td><td>{i['invoice_no'] or ''}</td><td>{i['invoice_date'].strftime('%d/%m/%Y') if i['invoice_date'] else ''}</td>"
+                          f"<td><b>{i['part_no'] or ''}</b></td><td>{i['cust_part'] or ''}</td><td>{fn(i['cases'])}</td><td>{fn(i['qty_per_case'])}</td>"
+                          f"<td>{fn(i['qty'])}</td><td>{fn(i.get('amount'), 2)}</td><td>{i.get('pallet_type') or ''}</td></tr>" for n, i in enumerate(items, 1))
+                + f"<tr><th colspan='5' style='text-align:right'>Total:</th><th>{fn(tot('cases'))}</th><th>{fn(tot('qty_per_case'))}</th><th>{tot('qty'):,.2f}</th><th>{fn(tot('amount'), 2) if tot('amount') else ''}</th><th></th></tr></table>") if items else ""
     html = f"""<!doctype html><html><head><meta charset="utf-8"><title>GCS {k.gcs_no}</title><style>{CSS} .big{{font-size:22px;font-weight:800;letter-spacing:1px}}</style></head><body>
     <button class="btn" onclick="window.print()">Print / Save PDF</button>
     {_head(plant, "GATE CUM SECURITY PASS (OUTWARD) · VEHICLE LOADING RECORD", qr)}

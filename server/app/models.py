@@ -1,7 +1,7 @@
 """SQLAlchemy models - AIS Pallet Asset Tracking (Phase 1 + Phase 2 skeleton)."""
 from datetime import datetime, timezone
 import uuid
-from sqlalchemy import (String, Integer, Boolean, DateTime, Text, ForeignKey, Index,
+from sqlalchemy import (Float, String, Integer, Boolean, DateTime, Text, ForeignKey, Index,
                         UniqueConstraint, Numeric)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
@@ -243,6 +243,11 @@ class PickList(Base):
     vehicle_no: Mapped[str | None] = mapped_column(String(20))
     gcs_no: Mapped[str | None] = mapped_column(String(40))
     customer_location: Mapped[str | None] = mapped_column(String(80))   # delivery location from the GCS file
+    gp_date: Mapped[datetime | None] = mapped_column(DateTime)          # gate pass date / time from the GCS file
+    transporter_name: Mapped[str | None] = mapped_column(String(60))
+    gcs_remarks: Mapped[str | None] = mapped_column(String(120))
+    gr_lr_no: Mapped[str | None] = mapped_column(String(40))
+    sales_type: Mapped[str | None] = mapped_column(String(30))
     created_by: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -275,6 +280,8 @@ class PickListItem(Base):
     cases: Mapped[int | None] = mapped_column(Integer)                 # no. of cases
     qty_per_case: Mapped[int | None] = mapped_column(Integer)
     qty: Mapped[int | None] = mapped_column(Integer)                   # total qty
+    amount: Mapped[float | None] = mapped_column(Float)                # line amount
+    pallet_type: Mapped[str | None] = mapped_column(String(15))
     pallets: Mapped[int | None] = mapped_column(Integer)
 
 

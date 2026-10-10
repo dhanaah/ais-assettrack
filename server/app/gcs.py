@@ -20,10 +20,10 @@ _lock = threading.Lock()
 
 # field name variants we accept in JSON keys / CSV headers / "Label: value" lines of a text or PDF document
 FIELDS = {
-    "gcs_no": ["gcs_no", "gcs no", "gcs number", "gcs", "gate pass no", "gate pass", "gatepass no", "gp no"],
+    "gcs_no": ["gcs_no", "gcs no", "gcs number", "gcs", "gate pass no", "gate pass number", "gatepass number", "gate pass", "gatepass no", "gp no"],
     "vehicle_no": ["vehicle_no", "vehicle no", "vehicle", "truck no", "truck", "lorry no"],
     "customer_code": ["customer_code", "customer code", "customer", "consignee code", "ship to code", "ship_to"],
-    "customer_name": ["customer_name", "customer name", "consignee", "ship to"],
+    "customer_name": ["customer_name", "customer name", "to m s", "to", "consignee", "ship to"],
     "customer_location": ["customer_location", "customer location", "cust location", "location", "ship to location", "delivery location",
                           "destination", "customer city", "delivery address"],
     "invoice_no": ["invoice_no", "invoice no", "invoice number", "invoice", "inv no", "inv number"],
@@ -31,12 +31,19 @@ FIELDS = {
     "so_number": ["so_number", "so no", "sale order", "sales order", "order no"],
     "part_no": ["part_no", "part no", "item", "item code", "item no", "part"],
     "part_desc": ["part_desc", "item description", "description", "item desc", "part name", "part description"],
-    "part_qty": ["part_qty", "total qty", "total quantity", "qty", "quantity", "invoice qty"],
+    "part_qty": ["part_qty", "act qty", "actual qty", "total qty", "total quantity", "qty", "quantity", "invoice qty"],
     "cust_part": ["cust_part", "cust part", "customer part", "customer part no", "cust part no", "customer part number"],
     "cases": ["cases", "case", "no of cases", "no of case", "case count"],
     "qty_per_case": ["qty_per_case", "qty case", "qty per case", "std pack", "pack qty", "standard pack"],
     "pallets": ["pallets", "pallet qty", "no of pallets", "pallet count"],
     "transporter": ["transporter", "transporter code", "transporter name"],
+    "gp_date": ["gp_date", "date", "gate pass date", "gatepass date", "gcs date", "gp date"],
+    "gp_time": ["gp_time", "time", "gate pass time", "gcs time"],
+    "remarks": ["remarks", "remark"],
+    "gr_lr_no": ["gr_lr_no", "gr lr no", "gr no", "lr no", "lr number"],
+    "sales_type": ["sales_type", "sales type", "sale type"],
+    "amount": ["amount", "line amount", "line value", "value", "taxable value"],
+    "pallet_type": ["pallet_type", "pallet type"],
     "to_plant": ["to_plant", "to plant", "dest plant", "destination plant"],
     "dispatch_type": ["dispatch_type", "type", "order type"],
     "ewaybill_no": ["ewaybill_no", "e-way bill", "eway bill", "ewb no", "e way bill no"],
@@ -141,8 +148,15 @@ def _int(v):
         return None
 
 
+def _float(v):
+    try:
+        return float(str(v).replace(",", "")) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
 def _date(v):
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d.%m.%Y"):
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d.%m.%Y", "%d/%m/%y"):
         try:
             return datetime.strptime(str(v)[:11].strip(), fmt)
         except ValueError:
@@ -199,6 +213,19 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
     pk.gcs_no = gcs; pk.customer_code = cust if cust != "?" else pk.customer_code; pk.to_plant = to_plant or pk.to_plant
     pk.vehicle_no = (str(f.get("vehicle_no") or pk.vehicle_no or "").upper().replace(" ", "") or None)
     pk.customer_location = str(f.get("customer_location") or pk.customer_location or "")[:80] or None
+    if f.get("gp_date"):
+        d = _date(f["gp_date"])
+        if d and f.get("gp_time"):
+            try:
+                hh, mi, *ss = [int(x) for x in str(f["gp_time"]).strip().split(":")]
+                d = d.replace(hour=hh, minute=mi, second=(ss[0] if ss else 0))
+            except ValueError:
+                pass
+        pk.gp_date = d or pk.gp_date
+    pk.transporter_name = str(f.get("transporter") or pk.transporter_name or "")[:60] or None
+    pk.gcs_remarks = str(f.get("remarks") or pk.gcs_remarks or "")[:120] or None
+    pk.gr_lr_no = str(f.get("gr_lr_no") or pk.gr_lr_no or "")[:40] or None
+    pk.sales_type = str(f.get("sales_type") or pk.sales_type or "")[:30] or None
     pk.ewaybill_no = str(f.get("ewaybill_no") or pk.ewaybill_no or "")[:20] or None
     pk.transporter_code = str(f.get("transporter") or pk.transporter_code or "")[:20] or None
     pk.pdi_sign = (sign(f.get("pdi_sign"), f.get("pdi_login")) or pk.pdi_sign or None)
@@ -211,7 +238,8 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
                                        so_number=(str(r.get("so_number") or "")[:40] or None), part_no=(str(r.get("part_no") or "")[:40] or None),
                                        part_desc=(str(r.get("part_desc") or "")[:80] or None), cust_part=(str(r.get("cust_part") or "")[:40] or None),
                                        cases=_int(r.get("cases")), qty_per_case=_int(r.get("qty_per_case")),
-                                       qty=_line_qty(r), pallets=_int(r.get("pallets"))))
+                                       qty=_line_qty(r), pallets=_int(r.get("pallets")), amount=_float(r.get("amount")),
+                                       pallet_type=(str(r.get("pallet_type") or "")[:15] or None)))
         invs = list(dict.fromkeys(str(r.get("invoice_no") or f.get("invoice_no") or "") for r in items if (r.get("invoice_no") or f.get("invoice_no"))))
         parts = list(dict.fromkeys(str(r.get("part_no")) for r in items if r.get("part_no")))
         sos = list(dict.fromkeys(str(r.get("so_number")) for r in items if r.get("so_number")))
@@ -346,7 +374,7 @@ def items_loaded(db: Session, picklist_no: str) -> list[dict]:
         left[k] = left.get(k, 0) - got
         out.append({"line_no": it.line_no, "invoice_no": it.invoice_no, "invoice_date": it.invoice_date, "so_number": it.so_number,
                     "part_no": it.part_no, "part_desc": it.part_desc, "cust_part": it.cust_part, "cases": it.cases,
-                    "qty_per_case": it.qty_per_case, "qty": it.qty, "pallets": it.pallets, "loaded": got})
+                    "qty_per_case": it.qty_per_case, "qty": it.qty, "amount": it.amount, "pallet_type": it.pallet_type, "pallets": it.pallets, "loaded": got})
     return out
 
 

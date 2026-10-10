@@ -410,9 +410,20 @@ with TestClient(app) as c:
         from app import gcsprint
         pdf = gcsprint.build_pdf(db, pk9, None, "AIS1|GCS|test")
     rd = PdfReader(_io.BytesIO(pdf)); text = rd.pages[0].extract_text()
-    check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Inv. Number", "Cust Part", "Qty./Case", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
+    check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Inv No.", "Cust Part No", "Line Amount", "Finished Goods Materials Gate Pass", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
           "PDF: one A4 page with every invoice line and the short pallet number")
     h = c.get(f"/print/gcs/{no9}?tok={W['Authorization'].split()[1]}").text
-    check("INV/26/0203" in h and "Door glass" in h and "ANF-00007" in h, "web GCS print lists the invoice lines")
+    check("INV/26/0203" in h and "Cust Part No" in h and "ANF-00007" in h, "web GCS print lists the invoice lines")
+    with SessionLocal() as db:                          # long load -> several pages, "X of Y", signs on the last page
+        for k in range(70):
+            db.add(models.PickListItem(picklist_no=no9, line_no=10 + k, invoice_no=f"INV/9/{k}", part_no="WS-1", qty=5, amount=1000.0))
+        for k in range(120):
+            db.add(models.PickListLine(picklist_no=no9, pallet_no=f"AIS-CHN-ANF-{k + 100:05d}-{k + 5000:07d}"))
+        db.commit()
+        rd = PdfReader(_io.BytesIO(gcsprint.build_pdf(db, db.get(models.PickList, no9), None, "AIS1|GCS|test")))
+    last = rd.pages[-1].extract_text()
+    check(len(rd.pages) >= 3 and f"{len(rd.pages)} of {len(rd.pages)}" in last and "SECURITY" in last and "ANF-00219" in "".join(p.extract_text() for p in rd.pages),
+          f"74 lines + 121 pallets -> {len(rd.pages)} pages, every line / pallet printed, signs on the last page")
+    check(gcsprint.amount_in_words(223580.88) == "Two Lakh Twenty Three Thousand Five Hundred Eighty and paise Eighty Eight only", "amount in words (Indian numbering)")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)
