@@ -219,6 +219,8 @@ class PickList(Base):
     status: Mapped[str] = mapped_column(String(20), default="DRAFT", index=True)
     # OPEN -> (scan) -> PDI_PENDING -> PDI_TXN_PENDING -> SO_PENDING -> READY -> CHALLANED -> APPROVED -> DISPATCHED | CANCELLED
     # EMPTY_RETURN: OPEN -> READY -> CHALLANED -> APPROVED -> DISPATCHED (no PDI / SO)
+    source: Mapped[str | None] = mapped_column(String(15), default="APP")   # APP | HMIL_BENCH
+    ext_ref: Mapped[str | None] = mapped_column(String(40), index=True)    # e.g. Bench dispatch id
     dispatch_type: Mapped[str] = mapped_column(String(15), default="PALLET_ONLY")   # CUSTOMER STOCK_TRANSFER EMPTY_RETURN PALLET_ONLY
     to_plant: Mapped[str | None] = mapped_column(String(10))           # stock transfer / empty return destination
     blanket_id: Mapped[int | None] = mapped_column(Integer)
@@ -463,6 +465,14 @@ class AuditLog(Base):
     old_value: Mapped[str | None] = mapped_column(Text)
     new_value: Mapped[str | None] = mapped_column(Text)
     ip: Mapped[str | None] = mapped_column(String(45))
+
+
+class Setting(Base):
+    """Key/value settings editable on the web (integrations)."""
+    __tablename__ = "settings"
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class Sequence(Base):

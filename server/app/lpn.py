@@ -458,7 +458,7 @@ def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
         t = db.get(models.Tag, pal.current_tag)
         if t and t.status == "RETIRED":
             raise RuleError(f"Tag {t.tag_no} is retired")
-    if db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
+    if pk.source != "HMIL_BENCH" and db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
         raise RuleError(f"Pallet quantity {pk.qty} already reached")
     services.move(db, pal, "ALLOCATED", event_type="DOCK_SCAN", user_id=user_id, device_id=device_id, event_id=event_id, plant=plant, ref=pk.picklist_no)
     pal.picklist_no = pk.picklist_no
@@ -468,7 +468,10 @@ def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
 def _pick_lpn(db, pk, l, pal, user_id):
     if l.plant_code != pk.plant_code:
         raise RuleError(f"LPN {l.lpn_no} belongs to plant {l.plant_code}")
-    if l.part_no != pk.part_no:
+    bench = pk.source == "HMIL_BENCH"
+    if bench and l.reserved_for != pk.picklist_no and l.picklist_no != pk.picklist_no:
+        raise RuleError(f"LPN {l.lpn_no} is not on HMIL Bench trip {pk.ext_ref}" + (f" (it is on {l.reserved_for})" if l.reserved_for else ""))
+    if not bench and l.part_no != pk.part_no:
         raise RuleError(f"LPN {l.lpn_no} is part {l.part_no}; pick list needs {pk.part_no}")
     if l.status == "PICKED" and l.picklist_no == pk.picklist_no:
         return False
@@ -547,8 +550,8 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
         refresh_load_from_lpns(db, pal)
         return f"LPN {l.lpn_no} ({l.part_no} x{l.qty}) on {pal.pallet_no}", alerts
     # pallet scanned -> fetch its LPNs
-    lp = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.part_no == pk.part_no,
-                                     models.Lpn.status.in_(["AVAILABLE", "RESERVED"])).all()
+    lq = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED"]))
+    lp = (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if pk.source == "HMIL_BENCH" else lq.filter(models.Lpn.part_no == pk.part_no)).all()
     if not lp:
         others = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED"])).all()
         if others:

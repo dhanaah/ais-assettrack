@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## 1.6.0 (2026-10-10) — HMIL Planning Bench link
+- Pulls HMIL Planning Bench dispatches + picked LPNs every minute (no change in hmil_server); creates pick list HB-<plant>-<dispatch>
+- Bench owns reservation, PDI and sub-inventory; AssetTrack binds pallets to the Bench LPNs on the HHT, then challan, gate, return
+- Settings page Masters > HMIL Bench link (URL, Workbench login, plant, customer map, interval, Pull now)
+- Web: roles as tick chips, KPI cards on one row
 ## 1.5.0 (2026-10-09) — HHT-only operations, central access control, plant position, customer QR label
 - All physical transactions (scans, moves, PDI, gate in/out, return slips, confirm, damage) accepted only from the HHT app (PALLET_HHT_ONLY=1); web keeps masters, uploads, release, challan, approve, reports, live view
 - Users created / changed only by the central admin; per-user access rights (movement routes MOVE_TO_PRODUCTION/FGWH/PACKING/YARD and every scan) override role defaults

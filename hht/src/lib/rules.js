@@ -46,7 +46,8 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
   // part pick list
   const picked = (await lpnScans(picklist_no)).reduce((a, x) => a + (x.qty || 0), 0);
   const okLpn = (l) => {
-    if (l.part !== pk.part_no) return `LPN ${l.lpn} is ${l.part}; list needs ${pk.part_no}`;
+    if (pk.part_no && l.part !== pk.part_no) return `LPN ${l.lpn} is ${l.part}; list needs ${pk.part_no}`;
+    if (!pk.part_no && l.reserved_for !== picklist_no && l.picklist !== picklist_no) return `LPN ${l.lpn} is not on this HMIL Bench trip`;
     if (l.status === 'RESERVED' && l.reserved_for && l.reserved_for !== picklist_no) return `LPN ${l.lpn} reserved for ${l.reserved_for}`;
     if (!['AVAILABLE', 'RESERVED'].includes(l.status)) return `LPN ${l.lpn} is ${l.status}`;
     return null;
@@ -59,13 +60,13 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
     lpns = [lpn];
   } else {
     lpns = (await lpnsOnPallet(pallet.pallet_no)).filter(l => !okLpn(l));
-    if (!lpns.length) return { ok: false, msg: `No ${pk.part_no} LPN linked to ${pallet.pallet_no} - scan the LPN label` };
+    if (!lpns.length) return { ok: false, msg: `No ${pk.part_no || 'trip'} LPN linked to ${pallet.pallet_no} - scan the LPN label` };
   }
   const done = new Set((await lpnScans(picklist_no)).map(x => x.lpn));
   lpns = lpns.filter(l => !done.has(l.lpn));
   if (!lpns.length) return { ok: false, msg: 'Already scanned', dup: true };
   const add = lpns.reduce((a, l) => a + (l.qty || 0), 0);
-  if (picked + add > (pk.part_qty || 0)) return { ok: false, msg: `Qty ${add} exceeds balance ${(pk.part_qty || 0) - picked}` };
+  if (pk.part_no && picked + add > (pk.part_qty || 0)) return { ok: false, msg: `Qty ${add} exceeds balance ${(pk.part_qty || 0) - picked}` };
   if (!(await localScanExists(picklist_no, pallet.pallet_no))) { const e = await palletForDispatch(pk, pallet, plant, warn); if (e) return { ok: false, msg: e }; }
   return { ok: true, pallet, lpns, warn, picked: picked + add };
 }

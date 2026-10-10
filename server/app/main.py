@@ -8,10 +8,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from . import config, models, integration
+from . import config, models, integration, bench
 from .db import engine, Base, SessionLocal, add_missing_columns
 from .security import ROLE_SEED, NEW_PERMS, hash_pw
-from .routers import auth, masters, imports, sync, documents, reports, external, prints, activity, parts
+from .routers import auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations
 from .activity import ActivityMiddleware
 
 log = logging.getLogger("pallet")
@@ -43,12 +43,15 @@ async def lifespan(app: FastAPI):
     add_missing_columns()
     with SessionLocal() as db:
         seed(db)
+    import os
+    if os.getenv("PALLET_BENCH_SCHEDULER", "1") == "1":
+        bench.start_scheduler(SessionLocal)
     yield
 
 
 app = FastAPI(title=config.APP_NAME, version=config.APP_VERSION, lifespan=lifespan,
               description=f"{config.DEVELOPER} · Returnable pallet asset tracking for AIS Glass")
-for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts):
+for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations):
     app.include_router(r.router)
 app.include_router(external.admin)
 app.add_middleware(ActivityMiddleware)

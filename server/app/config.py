@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 API_MIN_CLIENT = "1.0.0"          # HHT app must be >= this
 DEVELOPER = "Developed by DT"
 

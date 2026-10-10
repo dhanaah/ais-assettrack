@@ -9,7 +9,7 @@ import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
 
 const isPart = (k) => ['CUSTOMER', 'STOCK_TRANSFER'].includes(k?.dispatch_type);
-const label = (k) => k.dispatch_type === 'EMPTY_RETURN' ? `Empty return → ${k.to_plant}` : isPart(k) ? `${k.customer} · ${k.part_no} × ${k.part_qty}` : `Customer ${k.customer} · pallets only`;
+const label = (k) => k.dispatch_type === 'EMPTY_RETURN' ? `Empty return → ${k.to_plant}` : isPart(k) ? (k.part_no ? `${k.customer} · ${k.part_no} × ${k.part_qty}` : `HMIL Bench trip · ${k.customer} · ${k.part_qty} pcs`) : `Customer ${k.customer} · pallets only`;
 
 export default function Dock({ onBack }) {
   const [lists, setLists] = useState([]); const [pk, setPk] = useState(null); const [scans, setScans] = useState([]); const [lpns, setLpns] = useState([]);
@@ -65,7 +65,7 @@ export default function Dock({ onBack }) {
   return (<Screen><Header title={pk.picklist_no} sub={label(pk)} onBack={() => setPk(null)} />
     <View style={[S.pad, { paddingBottom: 0 }]}>
       <Glass style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-        {isPart(pk) ? <Ring value={`${picked}/${pk.part_qty}`} label={`${pk.part_no} picked`} color={picked === pk.part_qty ? C.ok : C.accent} size={92} /> : null}
+        {isPart(pk) ? <Ring value={`${picked}/${pk.part_qty}`} label={pk.part_no ? `${pk.part_no} picked` : 'Bench LPN qty'} color={picked === pk.part_qty ? C.ok : C.accent} size={92} /> : null}
         <Ring value={`${scans.length}/${pk.qty}`} label="pallets" color={complete ? C.ok : C.accent} size={92} />
       </Glass>
       {waitLpn ? <Text style={{ color: C.amber, fontWeight: '700', marginTop: 6 }}>LPN {waitLpn.lpn} waiting → scan its PALLET</Text> : null}

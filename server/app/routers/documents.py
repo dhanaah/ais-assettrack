@@ -194,10 +194,11 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht("DOCK
         got = lpnsvc.picked_qty(db, no)
         if got != k.part_qty:
             raise HTTPException(400, f"Pick List Control failed: part {k.part_no} picked {got} vs {k.part_qty}")
-        if scanned < 1 or scanned > k.qty:
+        if scanned < 1 or (k.source != "HMIL_BENCH" and scanned > k.qty):
             raise HTTPException(400, f"Pick List Control failed: {scanned} pallets vs planned {k.qty}")
         k.qty = scanned
-        k.status = "PDI_PENDING"            # QA / PDI next; SO goes to EBS only after PDI
+        # HMIL Bench trips: the Bench already did reservation, PDI and sub-inventory -> straight to READY
+        k.status = "READY" if k.source == "HMIL_BENCH" else "PDI_PENDING"   # else QA / PDI next; SO only after PDI
         audit(db, p, "PICKLIST_CONFIRM", "picklist", no, request=request)
         db.commit()
         return row(k)
@@ -235,7 +236,7 @@ def challan(no: str, request: Request, p: Principal = Depends(need("CHALLAN_REQU
         audit(db, p, "RETURN_CHALLAN_CREATE", "picklist", no, None, {"challan_no": cno, "ewaybill": ewb}, request)
         db.commit()
         return row(k) | {"source": "ORACLE"}
-    if k.dispatch_type in lpnsvc.PART_TYPES:   # challan goes with the EBS invoice
+    if k.dispatch_type in lpnsvc.PART_TYPES and k.source != "HMIL_BENCH":   # challan goes with the EBS invoice
         if not k.so_number:
             raise HTTPException(400, "SO not yet created in EBS")
         if not k.invoice_no:

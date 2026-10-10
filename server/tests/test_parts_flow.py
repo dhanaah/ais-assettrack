@@ -6,6 +6,7 @@ from datetime import datetime
 DB = os.getenv("KEEP") or os.path.join(tempfile.gettempdir(), f"at_test_{uuid.uuid4().hex[:6]}.db")
 os.environ["PALLET_DB_URL"] = f"sqlite:///{DB}"
 os.environ["PALLET_INTEGRATION_MODE"] = "STUB"
+os.environ["PALLET_BENCH_SCHEDULER"] = "0"
 from fastapi.testclient import TestClient
 from app.main import app
 from app import models
@@ -211,6 +212,28 @@ with TestClient(app) as c:
     check(e["status"] in ("APPLIED", "EXCEPTION"), "allowed route Yard -> Production")
     e = ev(c, Y, "PALLET_MOVE", {"scanned": "CHN-P007", "to_zone": "FGWH"})
     check(e["status"] == "REJECTED" and "MOVE_TO_FGWH" in e["result"], "route not granted -> rejected")
+    print("13. HMIL Planning Bench pull")
+    from app import bench
+    r = c.post("/api/v1/integrations/hmil-bench", headers=A, json={"bench_enabled": False, "bench_url": "http://bench:8765", "bench_user": "svc",
+                                                                   "bench_password": "x", "bench_plant": "CHN", "bench_customer_map": "HVF1=HMIL"})
+    check(r.status_code == 200, "bench settings saved by central admin")
+    fake = {"/api/dispatches/recent?limit=300": {"dispatches": [{"id": 501, "trip_id": 77, "plant": "HVF1", "vehicle": "TN 22 X 9", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()}]},
+            "/api/picks?dispatch_id=501": {"picks": [{"picked_lpn": "BL1", "item_code": "WS-9", "qty": 20, "sub_inv": "HMIL-FG"},
+                                                      {"picked_lpn": "BL2", "item_code": "DR-3", "qty": 30, "sub_inv": "HMIL-FG"}]}}
+    with SessionLocal() as db:
+        res = bench.pull(db, fetch=lambda path: fake[path])
+    check(res["created"] == 1 and res["lpns"] == 2, f"bench dispatch 501 -> pick list HB-CHN-501 with 2 LPN ({res})")
+    pk = c.get("/api/v1/picklists/HB-CHN-501", headers=W).json()["picklist"]
+    check(pk["customer_code"] == "HMIL" and pk["part_qty"] == 50 and pk["vehicle_no"] == "TN22X9", "customer map, qty and vehicle from Bench")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "HB-CHN-501", "scanned": "L10", "pallet": "CHN-P004"})
+    check(e["status"] == "REJECTED" and "not on HMIL Bench trip" in e["result"], "LPN not on the Bench trip refused")
+    e1 = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "HB-CHN-501", "scanned": "BL1", "pallet": "CHN-P004"})
+    e2 = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "HB-CHN-501", "scanned": "BL2", "pallet": "CHN-P004"})
+    check(e1["status"] != "REJECTED" and e2["status"] != "REJECTED", f"2 Bench LPN bound to one pallet: {e2['result'][:60]}")
+    r = c.post("/api/v1/picklists/HB-CHN-501/confirm", headers=H).json()
+    check(r["status"] == "READY", "Bench trip skips AssetTrack PDI/SO -> READY")
+    r = c.post("/api/v1/picklists/HB-CHN-501/challan", headers=W).json()
+    check(r.get("challan_no"), f"challan {r.get('challan_no')} without EBS invoice wait")
     z = c.get("/api/v1/zones", headers=H).json()
     check("FGWH" in z["zones"], f"zone view: {z['zones']}")
 print(f"\nALL {ok_n} CHECKS PASSED")

@@ -2,7 +2,7 @@
   "expo": {
     "name": "AIS AssetTrack",
     "slug": "ais-assettrack",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -10,7 +10,7 @@
     "android": {
       "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#ffffff" },
       "package": "com.aisglass.pallethht",
-      "versionCode": 8,
+      "versionCode": 9,
       "permissions": ["CAMERA", "BLUETOOTH", "BLUETOOTH_ADMIN", "BLUETOOTH_CONNECT", "BLUETOOTH_SCAN", "ACCESS_FINE_LOCATION", "INTERNET", "ACCESS_NETWORK_STATE"],
       "usesCleartextTraffic": true
     },
