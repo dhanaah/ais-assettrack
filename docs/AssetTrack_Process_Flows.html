@@ -1,0 +1,246 @@
+<title>AssetTrack Process Flows</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a works-manual. Left rail of flows, one flow per section: who / device / steps / what the system does / how to check. */
+:root{--bg:#f6f7fb;--paper:#ffffff;--fg:#141a2b;--mute:#5b6478;--line:#d9dde8;--navy:#1e3a8a;--red:#c8102e;--ok:#0f7b4f;--warn:#b45309;--chip:#e8edf9;
+ --font:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1420;--paper:#161c2c;--fg:#e6e9f2;--mute:#9aa3b8;--line:#2a3348;--navy:#7b9cf0;--red:#ff6b7a;--ok:#4fcf8f;--warn:#f0a94a;--chip:#1f2a44;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1420;--paper:#161c2c;--fg:#e6e9f2;--mute:#9aa3b8;--line:#2a3348;--navy:#7b9cf0;--red:#ff6b7a;--ok:#4fcf8f;--warn:#f0a94a;--chip:#1f2a44;color-scheme:dark}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.5;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 60px;padding-inline:16px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:28px}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}.rail{position:static!important}}
+.rail{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;font-size:13.5px}
+.rail a{display:block;padding:6px 10px;border-left:3px solid transparent;color:var(--mute);text-decoration:none}.rail a:hover,.rail a:focus{border-color:var(--red);color:var(--fg);outline:none}
+.rail .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:14px 0 4px 13px}
+header{grid-column:1/-1;border-bottom:3px solid var(--navy);padding-bottom:14px;display:flex;flex-wrap:wrap;gap:8px 20px;align-items:baseline}
+header h1{font-size:28px;margin:0;font-weight:700;text-wrap:balance}header .v{font-family:var(--mono);font-size:12.5px;color:var(--mute)}
+h2{font-size:21px;margin:38px 0 6px;scroll-margin-top:12px}h2 .n{font-family:var(--mono);color:var(--red);font-size:14px;margin-right:8px}
+h3{font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin:20px 0 6px}
+p{max-width:70ch;margin:6px 0}.lead{color:var(--mute)}
+.who{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}.chip{background:var(--chip);border-radius:4px;padding:2px 9px;font-size:12.5px;font-family:var(--mono)}
+.chip.h{border-left:3px solid var(--ok)}.chip.w{border-left:3px solid var(--navy)}.chip.x{border-left:3px solid var(--warn)}
+pre.mermaid{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:10px;overflow-x:auto;margin:10px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--paper)}th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}th{background:var(--chip);font-weight:600;font-size:12.5px}
+.tw{overflow-x:auto;margin:8px 0}td code,p code,li code{font-family:var(--mono);font-size:12.5px;background:var(--chip);padding:1px 5px;border-radius:3px}
+.steps{counter-reset:s;list-style:none;padding:0;margin:8px 0}.steps li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.steps li::before{content:counter(s);font-family:var(--mono);color:var(--red);font-weight:500}.steps b{font-weight:600}.steps .sys{color:var(--mute);font-size:13.5px;display:block}
+.check{display:grid;grid-template-columns:24px 1fr;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);align-items:start}.check input{width:18px;height:18px;margin-top:3px;accent-color:var(--navy)}
+.check .exp{color:var(--mute);font-size:13.5px}.check .tag{font-family:var(--mono);font-size:11.5px;color:var(--navy)}
+.note{border-left:3px solid var(--warn);padding:6px 12px;background:var(--paper);margin:10px 0;font-size:14px}
+.ok{color:var(--ok)}.bar{display:flex;gap:10px;align-items:center;margin:8px 0 14px;flex-wrap:wrap}.bar button{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);background:var(--paper);color:var(--fg);border-radius:4px;cursor:pointer}
+.bar button:focus{outline:2px solid var(--navy)}.prog{font-family:var(--mono);font-size:13px;color:var(--mute)}
+footer{grid-column:1/-1;margin-top:40px;color:var(--mute);font-size:12.5px;border-top:1px solid var(--line);padding-top:10px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+<div class="wrap">
+<header><h1>AIS AssetTrack · Process Flows</h1><span class="v">server v1.8.1 · HHT v1.9.1 · Developed by DT</span></header>
+<nav class="rail" aria-label="Flows">
+ <div class="k">Overview</div><a href="#map">System map</a><a href="#life">Pallet lifecycle</a><a href="#roles">Roles and scan points</a>
+ <div class="k">Flows</div><a href="#f1">1 · Parts dispatch</a><a href="#f2">2 · Dispatch Bench trip</a><a href="#f3">3 · Return from customer</a><a href="#f4">4 · Other-plant material</a><a href="#f5">5 · Internal movement</a><a href="#f6">6 · New pallet label</a><a href="#f7">7 · Daily routine</a>
+ <div class="k">Testing</div><a href="#test">Test checklist</a>
+</nav>
+<main style="min-width:0">
+
+<p class="lead">How a returnable pallet moves through AssetTrack, who scans it where, what the system does at each point, and how to check each step on the HHT and the web. Use the checklist at the end during the trial.</p>
+
+<h2 id="map"><span class="n">00</span>System map</h2>
+<pre class="mermaid">
+flowchart LR
+  HHT["HHT app (Android scanner)<br/>all physical transactions"] -->|"scans, offline queue"| S["AssetTrack server<br/>tray app · port 80/8001-8003"]
+  WEB["Web (browser)<br/>masters · release · challan · reports"] --> S
+  S --> DB[(Database<br/>SQLite pilot / SQL Server)]
+  S <-->|"SO · sub-inventory · invoice<br/>challan + e-way bill"| EBS["Oracle EBS"]
+  S <-->|"stock upload / API"| WMS["WMS"]
+  S <-->|"gate pass"| GCS["GCS"]
+  S -->|"pulls trips + picked LPNs"| BENCH["Dispatch Planning Bench"]
+  CUST["Customer IT (outside AIS)"] -->|"return slip API · signed QR label"| S
+  S -->|"daily email"| MAIL["Customer reminders"]
+  PRN["Bluetooth printer<br/>SEZNIK 58 mm"] --- HHT
+</pre>
+<p>Rule of the system: <b>only the HHT may do a physical transaction</b> (scan, move, PDI, gate, slip). The web is for masters, uploads, release, challan, approval, reports and monitoring.</p>
+
+<h2 id="life"><span class="n">01</span>Pallet lifecycle</h2>
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> AVAILABLE: new label scanned at Yard
+  AVAILABLE --> ALLOCATED: dock scan on pick list
+  ALLOCATED --> AVAILABLE: removed / cancelled
+  ALLOCATED --> AT_CUSTOMER: OUT gate
+  AT_CUSTOMER --> IN_RETURN: return slip (A / B1)
+  IN_RETURN --> AVAILABLE: Yard in-ward scan
+  AT_CUSTOMER --> AVAILABLE: Yard scan (B2 / slip missed)
+  AT_CUSTOMER --> IN_WIP: received at another AIS plant (FGWH / Packing)
+  IN_WIP --> HELD: emptied, moved to that plant's Yard
+  HELD --> ALLOCATED: scanned on Empty Pallet Return
+  ALLOCATED --> IN_TRANSIT: OUT gate (empty return)
+  IN_TRANSIT --> AVAILABLE: home plant Yard scan
+  AVAILABLE --> DAMAGED: damage mark
+  DAMAGED --> UNDER_REPAIR
+  UNDER_REPAIR --> AVAILABLE
+  DAMAGED --> DISCONTINUED
+</pre>
+<p>Alongside the status, every pallet carries a <b>zone</b> inside the plant (Yard · Production · FGWH · Packing) and a <b>load state</b> (LOADED / EMPTY). The Yard holds empty pallets only.</p>
+
+<h2 id="roles"><span class="n">02</span>Roles and scan points</h2>
+<div class="tw"><table><tr><th>Scan point</th><th>Device</th><th>Role (default)</th><th>HHT tile</th><th>What it changes</th></tr>
+<tr><td>Dock out-ward</td><td>HHT</td><td>FG Warehouse</td><td>Dock Out-ward Scan</td><td>LPN ↔ pallet bound to the pick list; pallet ALLOCATED, LOADED</td></tr>
+<tr><td>PDI</td><td>HHT</td><td>QA / PDI</td><td>PDI Check</td><td>LPN OK / reject → EBS sub-inventory move (two confirmations)</td></tr>
+<tr><td>OUT gate</td><td>HHT</td><td>Security OUT</td><td>OUT Gate</td><td>GCS / challan QR verified; pallets AT_CUSTOMER or IN_TRANSIT</td></tr>
+<tr><td>IN gate</td><td>HHT</td><td>Security IN</td><td>IN Gate · Return Slip</td><td>Return slip QR check code verified; slip IN_GATE</td></tr>
+<tr><td>Yard in-ward</td><td>HHT</td><td>Pallet Yard</td><td>Yard In-ward Scan</td><td>Pallet AVAILABLE / HELD in Yard, EMPTY; slip reconciled; new labels registered</td></tr>
+<tr><td>Internal move</td><td>HHT</td><td>per route (Yard / Production / FGWH / Packing)</td><td>Internal Movement</td><td>Zone and load state; skipped moves recorded</td></tr>
+<tr><td>Other-plant receipt</td><td>HHT</td><td>FG Warehouse / Packing</td><td>Other-plant Receipt</td><td>Foreign pallet IN_WIP, LOADED at FGWH / Packing</td></tr>
+<tr><td>Empty pallet return</td><td>HHT</td><td>Pallet Yard</td><td>Empty Pallet Return</td><td>Other plant's empties loaded at the Yard; challan + e-way bill on finish</td></tr>
+<tr><td>Release · challan · approve</td><td>Web</td><td>FG Warehouse · Logistics</td><td>Pick Lists</td><td>Pick list created; challan (with invoice); vehicle approved (GCS)</td></tr>
+</table></div>
+<p>Access is given per user by the central admin (plant + each movement). A role is only the starting set.</p>
+
+<h2 id="f1"><span class="n">1</span>Parts dispatch to a customer or another plant</h2>
+<div class="who"><span class="chip w">Web: FG Warehouse</span><span class="chip h">HHT: Dock</span><span class="chip h">HHT: PDI</span><span class="chip x">EBS</span><span class="chip w">Web: Logistics</span><span class="chip h">HHT: OUT gate</span></div>
+<pre class="mermaid">
+flowchart TB
+  A["Web · Release pick list<br/>blanket order + part qty<br/>WMS stock must be fresh"] --> B["LPNs reserved (FIFO)"]
+  B --> C["HHT · Dock scan<br/>LPN or pallet, any order"]
+  C --> D["HHT · Confirm<br/>Pick List Control"]
+  D --> E["HHT · PDI<br/>OK / reject per LPN"]
+  E --> F["EBS sub-inventory move<br/>① accepted ② on-hand verified"]
+  F --> G["EBS sale order<br/>(blanket PO)"]
+  G --> H["Web · Challan<br/>invoice no. fetched"]
+  H --> I["Web · Logistics approve<br/>vehicle → GCS"]
+  I --> J["HHT · OUT gate<br/>scan GCS / challan QR"]
+  J --> K["Pallets AT_CUSTOMER<br/>LPNs DISPATCHED"]
+  E -.reject.-> C
+</pre>
+<ol class="steps">
+<li><div><b>Web › Pick Lists › New</b>: type CUSTOMER or STOCK_TRANSFER, blanket order, part qty, pallet qty.<span class="sys">System: refuses if WMS stock is older than the plant limit or the blanket has no open qty. Reserves LPNs oldest first. Status OPEN.</span></div></li>
+<li><div><b>HHT › Dock Out-ward Scan</b>: pick the list, scan the LPN label or the pallet. One pallet can carry several LPNs.<span class="sys">System: LPN fetches its pallet; pallet fetches its LPNs. Pallet must be in FGWH / Packing (a skipped move is recorded and corrected). Pallet ALLOCATED, LOADED. A rejected scan disappears from the HHT list.</span></div></li>
+<li><div><b>HHT › Confirm → send to PDI</b> when picked qty = part qty.<span class="sys">Status PDI_PENDING.</span></div></li>
+<li><div><b>HHT › PDI Check</b>: mark each LPN OK or reject; complete.<span class="sys">Rejected LPNs go to the reject sub-inventory and the list reopens for the balance. OK LPNs move to the customer / part sub-inventory; each move needs EBS acceptance and an on-hand read-back. Then the SO is pushed. Status READY.</span></div></li>
+<li><div><b>Web › Challan</b>.<span class="sys">Invoice number fetched from EBS first; challan printed from the web (A4) with invoice and LPN lines.</span></div></li>
+<li><div><b>Web › Approve</b>: vehicle, transporter.<span class="sys">GCS outward gate pass created. Status APPROVED.</span></div></li>
+<li><div><b>HHT › OUT Gate</b>: scan the GCS / challan QR.<span class="sys">Must match the pick list (supervisor PIN to override). Pallets AT_CUSTOMER with dispatch date; LPNs DISPATCHED. Status DISPATCHED.</span></div></li>
+</ol>
+
+<h2 id="f2"><span class="n">2</span>Dispatch Planning Bench trip (all customers)</h2>
+<div class="who"><span class="chip x">Bench</span><span class="chip h">HHT: Dock</span><span class="chip w">Web: Challan · Approve</span><span class="chip h">HHT: OUT gate</span></div>
+<pre class="mermaid">
+flowchart TB
+  A["Bench plans the trip<br/>reserves LPNs · PDI · sub-inventory"] --> B["AssetTrack pulls every minute<br/>pick list DB-plant-dispatch"]
+  B --> C["HHT · Dock scan<br/>bind pallets to the Bench LPNs"]
+  C --> D["HHT · Confirm → READY"]
+  D --> E["Web · Challan (no invoice wait)"] --> F["Web · Approve"] --> G["HHT · OUT gate"]
+</pre>
+<p>The Bench owns reservation, PDI and sub-inventory. AssetTrack only binds pallets and runs challan, gate and the return cycle. Only LPNs picked on that trip are accepted at the dock. Settings: <b>Masters › Dispatch Bench link</b>.</p>
+
+<h2 id="f3"><span class="n">3</span>Return from customer</h2>
+<div class="who"><span class="chip x">Customer IT / driver</span><span class="chip h">HHT: IN gate</span><span class="chip h">HHT: Yard</span></div>
+<pre class="mermaid">
+flowchart LR
+  subgraph MA["Mode A · customer system"]
+    A1["Customer pushes slip<br/>vehicle + pallets (API)"] --> A2["Signed QR label printed<br/>AIS1 · RS · slip · check code"]
+  end
+  subgraph MB["Mode B · at our gate"]
+    B1["HHT · Return Slip<br/>B1 scan pallets · B2 qty only"] --> B2["Slip printed on SEZNIK<br/>2 copies"]
+  end
+  A2 --> G["HHT · IN gate<br/>scan slip QR, vehicle"]
+  B2 --> G
+  G --> Y["HHT · Yard in-ward scan<br/>each pallet"]
+  Y --> R["Reconcile & close<br/>short / excess / damaged<br/>supervisor PIN if exceptions"]
+  R --> OK["Pallets AVAILABLE · EMPTY · Yard"]
+</pre>
+<ol class="steps">
+<li><div><b>Slip</b>: Mode A comes from the customer's system with a signed QR; Mode B1/B2 is made on the HHT at the IN gate and printed on the portable printer.<span class="sys">Pallets on an A / B1 slip go IN_RETURN. A label without a valid check code is refused at the gate ("HOLD VEHICLE").</span></div></li>
+<li><div><b>HHT › IN Gate</b>: scan the slip QR; optionally type the vehicle number.<span class="sys">Check code, plant, customer and vehicle verified; GCS inward pass; slip IN_GATE.</span></div></li>
+<li><div><b>HHT › Yard In-ward Scan</b>: open the slip, scan every pallet; mark damaged if needed.<span class="sys">Pallet AVAILABLE (or DAMAGED), EMPTY, zone Yard. Not on the slip → EXCESS / CROSS_CUSTOMER; another plant's → HELD. A pallet that was never gated out is accepted and the missed OUT-gate scan recorded.</span></div></li>
+<li><div><b>Reconcile & close</b>.<span class="sys">Short pallets go back to AT_CUSTOMER keeping their aging; open exceptions need a supervisor PIN. Slip CLOSED.</span></div></li>
+</ol>
+
+<h2 id="f4"><span class="n">4</span>Other-plant material and empty pallet return</h2>
+<div class="who"><span class="chip h">HHT: FGWH / Packing</span><span class="chip h">HHT: Production</span><span class="chip h">HHT: Yard</span><span class="chip x">EBS challan + e-way bill</span><span class="chip h">HHT: OUT gate</span></div>
+<pre class="mermaid">
+flowchart TB
+  A["Origin plant · stock transfer<br/>OUT gate → AT_CUSTOMER (to plant)"] --> B["HHT · Other-plant Receipt<br/>at FGWH or Packing<br/>IN_WIP · LOADED"]
+  B --> C["Parts consumed<br/>Production / Packing"]
+  C --> D["HHT · Move Packing → Yard<br/>HELD · EMPTY"]
+  D --> E["HHT · Empty Pallet Return<br/>owner plant + vehicle · scan pallets"]
+  E --> F["Finish loading<br/>EBS challan + e-way bill at once"]
+  F --> G["Web · Approve"] --> H["HHT · OUT gate<br/>IN_TRANSIT"]
+  H --> I["Origin Yard scan<br/>AVAILABLE"]
+</pre>
+<ol class="steps">
+<li><div><b>HHT › Other-plant Receipt</b> at FGWH (or Packing): scan the loaded pallets.<span class="sys">Pallet IN_WIP, LOADED, zone FGWH / Packing. The Yard refuses loaded other-plant pallets.</span></div></li>
+<li><div><b>HHT › Internal Movement</b> as the material is used, ending with Packing → Yard.<span class="sys">Pallet HELD, EMPTY in the Yard.</span></div></li>
+<li><div><b>HHT › Empty Pallet Return › New</b>: pick the owner plant (count shown), enter the vehicle, scan the pallets as they are loaded.<span class="sys">Only that plant's empty pallets are accepted; open quantity. A pallet not scanned into the Yard is still loaded and the missed move recorded.</span></div></li>
+<li><div><b>Finish loading → make challan</b>.<span class="sys">EBS delivery challan and e-way bill created for the scanned pallets (no SO, no invoice). Print from Web › Pick Lists. Then approve and OUT gate as usual.</span></div></li>
+</ol>
+
+<h2 id="f5"><span class="n">5</span>Internal movement and missed scans</h2>
+<pre class="mermaid">
+flowchart LR
+  Y["Yard<br/>EMPTY only"] -->|"MOVE_TO_PRODUCTION"| P["Production"]
+  P -->|"MOVE_TO_FGWH"| F["FGWH<br/>LOADED"]
+  P -->|"MOVE_TO_PACKING"| K["Packing"]
+  F -->|"MOVE_TO_PACKING"| K
+  K -->|"MOVE_TO_YARD (unload)"| Y
+</pre>
+<p>Each route is a separate right granted per user. When a scan point finds a pallet where it should not be, the system takes the safe reading, corrects the ledger and writes a <b>Missed Scan</b> with the responsible role. The HHT shows the alert at once; the web lists them under Stock & Movement › Missed Scans and on the Daily Exception Report.</p>
+<div class="tw"><table><tr><th>Found at</th><th>Situation</th><th>Action</th></tr>
+<tr><td>Dock</td><td>Pallet still AT_CUSTOMER / IN_RETURN</td><td>Received now; missed return slip / yard scan recorded</td></tr>
+<tr><td>Dock</td><td>Pallet shown in Yard / Production</td><td>Moved to FGWH; each skipped route recorded</td></tr>
+<tr><td>Yard</td><td>Pallet on a pick list not yet gated out</td><td>BLOCKED: check the vehicle</td></tr>
+<tr><td>Return slip</td><td>Pallet never dispatched in the ledger</td><td>Accepted; missed OUT gate recorded</td></tr>
+<tr><td>Empty return</td><td>Pallet shown LOADED but no live LPN</td><td>Accepted as empty; WIP consumption not recorded</td></tr>
+<tr><td>PDI</td><td>LPN never dock-scanned</td><td>BLOCKED</td></tr>
+</table></div>
+
+<h2 id="f6"><span class="n">6</span>New pallet label and pallet care</h2>
+<p>The pallet label QR holds a record: <code>uniquePalletID AIS-&lt;plant&gt;-&lt;type&gt;-&lt;serial&gt;-&lt;global&gt;</code>, <code>ownerPlant</code>, <code>palletType</code>, <code>mfgDate</code>. Every scan point reads it.</p>
+<ol class="steps">
+<li><div><b>HHT › Yard In-ward Scan</b> (no slip): scan each new label.<span class="sys">Pallet created from the QR: own plant → AVAILABLE in the Yard; another plant's → HELD here. Owner plant not in the Plant master → quarantined with the reason.</span></div></li>
+<li><div><b>HHT › Damage / Tag issue</b>: mark damaged or request a tag replacement.<span class="sys">DAMAGED → UNDER_REPAIR → AVAILABLE or DISCONTINUED (web, central).</span></div></li>
+</ol>
+
+<h2 id="f7"><span class="n">7</span>Daily routine</h2>
+<div class="tw"><table><tr><th>When</th><th>Who</th><th>Where</th><th>What</th></tr>
+<tr><td>Shift start</td><td>FG Warehouse</td><td>Web › WMS Stock & LPN</td><td>Upload WMS stock (release is blocked when it is stale)</td></tr>
+<tr><td>Morning meeting</td><td>Plant admin</td><td>Web › Reports › Daily exception report</td><td>Missed scans, rejected scans, slips with issues, overdue pallets, stuck pick lists</td></tr>
+<tr><td>09:00 automatic</td><td>Server</td><td>Monitor › Customer Reminders</td><td>Email to customers holding pallets past the limit; escalation copies plant admins</td></tr>
+<tr><td>Any time</td><td>Management</td><td>Web › Dashboard · Plant Position</td><td>Where the pallets are, holding by age, dispatch / return trend, turnaround, missed scans</td></tr>
+<tr><td>Night</td><td>Server</td><td>backups folder</td><td>Database backup, 14 days kept</td></tr>
+</table></div>
+
+<h2 id="test"><span class="n">T</span>Test checklist</h2>
+<p class="lead">Run on one plant with two or three pallets, one LPN pick list and one return. Tick as you go; ticks are kept on this device only.</p>
+<div class="bar"><span class="prog" id="prog"></span><button type="button" id="reset">Clear ticks</button></div>
+<div id="checks">
+<div class="check"><input type="checkbox" id="c1"><label for="c1"><span class="tag">SETUP</span> Server running (tray icon), web opens at <code>http://assettrack</code> or the PC name, HHT logs in with a plant user.<span class="exp">Expected: HHT Home shows ONLINE; Settings › About on the tray lists the ports.</span></label></div>
+<div class="check"><input type="checkbox" id="c2"><label for="c2"><span class="tag">SETUP</span> HHT Settings › Printer: pair SEZNIK, Test print.<span class="exp">Expected: logo, text and QR printed.</span></label></div>
+<div class="check"><input type="checkbox" id="c3"><label for="c3"><span class="tag">6</span> Yard In-ward Scan: scan a new pallet label QR.<span class="exp">Expected: "NEW pallet … registered"; Web › Pallets shows it AVAILABLE, zone YARD, type from the label.</span></label></div>
+<div class="check"><input type="checkbox" id="c4"><label for="c4"><span class="tag">5</span> Internal Movement: Yard → Production → FGWH with a user who has both routes; then try a route the user does not have.<span class="exp">Expected: zone changes; the missing route is refused with "MOVE_TO_… required".</span></label></div>
+<div class="check"><input type="checkbox" id="c5"><label for="c5"><span class="tag">1</span> Web: upload WMS stock, create a blanket order, release a CUSTOMER pick list.<span class="exp">Expected: LPNs reserved; releasing without a fresh WMS upload is refused.</span></label></div>
+<div class="check"><input type="checkbox" id="c6"><label for="c6"><span class="tag">1</span> Dock scan: LPN first, then its pallet; scan a second LPN on the same pallet; remove one by long-press.<span class="exp">Expected: both LPNs listed under the pallet; ring shows picked qty; removal frees the LPN (RESERVED again).</span></label></div>
+<div class="check"><input type="checkbox" id="c7"><label for="c7"><span class="tag">1</span> Confirm → PDI: reject one LPN, OK the rest, complete.<span class="exp">Expected: list reopens for the balance; after re-pick and PDI OK, Web › PDI Status shows ① accepted ② verified; status READY with an SO number.</span></label></div>
+<div class="check"><input type="checkbox" id="c8"><label for="c8"><span class="tag">1</span> Web: Challan, Approve (vehicle); HHT: OUT gate scan of the challan QR.<span class="exp">Expected: challan print shows invoice and LPN lines; pallets AT_CUSTOMER; LPNs DISPATCHED.</span></label></div>
+<div class="check"><input type="checkbox" id="c9"><label for="c9"><span class="tag">3</span> HHT: Return Slip B1 for that customer, scan the pallets, print; IN gate scan of the printed QR; Yard scan; close.<span class="exp">Expected: two copies printed; gate accepts the slip; pallets AVAILABLE in Yard; slip CLOSED with no exceptions.</span></label></div>
+<div class="check"><input type="checkbox" id="c10"><label for="c10"><span class="tag">3</span> Yard scan a pallet that is still AT_CUSTOMER without any slip.<span class="exp">Expected: accepted with a warning; Missed Scans shows RETURN_SLIP for role SEC_IN.</span></label></div>
+<div class="check"><input type="checkbox" id="c11"><label for="c11"><span class="tag">4</span> Second plant user: Other-plant Receipt at FGWH of a pallet dispatched by stock transfer; move Packing → Yard; Empty Pallet Return; Finish loading.<span class="exp">Expected: pallet IN_WIP then HELD; challan and e-way bill numbers shown on the HHT; pick list CHALLANED with YARD LOAD badge on the web.</span></label></div>
+<div class="check"><input type="checkbox" id="c12"><label for="c12"><span class="tag">2</span> Masters › Dispatch Bench link: fill URL and login, Pull now.<span class="exp">Expected: trips appear as DB-plant-id pick lists with LPN qty; dock scan accepts only those LPNs.</span></label></div>
+<div class="check"><input type="checkbox" id="c13"><label for="c13"><span class="tag">OFFLINE</span> Switch the HHT to flight mode, do three yard scans, switch back.<span class="exp">Expected: Pending count rises then drops to 0; Web › Sync Monitor shows the device ONLINE; no duplicate history lines.</span></label></div>
+<div class="check"><input type="checkbox" id="c14"><label for="c14"><span class="tag">7</span> Web: Dashboard, Plant Position, Daily exception report, an Excel export, Customer Reminders preview.<span class="exp">Expected: numbers match the test above; the reminder preview lists the AT_CUSTOMER pallets once their days exceed the limit.</span></label></div>
+<div class="check"><input type="checkbox" id="c15"><label for="c15"><span class="tag">ACCESS</span> Central admin: create a user with one movement right only; try other tiles on the HHT.<span class="exp">Expected: only the allowed tile appears; the web refuses scans ("Operations are allowed only from the HHT").</span></label></div>
+</div>
+<div class="note">When a step fails, note the HHT message word for word and the time; the server's Activity and Sync Monitor pages show the same event with the reason.</div>
+</main>
+<footer>AIS AssetTrack · Asahi India Glass Ltd. · Developed by DT · flows reflect server 1.8.1 and HHT 1.9.1</footer>
+</div>
+<script>
+(function(){
+  var boxes=document.querySelectorAll('#checks input[type=checkbox]'),prog=document.getElementById('prog');
+  function load(){try{var s=JSON.parse(localStorage.getItem('at_flow_ticks')||'{}');boxes.forEach(function(b){b.checked=!!s[b.id]})}catch(e){}}
+  function save(){try{var s={};boxes.forEach(function(b){if(b.checked)s[b.id]=1});localStorage.setItem('at_flow_ticks',JSON.stringify(s))}catch(e){}}
+  function upd(){var n=0;boxes.forEach(function(b){if(b.checked)n++});prog.textContent=n+' / '+boxes.length+' checks done'}
+  boxes.forEach(function(b){b.addEventListener('change',function(){save();upd()})});
+  document.getElementById('reset').addEventListener('click',function(){boxes.forEach(function(b){b.checked=false});save();upd()});
+  load();upd();
+})();
+</script>
