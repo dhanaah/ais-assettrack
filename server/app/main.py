@@ -51,6 +51,8 @@ async def lifespan(app: FastAPI):
     import os
     if os.getenv("PALLET_BENCH_SCHEDULER", "1") == "1":
         bench.start_scheduler(SessionLocal)
+        from . import gcs
+        gcs.start_scheduler(SessionLocal)
     yield
 
 

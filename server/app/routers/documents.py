@@ -230,6 +230,34 @@ def yard_return_create(body: YardReturnIn, request: Request, p: Principal = Depe
     return row(k) | {"scanned": 0}
 
 
+class GcsOpenIn(BaseModel):
+    gcs_no: str
+    vehicle_no: str | None = None
+    customer_code: str | None = None
+    invoice_no: str | None = None
+
+
+@router.post("/picklists/gcs-open")
+def gcs_open(body: GcsOpenIn, request: Request, p: Principal = Depends(hht("DOCK_SCAN")), db: Session = Depends(get_db)):
+    """HHT: scan / type the GCS number at the vehicle. Returns the loading sheet (from the FTP inbox) or opens one from the
+    details typed by the operator when the file has not arrived yet."""
+    from .. import gcs as gcssvc
+    if not p.plant:
+        raise HTTPException(400, "Plant user required")
+    q = gcssvc.parse_gcs_qr(body.gcs_no)
+    no = (q["gcs_no"] if q and q.get("gcs_no") else body.gcs_no).strip().upper()
+    if q and not q.get("valid"):
+        raise HTTPException(400, q["error"])
+    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.gcs_no == no).first()
+    if not k:
+        if not (body.vehicle_no and body.customer_code):
+            raise HTTPException(404, f"GCS {no} not received from the inbox yet - enter vehicle and customer to open it manually")
+        what, k = gcssvc.apply_gcs(db, p.plant, {"gcs_no": no, "vehicle_no": body.vehicle_no, "customer_code": body.customer_code, "invoice_no": body.invoice_no}, "HHT manual")
+        audit(db, p, "GCS_OPEN_MANUAL", "picklist", k.picklist_no, None, body.model_dump(), request)
+    db.commit()
+    return row(k) | {"scanned": db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count()}
+
+
 def _return_challan(db: Session, k: models.PickList, p: Principal, request: Request):
     """EMPTY_RETURN: only a challan (no SO / invoice); EBS generates challan + e-way bill. Returns (ok, message)."""
     pallets = [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()]
@@ -268,6 +296,33 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
         ok, msg = _return_challan(db, k, p, request)
         db.commit()
         return row(k) | {"challan_message": None if ok else f"Challan not made yet: {msg} - press Challan on the web Pick Lists page"}
+    if lpnsvc.is_gcs(k):
+        # Finish loading against a GCS: quantity = what was loaded; challan now; the GCS (made after invoicing) is the gate pass
+        if scanned < 1:
+            raise HTTPException(400, "Scan at least one pallet")
+        if k.qty and scanned != k.qty:
+            pass    # GCS said a different pallet count - allowed, recorded in the audit
+        k.qty = scanned; k.part_qty = lpnsvc.picked_qty(db, no) or k.part_qty
+        plant = db.get(models.Plant, k.plant_code)
+        cust = db.query(models.Customer).filter_by(code=k.customer_code, plant_code=k.plant_code).first()
+        source = (cust.challan_source_override if cust and cust.challan_source_override else plant.challan_source).upper()
+        if not k.challan_no:
+            if source == "ORACLE":
+                ok, cno, msg = integration.create_oracle_challan(db, k)
+                if not ok:
+                    raise HTTPException(502, f"Oracle challan failed: {msg}")
+            else:
+                cno = f"{plant.app_challan_series or plant.code + '/'}{services.next_seq(db, plant.code + ':CH'):05d}"
+            k.challan_no = cno
+            for l in db.query(models.PickListLine).filter_by(picklist_no=no).all():
+                pal = db.get(models.Pallet, l.pallet_no)
+                if pal:
+                    pal.challan_ref = cno
+        k.status = "APPROVED"               # GCS exists and the vehicle is known: ready for the OUT gate
+        audit(db, p, "GCS_LOADING_COMPLETE", "picklist", no, None, {"pallets": scanned, "challan_no": k.challan_no, "gcs": k.gcs_no}, request)
+        db.commit()
+        from .. import gcs as gcssvc
+        return row(k) | {"gcs_qr": gcssvc.gcs_qr(k, scanned), "scanned": scanned}
     if k.dispatch_type in lpnsvc.PART_TYPES:
         got = lpnsvc.picked_qty(db, no)
         if got != k.part_qty:
@@ -368,6 +423,27 @@ class GateOutIn(BaseModel):
     remarks: str | None = None
 
 
+@router.post("/gate-out/scan")
+def gate_out_scan(body: GateOutIn, request: Request, p: Principal = Depends(hht("OUT_GATE_SCAN")), db: Session = Depends(get_db)):
+    """OUT gate: scan the GCS QR (AIS1|GCS|...), a GCS number or a challan number - the matching approved load is dispatched."""
+    from .. import gcs as gcssvc
+    sc = body.scanned.strip()
+    q = gcssvc.parse_gcs_qr(sc)
+    if q:
+        if not q.get("valid"):
+            audit(db, p, "GATE_OUT_QR_REJECTED", "picklist", q.get("gcs_no"), None, {"qr": sc}, request); db.commit()
+            raise HTTPException(400, q["error"] + " - HOLD VEHICLE")
+        sc = q["gcs_no"]
+    if sc.startswith("CHL|"):
+        sc = sc.split("|")[1]
+    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, (models.PickList.gcs_no == sc) | (models.PickList.challan_no == sc)).order_by(models.PickList.created_at.desc()).first()
+    if not k:
+        raise HTTPException(404, f"No load found for {sc} - HOLD VEHICLE")
+    if q and q.get("vehicle") and k.vehicle_no and q["vehicle"] != k.vehicle_no:
+        raise HTTPException(400, f"QR vehicle {q['vehicle']} differs from the load ({k.vehicle_no}) - HOLD VEHICLE")
+    return gate_out(k.picklist_no, GateOutIn(scanned=k.gcs_no or k.challan_no, manual_override=body.manual_override, supervisor_pin=body.supervisor_pin, remarks=body.remarks), request, p, db)
+
+
 @router.post("/picklists/{no}/gate-out")
 def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(hht("OUT_GATE_SCAN")), db: Session = Depends(get_db)):
     k = db.get(models.PickList, no)
@@ -377,6 +453,10 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
     if k.status != "APPROVED":
         raise HTTPException(400, f"Vehicle not approved by logistics (status {k.status})")
     sc = body.scanned.strip()
+    from .. import gcs as gcssvc
+    q = gcssvc.parse_gcs_qr(sc)
+    if q and q.get("valid") and q.get("gcs_no"):
+        sc = q["gcs_no"]
     if sc not in (k.gcs_no, k.challan_no):
         if not body.manual_override:
             raise HTTPException(400, "Scanned QR does not match this pick list's GCS/challan - hold vehicle")

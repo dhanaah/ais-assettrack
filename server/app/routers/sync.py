@@ -250,7 +250,7 @@ def pull(request: Request, since: datetime | None = None, p: Principal = Depends
     tags = [] if since else [{"tag": t.tag_no, "pallet": t.pallet_no, "status": t.status} for t in db.query(models.Tag).filter_by(plant_code=p.plant).all()]
     picklists = [{"picklist_no": k.picklist_no, "customer": k.customer_code, "type": k.pallet_type, "qty": k.qty, "status": k.status,
                   "dispatch_type": k.dispatch_type, "part_no": k.part_no, "part_qty": k.part_qty, "to_plant": k.to_plant,
-                  "source": k.source, "load_point": k.load_point, "vehicle_no": k.vehicle_no,
+                  "source": k.source, "load_point": k.load_point, "vehicle_no": k.vehicle_no, "gcs_no": k.gcs_no, "invoice_no": k.invoice_no,
                   "picked_qty": lpnsvc.picked_qty(db, k.picklist_no),
                   "scanned": db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count()}
                  for k in db.query(models.PickList).filter(models.PickList.plant_code == p.plant,

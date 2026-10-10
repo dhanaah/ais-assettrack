@@ -7,9 +7,9 @@ export async function openDb() {
   db = await SQLite.openDatabaseAsync('pallet_hht.db');
   // v2 (app 1.5) / v3 (app 1.8): cache tables gained columns - cache only, so drop & rebuild, then a full pull refills them
   const ver = await db.getFirstAsync("SELECT v FROM kv WHERE k='schema'").catch(() => null);
-  if (!ver || JSON.parse(ver.v) < 3) {
+  if (!ver || JSON.parse(ver.v) < 4) {
     await db.execAsync(`DROP TABLE IF EXISTS pallets; DROP TABLE IF EXISTS picklists; CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
-      DELETE FROM kv WHERE k='last_pull'; INSERT OR REPLACE INTO kv(k,v) VALUES('schema','3');`);
+      DELETE FROM kv WHERE k='last_pull'; INSERT OR REPLACE INTO kv(k,v) VALUES('schema','4');`);
   }
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -20,7 +20,7 @@ export async function openDb() {
     CREATE TABLE IF NOT EXISTS local_lpn_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT, lpn TEXT, pallet TEXT, qty INTEGER, ts TEXT);
     CREATE INDEX IF NOT EXISTS ix_pallets_tag ON pallets(tag);
     CREATE TABLE IF NOT EXISTS tags (tag TEXT PRIMARY KEY, pallet TEXT, status TEXT);
-    CREATE TABLE IF NOT EXISTS picklists (picklist_no TEXT PRIMARY KEY, customer TEXT, type TEXT, qty INTEGER, status TEXT, scanned INTEGER, dispatch_type TEXT, part_no TEXT, part_qty INTEGER, to_plant TEXT, picked_qty INTEGER, source TEXT, load_point TEXT, vehicle_no TEXT);
+    CREATE TABLE IF NOT EXISTS picklists (picklist_no TEXT PRIMARY KEY, customer TEXT, type TEXT, qty INTEGER, status TEXT, scanned INTEGER, dispatch_type TEXT, part_no TEXT, part_qty INTEGER, to_plant TEXT, picked_qty INTEGER, source TEXT, load_point TEXT, vehicle_no TEXT, gcs_no TEXT, invoice_no TEXT);
     CREATE TABLE IF NOT EXISTS slips (slip_no TEXT PRIMARY KEY, customer TEXT, mode TEXT, qty INTEGER, status TEXT, pallets TEXT);
     CREATE TABLE IF NOT EXISTS customers (code TEXT PRIMARY KEY, name TEXT, return_mode TEXT);
     CREATE TABLE IF NOT EXISTS outbox (
@@ -48,7 +48,7 @@ export async function applyPull(data) {
     for (const l of (data.lpns || [])) { if (['DISPATCHED', 'REJECTED', 'MISSING'].includes(l.status)) await d.runAsync('DELETE FROM lpns WHERE lpn=?', l.lpn); else await d.runAsync('INSERT OR REPLACE INTO lpns VALUES(?,?,?,?,?,?,?)', l.lpn, l.part, l.qty, l.pallet, l.status, l.reserved_for, l.picklist); }
     for (const t of data.tags) await d.runAsync('INSERT OR REPLACE INTO tags VALUES(?,?,?)', t.tag, t.pallet, t.status);
     await d.execAsync('DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;');
-    for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned, k.dispatch_type || 'PALLET_ONLY', k.part_no, k.part_qty, k.to_plant, k.picked_qty || 0, k.source || 'APP', k.load_point || null, k.vehicle_no || null);
+    for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned, k.dispatch_type || 'PALLET_ONLY', k.part_no, k.part_qty, k.to_plant, k.picked_qty || 0, k.source || 'APP', k.load_point || null, k.vehicle_no || null, k.gcs_no || null, k.invoice_no || null);
     for (const s of data.slips) await d.runAsync('INSERT OR REPLACE INTO slips VALUES(?,?,?,?,?,?)', s.slip_no, s.customer, s.mode, s.qty, s.status, JSON.stringify(s.pallets));
     for (const c of data.customers) await d.runAsync('INSERT OR REPLACE INTO customers VALUES(?,?,?)', c.code, c.name, c.return_mode);
   });

@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.0 (2026-10-10) — GCS-driven vehicle loading
+- GCS inbox: gate passes created after invoicing (Bench / GCS system) are read from an FTP folder (JSON / CSV / TXT / PDF) and open a loading sheet per GCS (pick list GCS-<plant>-<no>: vehicle, customer, invoice, SO, part, e-way bill); manual file upload and manual open from the HHT when the file is late; Masters > GCS inbox page
+- HHT 2.1.0 "Vehicle Loading": scan / type the GCS, then scan pallet tags or part cards (LPN) as they go on the vehicle; "Finish loading" makes the challan (plant / customer challan source) and the signed GCS QR; GCS slip on the portable printer; A4 GCS print with QR on the web
+- OUT gate: scans the GCS QR (signature, GCS and vehicle verified) or a GCS / challan number -> dispatched, pallets AT_CUSTOMER, part cards DISPATCHED; forged QR refused
+- Challan + GCS QR for empty pallet loads unchanged (finish loading at the Yard -> EBS challan + e-way bill)
 ## 1.9.1 (2026-10-10) — pick lists only from the Dispatch Planning Bench
 - PALLET_PICKLIST_SOURCE=BENCH (default): AssetTrack no longer releases dispatch pick lists; they are planned in the Bench and pulled every 30 s (configurable, min 10 s) and additionally whenever an HHT syncs. AssetTrack creates only Empty Pallet Returns (HHT, Yard)
 - Web: Pick Lists page shows the Bench status and "Pull from Bench now" instead of the release form; PDI Status, WMS Stock and Blanket pages hidden (set PALLET_PICKLIST_SOURCE=APP to get the old behaviour back)

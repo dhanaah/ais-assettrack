@@ -33,14 +33,17 @@ export function GateOut({ onBack }) {
   useEffect(() => { load(); }, []);
   const onScan = async (code) => {
     if (!needOnline(toast)) return;
-    const sc = code.startsWith('CHL|') ? code.split('|')[1] : code;
+    const sc = code.startsWith('CHL|') ? code.split('|')[1] : code.startsWith('AIS1|GCS|') ? code.split('|')[2] : code;
     const k = lists.find(l => l.gcs_no === sc || l.challan_no === sc);
-    if (!k && !override) { logActivity('GATE_OUT_MISMATCH', sc, 'vehicle held'); return toast('No approved vehicle matches this QR - HOLD VEHICLE', 'err'); }
-    const target = k || lists[0]; if (!target) return toast('No approved pick lists', 'err');
-    try { const r = await api(`/picklists/${target.picklist_no}/gate-out`, { method: 'POST', body: { scanned: sc, manual_override: override, supervisor_pin: override ? pin : null } }); toast(`${r.picklist_no} DISPATCHED · ${r.qty} pallets to ${r.customer_code}`); logActivity(override ? 'GATE_OUT_OVERRIDE' : 'GATE_OUT', r.picklist_no, `${r.qty} pallets`); load(); syncNow().catch(() => {}); }
+    if (!k && !override && !code.startsWith('AIS1|GCS|')) { logActivity('GATE_OUT_MISMATCH', sc, 'vehicle held'); return toast('No approved vehicle matches this QR - HOLD VEHICLE', 'err'); }
+    try {
+      const r = code.startsWith('AIS1|GCS|') || !k
+        ? await api('/gate-out/scan', { method: 'POST', body: { scanned: code, manual_override: override, supervisor_pin: override ? pin : null } })
+        : await api(`/picklists/${k.picklist_no}/gate-out`, { method: 'POST', body: { scanned: sc, manual_override: override, supervisor_pin: override ? pin : null } });
+      toast(`${r.gcs_no || r.picklist_no} DISPATCHED · ${r.qty} pallets · ${r.vehicle_no || ''} → ${r.customer_code}`, 'done'); logActivity(override ? 'GATE_OUT_OVERRIDE' : 'GATE_OUT', r.picklist_no, `${r.qty} pallets`); load(); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
-  return (<Screen><Header title="OUT Gate" sub="Scan GCS / challan QR" onBack={onBack} /><Page>
+  return (<Screen><Header title="OUT Gate" sub="Scan the GCS QR printed after loading" onBack={onBack} /><Page onRefresh={load}>
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan GCS or challan QR" />
       <SwitchRow label="Manual override (paper challan)" hint="Needs a supervisor PIN; recorded in the audit log" value={override} onChange={setOverride} danger />
       {override ? <TextInput style={[S.input, { marginTop: 6 }]} placeholder="Supervisor PIN" value={pin} onChangeText={setPin} secureTextEntry keyboardType="number-pad" /> : null}</View>

@@ -9,7 +9,7 @@ import { checkUpdate, openUpdate } from '../lib/update';
 import { getActiveServer } from '../lib/api';
 
 const TILES = [
-  ['dock', 'Dock Out-ward Scan', 'Bind pallets to the Bench trip', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline', 'dock'],
+  ['dock', 'Vehicle Loading (GCS)', 'Scan pallets / part cards against the GCS', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline', 'dock'],
   ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', ['#14b8a6', '#0f766e'], 'shield-checkmark-outline', 'pdi'],
   ['move', 'Internal Movement', 'Yard · Production · FGWH · Packing', 'INTERNAL_MOVE', ['#22c55e', '#15803d'], 'swap-horizontal-outline'],
   ['receipt', 'Other-plant Receipt', 'Loaded pallets at FGWH / Packing', 'PLANT_RECEIPT', ['#8b5cf6', '#6d28d9'], 'download-outline'],

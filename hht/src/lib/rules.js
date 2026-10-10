@@ -38,6 +38,14 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
     else if ((await localScans(picklist_no)).length >= pk.qty) return { ok: false, msg: `Pallet qty ${pk.qty} reached` };
     return { ok: true, pallet, lpns: [], warn };
   }
+  if (pk.source === 'GCS') {
+    if (lpn && !pallet) { if (lpn.pallet) pallet = (await resolveTag(lpn.pallet)).pallet; if (!pallet) return { ok: false, needPallet: true, lpn, msg: `Part card ${lpn.lpn} - now scan the pallet it is on` }; }
+    if (!lpn && !pallet) { if (palletScan) return { ok: false, msg: `Unknown pallet ${palletScan}` }; return { ok: false, needPallet: true, lpn: { lpn: scanned, qty: 0, part: pk.part_no }, msg: `Part card ${scanned} - now scan the pallet it is on` }; }
+    if (pallet.home !== plant) return { ok: false, msg: `Foreign pallet ${pallet.pallet_no} (${pallet.home})` };
+    if (!lpn && await localScanExists(picklist_no, pallet.pallet_no)) return { ok: false, msg: 'Already loaded on this GCS', dup: true };
+    if (!['AVAILABLE', 'ALLOCATED'].includes(pallet.status) || (pallet.status === 'ALLOCATED' && pallet.picklist !== picklist_no)) { if (['AT_CUSTOMER', 'IN_RETURN', 'IN_TRANSIT'].includes(pallet.status)) warn.push(`${pallet.pallet_no} shows ${pallet.status} - return scan missed, will be recorded`); else return { ok: false, msg: `${pallet.pallet_no} is ${pallet.status}${pallet.picklist ? ' (' + pallet.picklist + ')' : ''}` }; }
+    return { ok: true, pallet, lpns: lpn ? [lpn] : [], warn };
+  }
   if (!PART_TYPES.includes(pk.dispatch_type)) {
     if (lpn) return { ok: false, msg: 'Pallet-only list: scan the pallet' };
     if (await localScanExists(picklist_no, pallet.pallet_no)) return { ok: false, msg: 'Already scanned on this list', dup: true };

@@ -25,6 +25,11 @@ BENCH = "DISPATCH_BENCH"                       # pick lists pulled from the Disp
 
 def is_bench(pk) -> bool:
     return (pk.source or "") in (BENCH, "HMIL_BENCH")
+
+
+def is_gcs(pk) -> bool:
+    """Loading sheet opened from a GCS (gate pass made after invoicing in the Bench / GCS system)."""
+    return (pk.source or "") == "GCS"
 RECEIPT_ZONES = ("FGWH", "PACKING")        # other-plant material is received here (never at the empty-only Yard)
 
 
@@ -429,6 +434,12 @@ def release_reservations(db: Session, picklist_no: str, only_unpicked: bool = Tr
 
 
 # ---------------------------------------------------------------- dock scan (LPN or pallet)
+def looks_like_lpn(s: str) -> bool:
+    """A part card we have never seen (Bench stock is not mirrored here): not a pallet QR / ID, not a slip or GCS QR."""
+    s = (s or "").strip()
+    return 2 < len(s) <= 40 and not s.startswith(("{", "AIS1|", "AIS-", "RTS|", "CHL|")) and services.parse_pallet_qr(s) is None
+
+
 def resolve_any(db: Session, scanned: str, plant: str):
     """Returns ('LPN', lpn, pallet|None) or ('PALLET', None, pallet) or (None, None, None)."""
     s = scanned.strip()
@@ -463,7 +474,7 @@ def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
         t = db.get(models.Tag, pal.current_tag)
         if t and t.status == "RETIRED":
             raise RuleError(f"Tag {t.tag_no} is retired")
-    if not is_bench(pk) and db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
+    if not is_bench(pk) and not is_gcs(pk) and db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() >= pk.qty:
         raise RuleError(f"Pallet quantity {pk.qty} already reached")
     services.move(db, pal, "ALLOCATED", event_type="DOCK_SCAN", user_id=user_id, device_id=device_id, event_id=event_id, plant=plant, ref=pk.picklist_no)
     pal.picklist_no = pk.picklist_no
@@ -473,6 +484,16 @@ def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
 def _pick_lpn(db, pk, l, pal, user_id):
     if l.plant_code != pk.plant_code:
         raise RuleError(f"LPN {l.lpn_no} belongs to plant {l.plant_code}")
+    if is_gcs(pk):                       # part card scanned at the vehicle: the Bench already picked / PDI'd / invoiced it
+        if l.status == "PICKED" and l.picklist_no == pk.picklist_no:
+            return False
+        if l.status in ("DISPATCHED",):
+            raise RuleError(f"LPN {l.lpn_no} already dispatched ({l.picklist_no})")
+        if l.picklist_no and l.picklist_no != pk.picklist_no and l.status == "PICKED":
+            raise RuleError(f"LPN {l.lpn_no} is loaded on {l.picklist_no}")
+        l.status, l.picklist_no, l.reserved_for, l.pallet_no = "PICKED", pk.picklist_no, pk.picklist_no, pal.pallet_no
+        db.add(models.PickListLpn(picklist_no=pk.picklist_no, lpn_no=l.lpn_no, pallet_no=pal.pallet_no, part_no=l.part_no, qty=l.qty, user_id=user_id, pdi_result="OK"))
+        return True
     bench = is_bench(pk)
     if bench and l.reserved_for != pk.picklist_no and l.picklist_no != pk.picklist_no:
         raise RuleError(f"LPN {l.lpn_no} is not on Dispatch Bench trip {pk.ext_ref}" + (f" (it is on {l.reserved_for})" if l.reserved_for else ""))
@@ -507,6 +528,9 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
     if pk.status not in ("OPEN",):
         raise RuleError(f"Pick list is {pk.status}")
     kind, l, pal = resolve_any(db, scanned, plant)
+    if kind is None and is_gcs(pk) and looks_like_lpn(scanned):
+        l = models.Lpn(lpn_no=scanned.strip()[:40], plant_code=plant, part_no=pk.part_no or "?", qty=0, status="AVAILABLE", subinventory="GCS")
+        db.add(l); db.flush(); kind = "LPN"
     if pallet_scan:                      # operator scanned both (links LPN to pallet)
         k2, l2, p2 = resolve_any(db, pallet_scan, plant)
         if kind == "PALLET" and k2 == "LPN":
@@ -558,7 +582,11 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
         return f"LPN {l.lpn_no} ({l.part_no} x{l.qty}) on {pal.pallet_no}", alerts
     # pallet scanned -> fetch its LPNs
     lq = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED"]))
-    lp = (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if is_bench(pk) else lq.filter(models.Lpn.part_no == pk.part_no)).all()
+    lp = lq.all() if is_gcs(pk) else (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if is_bench(pk) else lq.filter(models.Lpn.part_no == pk.part_no)).all()
+    if not lp and is_gcs(pk):            # loading by pallet tag only: part cards may be scanned later or not at all
+        _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts)
+        set_load(db, pal, "LOADED", f"GCS {pk.gcs_no}")
+        return f"{pal.pallet_no} loaded on GCS {pk.gcs_no}", alerts
     if not lp:
         others = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED"])).all()
         if others:

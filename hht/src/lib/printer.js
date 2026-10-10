@@ -138,6 +138,21 @@ export async function printChallan(k, plant, lines, copies = 2) {
   return { printed: true };
 }
 
+/** GCS (gate pass) slip with the signed QR the OUT gate scans - handed to the driver with the challan. */
+export async function printGcs(k, plant, qr, copies = 1) {
+  if (!RNBC) return { printed: false };
+  const dots = await paperDots();
+  for (let c = 0; c < copies; c++) {
+    const p = new EscPos(dots);
+    p.init().align('center').logo().line().bold(true).size(1, 2).line('GATE PASS (GCS)').size(1, 1).bold(false).line(plant?.name || plant?.code || '').line()
+      .qr(qr, { scale: dots >= 576 ? 7 : 6 }).line().bold(true).size(2, 2).line(String(k.gcs_no || '')).size(1, 1).bold(false).line().align('left').rule()
+      .line(`Vehicle : ${k.vehicle_no || ''}`).line(`Customer: ${k.customer_code || ''}`).line(`Invoice : ${k.invoice_no || ''}`).line(`Challan : ${k.challan_no || ''}`).line(`Pallets : ${k.scanned ?? k.qty ?? ''}`).rule()
+      .line('Show this QR at the OUT gate.').line().line('Loaded by: ____________').line().line('Driver   : ____________').line().align('center').line('Developed by DT').feed(4).cut();
+    await send(p);
+  }
+  return { printed: true };
+}
+
 /** Settings > Printer > Test print: proves the printer speaks ESC/POS (text + logo + QR). */
 export async function testPrint(plant) {
   if (!RNBC) throw new Error('Printer module not available in this build');

@@ -132,6 +132,42 @@ def slip_html(db, s, printed_by: str) -> str:
     <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {printed_by}</div></body></html>"""
 
 
+@router.get("/gcs/{no}", response_class=HTMLResponse)
+def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
+    """GCS (gate pass) print with the signed QR the OUT gate scans. no = pick list or GCS number."""
+    from .. import gcs as gcssvc
+    p = _auth(tok, db)
+    k = db.get(models.PickList, no) or db.query(models.PickList).filter(models.PickList.gcs_no == no).order_by(models.PickList.created_at.desc()).first()
+    if not k or not k.gcs_no:
+        raise HTTPException(404, "GCS not found")
+    p.require_plant(k.plant_code)
+    plant = db.get(models.Plant, k.plant_code)
+    cust = db.query(models.Customer).filter_by(code=k.customer_code, plant_code=k.plant_code).first()
+    lines = db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).order_by(models.PickListLine.scanned_at).all()
+    lpn_by = {}
+    for r in db.query(models.PickListLpn).filter_by(picklist_no=k.picklist_no).all():
+        lpn_by.setdefault(r.pallet_no, []).append(r)
+    rows = "".join(f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in lpn_by.get(l.pallet_no, [])) or '—'}</td><td>{l.scanned_at:%d-%m %H:%M}</td><td>{l.user_id or ''}</td></tr>" for i, l in enumerate(lines, 1))
+    qr = gcssvc.gcs_qr(k, len(lines))
+    html = f"""<!doctype html><html><head><meta charset="utf-8"><title>GCS {k.gcs_no}</title><style>{CSS} .big{{font-size:22px;font-weight:800;letter-spacing:1px}}</style></head><body>
+    <button class="btn" onclick="window.print()">Print / Save PDF</button>
+    {_head(plant, "GATE CUM SECURITY PASS (OUTWARD) · VEHICLE LOADING RECORD", qr)}
+    <div class="grid">
+      <div class="box"><b>GCS NO</b><span class="big">{k.gcs_no}</span></div>
+      <div class="box"><b>VEHICLE</b><span class="big">{k.vehicle_no or '—'}</span><br>{k.transporter_code or ''}</div>
+      <div class="box"><b>CONSIGNEE</b>{cust.name if cust else k.customer_code} ({k.customer_code}){'<br>to plant ' + k.to_plant if k.to_plant else ''}</div>
+      <div class="box"><b>INVOICE / SO</b>{k.invoice_no or '—'}{(' · ' + k.invoice_date.strftime('%d-%m-%Y')) if k.invoice_date else ''}<br>SO {k.so_number or '—'} · e-way bill {k.ewaybill_no or '—'}</div>
+      <div class="box"><b>CHALLAN (RETURNABLE PALLETS)</b>{k.challan_no or 'pending'}</div>
+      <div class="box"><b>STATUS</b>{k.status} · loaded {len(lines)} pallet(s){(' · part ' + k.part_no) if k.part_no else ''}{(' qty ' + str(k.part_qty)) if k.part_qty else ''}</div>
+    </div>
+    <table><tr><th>#</th><th>Pallet</th><th>Part cards (LPN)</th><th>Loaded at</th><th>By</th></tr>{rows}
+    <tr><th colspan="4" style="text-align:right">TOTAL PALLETS LOADED</th><th>{len(lines)}</th></tr></table>
+    <div style="margin-top:8px;font-size:11px"><b>OUT gate:</b> scan the QR at the top right. The gate accepts only a QR printed by AssetTrack for this GCS and vehicle.</div>
+    <div class="sig"><div>Loaded by (Logistics / Security)</div><div>Driver</div><div>OUT gate (Security)</div></div>
+    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {p.user_id}</div></body></html>"""
+    return HTMLResponse(html)
+
+
 @router.get("/slip/{no}", response_class=HTMLResponse)
 def slip(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     p = _auth(tok, db)

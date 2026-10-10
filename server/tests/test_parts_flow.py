@@ -315,5 +315,50 @@ with TestClient(app) as c:
     check(e["status"] == "EXCEPTION" and "not in Plant master" in e["result"], "unknown owner plant -> quarantined with reason")
     e = ev(c, H, "PALLET_MOVE", {"scanned": QR, "to_zone": "PRODUCTION"})
     check(e["status"] in ("APPLIED", "EXCEPTION"), "internal move by scanning the QR")
+    print("17. GCS inbox -> loading sheet -> finish loading (challan) -> GCS QR -> OUT gate")
+    from app import gcs as gcssvc
+    with SessionLocal() as db:
+        gcssvc.save_settings(db, {"gcs_enabled": False, "gcs_plant": "CHN", "gcs_host": "ftp.test"}); db.commit()
+        for i in (31, 32, 33):
+            db.add(models.Pallet(pallet_no=f"CHN-P0{i}", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED"))
+        db.commit()
+    files = [("GCS-CHN-7781.json", b'{"GCS No":"GCS-CHN-7781","Vehicle":"TN 09 AB 1234","Customer Code":"HMIL","Invoice No":"INV/26/0091","Invoice Date":"2026-10-10","Qty":60,"Item":"WS-1","SO No":"SO-9981"}'),
+             ("batch.csv", b"gcs_no,vehicle,customer,invoice no\nGCS-CHN-7782,KA01ZZ9999,MSIL1,INV/26/0092\n"),
+             ("gatepass_7783.txt", b"GATE PASS\nGCS No : GCS-CHN-7783\nVehicle : MH 12 CD 4455\nConsignee code : HMIL\nInvoice No : INV/26/0093\n")]
+    with SessionLocal() as db:
+        res = gcssvc.pull(db, fetch=lambda: files)
+    check(res["created"] == 3, f"3 GCS files (json / csv / text) -> 3 loading sheets: {res}")
+    k = c.get("/api/v1/picklists/GCS-CHN-GCSCHN7781", headers=W).json()["picklist"]
+    check(k["vehicle_no"] == "TN09AB1234" and k["invoice_no"] == "INV/26/0091" and k["customer_code"] == "HMIL" and k["source"] == "GCS", "loading sheet carries vehicle, invoice, customer from the GCS file")
+    with SessionLocal() as db:
+        res = gcssvc.pull(db, fetch=lambda: files)
+    check(res["created"] == 0 and res["updated"] == 3, "same files again -> updated, no duplicates")
+    r = c.post("/api/v1/picklists/gcs-open", headers=H, json={"gcs_no": "GCS-CHN-7781"}).json()
+    check(r["picklist_no"] == "GCS-CHN-GCSCHN7781", "HHT opens the loading sheet by GCS number")
+    r = c.post("/api/v1/picklists/gcs-open", headers=H, json={"gcs_no": "GCS-CHN-9999"})
+    check(r.status_code == 404, "unknown GCS asks for manual details")
+    r = c.post("/api/v1/picklists/gcs-open", headers=H, json={"gcs_no": "GCS-CHN-9999", "vehicle_no": "tn 1 x 1", "customer_code": "HMIL"}).json()
+    check(r["gcs_no"] == "GCS-CHN-9999" and r["vehicle_no"] == "TN1X1", "manual GCS opened from the HHT")
+    no = "GCS-CHN-GCSCHN7781"
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no, "scanned": "CHN-P031"})
+    check(e["status"] in ("APPLIED", "EXCEPTION"), f"pallet tag loaded on the GCS: {e['result'][:60]}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no, "scanned": "PC-000123", "pallet": "CHN-P032"})
+    check(e["status"] in ("APPLIED", "EXCEPTION") and "PC-000123" in e["result"], f"unknown part card + pallet loaded: {e['result'][:60]}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no, "scanned": "CHN-P033"})
+    r = c.post(f"/api/v1/picklists/{no}/confirm", headers=H).json()
+    check(r["status"] == "APPROVED" and r["challan_no"] and r["gcs_qr"].startswith("AIS1|GCS|GCS-CHN-7781|CHN|HMIL|TN09AB1234|3|"), f"finish loading -> challan {r.get('challan_no')} + signed GCS QR, ready for the gate")
+    qr = r["gcs_qr"]
+    pr = c.get(f"/print/gcs/{no}?tok=" + W["Authorization"].split()[1])
+    check(pr.status_code == 200 and "GCS-CHN-7781" in pr.text and "TN09AB1234" in pr.text, "GCS print page with QR")
+    bad = qr[:-8] + "DEADBEEF"
+    r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": bad})
+    check(r.status_code == 400 and "HOLD" in r.text, "forged GCS QR refused at the gate")
+    r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": qr}).json()
+    check(r["status"] == "DISPATCHED", "OUT gate: GCS QR -> dispatched")
+    p31 = c.get("/api/v1/pallets/CHN-P031", headers=H).json(); p31 = p31.get("pallet") or p31
+    check(p31["status"] == "AT_CUSTOMER" and p31["customer_code"] == "HMIL" and p31["challan_ref"] == r["challan_no"], "pallets AT_CUSTOMER with the challan")
+    with SessionLocal() as db:
+        l = db.get(models.Lpn, "PC-000123")
+    check(l and l.status == "DISPATCHED", "part card marked dispatched")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)
