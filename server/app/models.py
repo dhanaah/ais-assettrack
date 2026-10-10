@@ -236,6 +236,8 @@ class PickList(Base):
     ewaybill_no: Mapped[str | None] = mapped_column(String(20))
     pdi_by: Mapped[str | None] = mapped_column(String(40))
     pdi_at: Mapped[datetime | None] = mapped_column(DateTime)
+    pdi_sign: Mapped[str | None] = mapped_column(String(120))          # PDI person from the Planning Bench: "Name (login)"
+    supervisor_sign: Mapped[str | None] = mapped_column(String(120))   # shift supervisor logged in on the Planning Bench
     so_number: Mapped[str | None] = mapped_column(String(40))
     challan_no: Mapped[str | None] = mapped_column(String(40))
     vehicle_no: Mapped[str | None] = mapped_column(String(20))

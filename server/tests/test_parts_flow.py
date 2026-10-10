@@ -323,13 +323,18 @@ with TestClient(app) as c:
             db.add(models.Pallet(pallet_no=f"CHN-P0{i}", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED"))
         db.commit()
     files = [("GCS-CHN-7781.json", b'{"GCS No":"GCS-CHN-7781","Vehicle":"TN 09 AB 1234","Customer Code":"HMIL","Invoice No":"INV/26/0091","Invoice Date":"2026-10-10","Qty":60,"Item":"WS-1","SO No":"SO-9981"}'),
-             ("batch.csv", b"gcs_no,vehicle,customer,invoice no\nGCS-CHN-7782,KA01ZZ9999,MSIL1,INV/26/0092\n"),
+             ("batch.csv", b"gcs_no,vehicle,customer,invoice no,PDI By,PDI Login,Shift Supervisor,Supervisor Login\nGCS-CHN-7782,KA01ZZ9999,MSIL1,INV/26/0092,Ravi Kumar,ravi.k,Suresh Babu,suresh.b\n"),
              ("gatepass_7783.txt", b"GATE PASS\nGCS No : GCS-CHN-7783\nVehicle : MH 12 CD 4455\nConsignee code : HMIL\nInvoice No : INV/26/0093\n")]
     with SessionLocal() as db:
         res = gcssvc.pull(db, fetch=lambda: files)
     check(res["created"] == 3, f"3 GCS files (json / csv / text) -> 3 loading sheets: {res}")
     k = c.get("/api/v1/picklists/GCS-CHN-GCSCHN7781", headers=W).json()["picklist"]
     check(k["vehicle_no"] == "TN09AB1234" and k["invoice_no"] == "INV/26/0091" and k["customer_code"] == "HMIL" and k["source"] == "GCS", "loading sheet carries vehicle, invoice, customer from the GCS file")
+    k2 = c.get("/api/v1/picklists/GCS-CHN-GCSCHN7782", headers=W).json()["picklist"]
+    check(k2["pdi_sign"] == "Ravi Kumar (ravi.k)" and k2["supervisor_sign"] == "Suresh Babu (suresh.b)", "PDI and shift supervisor (Bench logins) taken from the CSV")
+    pr2 = c.get("/api/v1/picklists/GCS-CHN-GCSCHN7782/gcs.pdf", headers=W)
+    t2 = "\n".join(pg.extract_text() for pg in __import__('pypdf').PdfReader(__import__('io').BytesIO(pr2.content)).pages)
+    check("Ravi Kumar" in t2 and "Suresh Babu" in t2 and "SHIFT SUPERVISOR" in t2, "PDF shows PDI and Shift Supervisor sign boxes with the Bench names")
     with SessionLocal() as db:
         res = gcssvc.pull(db, fetch=lambda: files)
     check(res["created"] == 0 and res["updated"] == 3, "same files again -> updated, no duplicates")

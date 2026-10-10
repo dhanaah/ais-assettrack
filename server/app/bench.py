@@ -123,6 +123,12 @@ def pull(db: Session, fetch=None) -> dict:
         else:
             updated += 1
         pk.vehicle_no = (d.get("vehicle") or pk.vehicle_no or "").upper().replace(" ", "") or None
+        pdi = d.get("pdi_by") or d.get("pdi_user") or d.get("qc_by") or d.get("pdi_name")
+        sup = d.get("shift_supervisor") or d.get("supervisor") or d.get("supervisor_name") or d.get("created_by_name") or d.get("created_by")
+        if pdi:
+            pk.pdi_sign = (f"{pdi} ({d['pdi_login']})" if d.get("pdi_login") else str(pdi))[:120]
+        if sup:
+            pk.supervisor_sign = (f"{sup} ({d['supervisor_login']})" if d.get("supervisor_login") else str(sup))[:120]
         total = 0
         for lpn, pr in lp.items():
             q = int(float(pr.get("qty") or 0)); total += q

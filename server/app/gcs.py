@@ -35,7 +35,18 @@ FIELDS = {
     "dispatch_type": ["dispatch_type", "type", "order type"],
     "ewaybill_no": ["ewaybill_no", "e-way bill", "eway bill", "ewb no", "e way bill no"],
     "plant": ["plant", "plant code", "org", "from plant"],
+    "pdi_sign": ["pdi_sign", "pdi by", "pdi", "pdi user", "pdi checked by", "qc by", "quality by", "pdi name"],
+    "supervisor_sign": ["supervisor_sign", "shift supervisor", "supervisor", "shift incharge", "shift in-charge", "planned by", "bench user", "created by"],
+    "pdi_login": ["pdi login", "pdi id", "pdi user id"],
+    "supervisor_login": ["supervisor login", "supervisor id", "shift supervisor id", "bench login"],
 }
+
+
+def sign(name, login) -> str | None:
+    name = str(name or "").strip(); login = str(login or "").strip()
+    if not name and not login:
+        return None
+    return f"{name} ({login})" if name and login and login.lower() not in name.lower() else (name or login)
 
 
 def _norm(k: str) -> str:
@@ -139,6 +150,8 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None) 
     pk.part_no = str(f.get("part_no") or pk.part_no or "")[:40] or None
     pk.ewaybill_no = str(f.get("ewaybill_no") or pk.ewaybill_no or "")[:20] or None
     pk.transporter_code = str(f.get("transporter") or pk.transporter_code or "")[:20] or None
+    pk.pdi_sign = (sign(f.get("pdi_sign"), f.get("pdi_login")) or pk.pdi_sign or None)
+    pk.supervisor_sign = (sign(f.get("supervisor_sign"), f.get("supervisor_login")) or pk.supervisor_sign or None)
     try:
         pk.part_qty = int(float(f.get("part_qty"))) if f.get("part_qty") not in (None, "") else pk.part_qty
     except ValueError:

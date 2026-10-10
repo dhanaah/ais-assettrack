@@ -163,7 +163,7 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <table><tr><th>#</th><th>Pallet</th><th>Part cards (LPN)</th><th>Loaded at</th><th>By</th></tr>{rows}
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS LOADED</th><th>{len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>OUT gate:</b> scan the QR at the top right. The gate accepts only a QR printed by AssetTrack for this GCS and vehicle.</div>
-    <div class="sig"><div>Loaded by (Logistics / Security)</div><div>Driver</div><div>OUT gate (Security)</div></div>
+    <div class="sig"><div>PDI (Planning Bench)<br><b>{k.pdi_sign or '—'}</b></div><div>Shift Supervisor (Planning Bench)<br><b>{k.supervisor_sign or '—'}</b></div><div>Loaded by (Logistics / Security)</div><div>Driver</div><div>OUT gate (Security)</div></div>
     <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {p.user_id}</div></body></html>"""
     return HTMLResponse(html)
 

@@ -107,13 +107,19 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     # signatures
     sw = (W - 30 * mm) / 3; sh = 26 * mm
     who = f"{user.full_name} ({user.user_id})" if user else "—"
-    for k, (label, val) in enumerate([("SECURITY / LOGISTICS SIGN (loading verified)", f"{who}\n{datetime.now():%d-%m-%Y %H:%M}\n\nSign: ____________________"),
-                                      ("DRIVER", "\n\nName & sign: ______________"), ("OUT GATE (SECURITY)", "\n\nID / sign: ________________\nTime: ______")]):
+    signs = [("PDI", "Planning Bench", f"{pk.pdi_sign or '—'}\n\nSign: __________"),
+             ("SHIFT SUPERVISOR", "Planning Bench", f"{pk.supervisor_sign or '—'}\n\nSign: __________"),
+             ("SECURITY / LOGISTICS", "loading verified", f"{who}\n{datetime.now():%d-%m-%Y %H:%M}\nSign: __________"),
+             ("DRIVER", "", "\n\nName & sign: ________"), ("OUT GATE", "Security", "\n\nID / sign: __________\nTime: ______")]
+    sw = (W - 30 * mm) / len(signs); sh = 30 * mm
+    for k, (label, sub, val) in enumerate(signs):
         x = 15 * mm + k * sw
         c.setStrokeColorRGB(0.5, 0.5, 0.5); c.setLineWidth(0.6); c.rect(x, y - sh, sw, sh)
-        c.setFont("Helvetica-Bold", 7); c.setFillColorRGB(*navy); c.drawString(x + 2 * mm, y - 4 * mm, label); c.setFillColorRGB(0, 0, 0); c.setFont("Helvetica", 8.5)
+        c.setFont("Helvetica-Bold", 6.5); c.setFillColorRGB(*navy); c.drawString(x + 1.5 * mm, y - 4 * mm, label)
+        c.setFont("Helvetica", 6); c.setFillColorRGB(0.4, 0.4, 0.4); c.drawString(x + 1.5 * mm, y - 7.5 * mm, sub)
+        c.setFillColorRGB(0, 0, 0); c.setFont("Helvetica", 7.5)
         for i, ln in enumerate(val.split("\n")):
-            c.drawString(x + 2 * mm, y - 9 * mm - i * 4.2 * mm, ln)
+            c.drawString(x + 1.5 * mm, y - 13 * mm - i * 4.2 * mm, ln[:26])
     c.setFont("Helvetica", 7); c.setFillColorRGB(0.4, 0.4, 0.4)
     c.drawString(15 * mm, 15 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · GCS {pk.gcs_no} · pick list {pk.picklist_no} · generated {datetime.now():%d-%m-%Y %H:%M}")
     c.setFillColorRGB(*red); c.drawString(15 * mm, 10.5 * mm, "The OUT gate accepts only a QR printed by AssetTrack for this GCS and vehicle.")

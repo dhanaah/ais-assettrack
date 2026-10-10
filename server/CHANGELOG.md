@@ -1,4 +1,6 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.2 (2026-10-10) — PDI and Shift Supervisor signs on the GCS
+- GCS sheet / PDF / print carry the PDI person and the Shift Supervisor logged in on the Planning Bench ("Name (login)"), taken from the GCS CSV (columns PDI By / PDI Login, Shift Supervisor / Supervisor Login - several spellings accepted) or from the Bench dispatch record; five sign boxes: PDI, Shift Supervisor, Security/Logistics (loading, pre-filled with the HHT login), Driver, OUT gate
 ## 1.10.1 (2026-10-10) — GCS PDF auto print
 - GCS PDF (reportlab) built when loading finishes: signed QR, challan number, consignee / invoice / SO / e-way bill, loaded pallets with part cards, SECURITY SIGN box with the login ID and name of the person who completed loading; kept in gcs_docs\
 - Automatic print on the plant printer (Masters > Plants: Windows printer name - shared or network - or printer IP port 9100, copies); print result in the integration log; "Print again" on web and HHT; PDF download from Pick Lists / GCS inbox
