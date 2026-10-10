@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## 1.8.1 (2026-10-10) — AIS pallet QR label
+- The pallet label QR (JSON: uniquePalletID AIS-<plant>-<type>-<serial>-<global>, ownerPlant, palletType, mfgDate) is understood at every scan point, on the server and on the HHT (1.9.1)
+- First scan of a new label at the Pallet Yard registers the pallet from the QR (own plant -> AVAILABLE, other plant -> HELD here); unknown owner plant -> quarantined with the reason
 ## 1.8.0 (2026-10-10) — management dashboard, customer reminders, hardening, SQL Server kit
 - Dashboard: KPI tiles + charts (pallet position by plant, customer holding by age, dispatched vs returned per week, turnaround days, missed scans per week, by role), plant / window filters, table view per chart; GET /api/v1/dashboard
 - Excel export of every report: /api/v1/reports/export/<name>.xlsx (pallets, customer-holding, overdue, plant-position, missed-scans, picklists, return-slips, lpn-stock, movements)

@@ -1,5 +1,5 @@
 // Offline validation - same rules as the server, applied to the local cache. Developed by DT
-import { resolveTag, getPicklist, localScans, localScanExists, kv, getLpn, lpnsOnPallet, lpnScans } from './db';
+import { resolveTag, getPicklist, localScans, localScanExists, kv, getLpn, lpnsOnPallet, lpnScans, parsePalletQr } from './db';
 
 const PART_TYPES = ['CUSTOMER', 'STOCK_TRANSFER'];
 const DISPATCH_ZONES = ['FGWH', 'PACKING'];
@@ -108,7 +108,7 @@ export async function validateDockScan(picklist_no, scanned) {
 export async function validateYardScan(slip, scanned, acceptForeign) {
   const plant = (await kv.get('plant'))?.code;
   const { tag, pallet } = await resolveTag(scanned);
-  if (!pallet) return { ok: true, exception: 'UNKNOWN', msg: `Unknown tag ${scanned} - quarantine`, pallet: null };
+  if (!pallet) { const q = parsePalletQr(scanned); if (q) return { ok: true, exception: 'NEW', msg: `New pallet ${q.pallet_no} (${q.type || '?'}, owner ${q.owner || '?'}) - will be registered from its QR`, pallet: null, newPallet: q }; return { ok: true, exception: 'UNKNOWN', msg: `Unknown tag ${String(scanned).slice(0, 40)} - quarantine`, pallet: null }; }
   if (slip && await localScanExists(slip.slip_no, pallet.pallet_no)) return { ok: false, msg: 'Already scanned', dup: true };
   if (pallet.home !== plant) {
     if (!acceptForeign) return { ok: false, msg: `Other-plant pallet ${pallet.pallet_no} (${pallet.home}) - tick Accept to hold it` };

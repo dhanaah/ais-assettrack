@@ -47,9 +47,65 @@ def doc_number(db: Session, plant: str, kind: str, device: str | None = None) ->
     return f"{plant}-{kind}-{n:06d}"
 
 
+# ---------------------------------------------------------------- AIS pallet QR
+# The pallet label QR holds a JSON record:
+#   {"uniquePalletID":"AIS-AAB-ANF-00001-0000001","ownerPlant":"AAB","palletType":"ANF","typeSerial":"00001",
+#    "globalSerial":"0000001","mfgDate":"2026-08-27"}
+# uniquePalletID = AIS-<owner plant>-<pallet type>-<type serial>-<global serial>. A plain ID string is accepted too.
+import re as _re
+PALLET_ID_RE = _re.compile(r"^AIS-([A-Z0-9]{2,6})-([A-Z0-9]{2,8})-(\d{3,8})-(\d{4,10})$")
+
+
+def parse_pallet_qr(scanned: str) -> dict | None:
+    """Returns {"pallet_no", "owner_plant", "pallet_type", "mfg_date", "raw"} for an AIS pallet QR / ID, else None."""
+    s = (scanned or "").strip()
+    if not s:
+        return None
+    if s.startswith("{"):
+        import json
+        try:
+            d = json.loads(s)
+        except ValueError:
+            return None
+        pid = str(d.get("uniquePalletID") or d.get("palletID") or d.get("pallet_no") or "").strip().upper()
+        if not pid:
+            return None
+        m = PALLET_ID_RE.match(pid)
+        mfg = None
+        try:
+            mfg = datetime.strptime(str(d.get("mfgDate"))[:10], "%Y-%m-%d") if d.get("mfgDate") else None
+        except ValueError:
+            mfg = None
+        return {"pallet_no": pid, "owner_plant": str(d.get("ownerPlant") or (m.group(1) if m else "")).upper() or None,
+                "pallet_type": str(d.get("palletType") or (m.group(2) if m else "")).upper() or None, "mfg_date": mfg, "raw": d}
+    m = PALLET_ID_RE.match(s.upper())
+    if m:
+        return {"pallet_no": s.upper(), "owner_plant": m.group(1), "pallet_type": m.group(2), "mfg_date": None, "raw": None}
+    return None
+
+
+def register_from_qr(db: Session, info: dict, plant: str, *, user_id=None, device_id=None, event_id=None) -> models.Pallet | None:
+    """First scan of a new AIS pallet label: create the pallet master row from the QR (owner plant must exist).
+    Own pallet -> AVAILABLE in the Yard; another plant's pallet -> HELD here."""
+    owner = info.get("owner_plant")
+    if not owner or not db.get(models.Plant, owner) or db.get(models.Pallet, info["pallet_no"]):
+        return None
+    own = owner == plant
+    pal = models.Pallet(pallet_no=info["pallet_no"], home_plant=owner, pallet_type=info.get("pallet_type"), status=AVAILABLE if own else HELD,
+                        location_plant=plant, zone="YARD", load_state="EMPTY", purchase_date=info.get("mfg_date"),
+                        notes="registered from pallet QR at " + plant)
+    db.add(pal); db.flush()
+    db.add(models.PalletHistory(pallet_no=pal.pallet_no, event_type="QR_REGISTER", from_status=None, to_status=pal.status, plant_code=plant,
+                                user_id=user_id, device_id=device_id, event_id=event_id, remarks=f"new pallet label scanned (owner {owner}, type {pal.pallet_type})"))
+    return pal
+
+
 def resolve_tag(db: Session, scanned: str) -> tuple[models.Tag | None, models.Pallet | None]:
-    """Scanned value may be a tag_no or a pallet_no (QR on pallet)."""
+    """Scanned value may be a tag_no, a pallet_no, or the AIS pallet QR (JSON with uniquePalletID)."""
     s = scanned.strip()
+    q = parse_pallet_qr(s) if s.startswith("{") else None
+    if q:
+        s = q["pallet_no"]
     tag = db.get(models.Tag, s)
     if tag:
         pallet = db.get(models.Pallet, tag.pallet_no) if tag.pallet_no else None

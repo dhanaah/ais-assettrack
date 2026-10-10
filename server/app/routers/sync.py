@@ -95,10 +95,21 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
             if slip and slip.plant_code != plant:
                 raise services.RuleError("Slip belongs to another plant")
             tag, pal = services.resolve_tag(db, pl["scanned"])
+            registered = False
+            if not pal:
+                info = services.parse_pallet_qr(pl["scanned"])
+                pal = services.register_from_qr(db, info, plant, user_id=p.user_id, device_id=e.device_id, event_id=e.event_id) if info else None
+                registered = pal is not None
             if not pal:
                 if slip:
-                    db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pl["scanned"], declared=False, received=True, exception="UNKNOWN"))
-                return "EXCEPTION", f"Unknown tag {pl['scanned']} quarantined"
+                    db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pl["scanned"][:30], declared=False, received=True, exception="UNKNOWN"))
+                info = services.parse_pallet_qr(pl["scanned"])
+                why = f" - owner plant {info['owner_plant']} not in Plant master" if info and info.get("owner_plant") else ""
+                return "EXCEPTION", f"Unknown tag {pl['scanned'][:40]} quarantined{why}"
+            if registered:
+                if slip:
+                    db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pal.pallet_no, declared=False, received=True, exception=None if pal.home_plant == plant else "FOREIGN"))
+                return "EXCEPTION", f"NEW pallet {pal.pallet_no} registered from its QR label ({pal.pallet_type}, owner {pal.home_plant}) -> {pal.status} in Yard"
             if pal.home_plant != plant and pal.status in ("AT_CUSTOMER", "IN_TRANSIT") and pal.customer_code == plant:
                 raise services.RuleError(f"{pal.pallet_no} is loaded material from {pal.home_plant} - receive at FGWH / Packing, not Yard")
             live = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["PICKED", "PDI_OK"])).count()

@@ -293,5 +293,27 @@ with TestClient(app) as c:
     check(n >= 1, f"event purge removed {n} old event(s)")
     from app import config
     check(config.JWT_SECRET != config.LEGACY_SECRET or os.getenv("PALLET_JWT_SECRET"), "server secret is not the public default")
+    print("16. AIS pallet QR label (JSON) + auto registration")
+    QR = '{"uniquePalletID":"AIS-CHN-ANF-00001-0000001","ownerPlant":"CHN","palletType":"ANF","typeSerial":"00001","globalSerial":"0000001","mfgDate":"2026-08-27"}'
+    from app import services
+    q = services.parse_pallet_qr(QR)
+    check(q and q["pallet_no"] == "AIS-CHN-ANF-00001-0000001" and q["owner_plant"] == "CHN" and q["pallet_type"] == "ANF", "QR JSON parsed")
+    e = ev(c, H, "PALLET_SCAN_YARD", {"scanned": QR})
+    check(e["status"] == "EXCEPTION" and "registered" in e["result"], f"first scan registers the pallet: {e['result'][:70]}")
+    r = c.get("/api/v1/pallets/AIS-CHN-ANF-00001-0000001", headers=H).json(); pal = r.get("pallet") or r
+    check(pal["status"] == "AVAILABLE" and pal["pallet_type"] == "ANF" and pal["zone"] == "YARD" and pal["home_plant"] == "CHN", "new pallet AVAILABLE in Yard with type from QR")
+    e = ev(c, H, "PALLET_SCAN_YARD", {"scanned": QR})
+    check(e["status"] in ("APPLIED", "EXCEPTION") and "registered" not in e["result"], "second scan is a normal yard scan")
+    r = c.get("/api/v1/pallets/" + QR.replace("{", "%7B").replace("}", "%7D").replace('"', "%22"), headers=H)
+    check(r.status_code == 200, "lookup by scanning the QR works")
+    QR2 = QR.replace("CHN", "PUN").replace("0000001", "0000002")
+    e = ev(c, H, "PALLET_SCAN_YARD", {"scanned": QR2, "accept_foreign": True})
+    r = c.get("/api/v1/pallets/AIS-PUN-ANF-00001-0000002", headers=H).json(); pal = r.get("pallet") or r
+    check(pal["home_plant"] == "PUN" and pal["status"] == "HELD" and pal["location_plant"] == "CHN", "other plant's new pallet registered as HELD here")
+    QR3 = QR.replace('"CHN"', '"ZZZ"').replace("AIS-CHN", "AIS-ZZZ")
+    e = ev(c, H, "PALLET_SCAN_YARD", {"scanned": QR3})
+    check(e["status"] == "EXCEPTION" and "not in Plant master" in e["result"], "unknown owner plant -> quarantined with reason")
+    e = ev(c, H, "PALLET_MOVE", {"scanned": QR, "to_zone": "PRODUCTION"})
+    check(e["status"] in ("APPLIED", "EXCEPTION"), "internal move by scanning the QR")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)
