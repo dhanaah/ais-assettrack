@@ -86,7 +86,9 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     W, H = A4
     ink = (0.16, 0.2, 0.32); grey = (0.82, 0.84, 0.87); red = (0.78, 0.06, 0.18)
     qpng = io.BytesIO(); segno.make(qr_text, error="m").save(qpng, kind="png", scale=6, border=1); qbytes = qpng.getvalue()
-    logo = os.path.join(str(config.BASE_DIR), "app", "static", "icon-192.png")
+    logo = os.path.join(str(config.BASE_DIR), "app", "static", "print-logo.png")      # AIS diamond + "Asahi India Glass Ltd."
+    if not os.path.exists(logo):
+        logo = os.path.join(str(config.BASE_DIR), "app", "static", "icon-192.png")
     x0, tw = 12 * mm, W - 24 * mm
     BOTTOM = 22 * mm
     # font scale: plant master "GCS font size %" (100 = standard, 88 = compact - default, 80 = small); row heights follow the font
@@ -122,10 +124,11 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             c.line(x0 + 1.5 * mm + lw, top - 1.5 * mm, x0 + 1.5 * mm + lw, top - hh + 1.5 * mm)
             c.line(x0 + tw - 1.5 * mm - qw, top - 1.5 * mm, x0 + tw - 1.5 * mm - qw, top - hh + 1.5 * mm)
             ls = (hh - 12 * mm) if first else (hh - 6 * mm)
-            if os.path.exists(logo):
-                c.drawImage(logo, x0 + 1.5 * mm + (lw - ls) / 2, top - 3 * mm - ls, ls, ls, mask="auto")
-            if first:
-                txt(x0 + 1.5 * mm + lw / 2, top - hh + 4 * mm, "Asahi India Glass Ltd.", 10, True, align="c")
+            if os.path.exists(logo):          # logo fills its cell (keeps proportions); it already carries the company name
+                bw, bh_ = lw - 6 * mm, hh - 3 * mm - 6 * mm
+                iw, ih = ImageReader(logo).getSize()
+                f = min(bw / iw, bh_ / ih); dw, dh = iw * f, ih * f
+                c.drawImage(logo, x0 + 1.5 * mm + (lw - dw) / 2, top - 1.5 * mm - (hh - 3 * mm + dh) / 2, dw, dh, mask="auto")
             mid = x0 + 1.5 * mm + lw + (tw - 3 * mm - lw - qw) / 2
             addr = (plant.address or plant.name) if plant else pk.plant_code
             if first:

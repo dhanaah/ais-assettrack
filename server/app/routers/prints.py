@@ -46,8 +46,8 @@ def _qr(data: str) -> str:
 
 
 def _head(plant: models.Plant, doc_title: str, qr_data: str) -> str:
-    return f"""<div class="top"><div style="display:flex;gap:12px;align-items:flex-start"><img class="logo" src="/static/icon-192.png" alt="AIS">
-      <div class="co"><b style="font-size:13px">Asahi India Glass Ltd.</b><br>{plant.name}<br>{plant.address or ''}<br>GSTIN {plant.gstin or ''}</div></div>
+    return f"""<div class="top"><div style="display:flex;gap:12px;align-items:flex-start"><img class="logo" src="/static/print-logo.png" alt="Asahi India Glass Ltd." style="height:62px;width:auto">
+      <div class="co"><b style="font-size:13px">{plant.name}</b><br>{plant.address or ''}<br>GSTIN {plant.gstin or ''}</div></div>
       <div style="text-align:right"><img class="wm" src="/static/wordmark.png" alt="AssetTrack"><div style="margin-top:6px">{_qr(qr_data)}</div></div></div>
       <div class="title">{doc_title}</div>"""
 
