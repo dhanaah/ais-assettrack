@@ -199,12 +199,12 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                 w = cw[k] * mm
                 if k:
                     c.line(x, y, x, y - hh)
-                if k in right:
-                    txt(x + w - 1.5 * mm, y - 4 * mm * F, a, 8, True, align="r");
-                    if b: txt(x + w - 1.5 * mm, y - 7.7 * mm * F, b, 8, True, align="r")
+                cx = x + w / 2                       # headings centred in the cell (both directions)
+                if b:
+                    txt(cx, y - 4 * mm * F, a, 8, True, align="c")
+                    txt(cx, y - 7.7 * mm * F, b, 8, True, align="c")
                 else:
-                    txt(x + 1.5 * mm, y - 4 * mm * F, a, 8, True)
-                    if b: txt(x + 1.5 * mm, y - 7.7 * mm * F, b, 8, True)
+                    txt(cx, y - 5.8 * mm * F, a, 8, True, align="c")
                 x += w
             return y - hh
 

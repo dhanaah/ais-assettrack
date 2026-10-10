@@ -177,10 +177,12 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
                 w = cw[k] * mm
                 if k:
                     c.line(x, y, x, y - hh)
-                xx, al = (x + w - 1.5 * mm, "r") if k in right else (x + 1.5 * mm, "l")
-                txt(xx, y - 4 * mm * F, a, 8, True, align=al)
+                cx = x + w / 2                       # headings centred in the cell (both directions)
                 if b:
-                    txt(xx, y - 7.7 * mm * F, b, 8, True, align=al)
+                    txt(cx, y - 4 * mm * F, a, 8, True, align="c")
+                    txt(cx, y - 7.7 * mm * F, b, 8, True, align="c")
+                else:
+                    txt(cx, y - 5.8 * mm * F, a, 8, True, align="c")
                 x += w
             return y - hh
 

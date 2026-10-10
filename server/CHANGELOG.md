@@ -1,4 +1,5 @@
 # Changelog — AIS AssetTrack Server
+## 1.10.8 (2026-10-10) — table headings centred on the gate pass and the challan
 ## 1.10.7 (2026-10-10) — real ERP GCS file format (HHT app 2.1.3)
 - GCS CSV as exported by the ERP: GATE_PASS_NUMBER, VEHICLE_NUM, ENTRY_TIME, CUST_ITEM_NUMBER, QUANTITY_PER_CASE, LINE_QUANTITY, GR_NUMBER, LPN_NUMBER, DRIVER_CONTACT_NO, TRANSPORT_MODE, STATUS, CANCELLED_DATE ... recognised; "-" = empty
 - One row per case is merged into one gate pass line per invoice + item (cases, qty, amount added up)
