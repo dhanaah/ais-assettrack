@@ -2,7 +2,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 
-export const APP_VERSION = '2.4.2';
+export const APP_VERSION = '2.4.3';
 let token = null, baseUrl = null, deviceHeader = 'HHT';
 export const setApiDevice = (id) => { deviceHeader = id; };
 

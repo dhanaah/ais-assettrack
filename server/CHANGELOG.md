@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## 1.14.3 (2026-10-11) — AT icon for the HHT app and the browser tab (HHT app 2.4.3)
+- HHT app icon (Android launcher, round and square) and the web browser tab / phone home-screen icon are now the AssetTrack "AT" icon; the AIS company logo stays on the login, headers and prints
+- brand/build_logos.py builds them from brand/at_icon_source.png
 ## 1.14.2 (2026-10-11) — new AssetTrack "AT" icon for the server
 - Tray icon near the clock and the server program (AssetTrack_Server.exe) use the new blue AT icon with the location pin; messages now say "look for the blue AT icon"
 ## 1.14.1 (2026-10-11) — customer document written by pallet type only, or total only (HHT app 2.4.2)

@@ -10,6 +10,7 @@ from PIL import Image, ImageOps
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "brand", "ais_logo_source.png")
+AT_SRC = os.path.join(ROOT, "brand", "at_icon_source.png")      # AssetTrack "AT" app icon (512 px, transparent)
 STATIC = os.path.join(ROOT, "server", "app", "static")
 HHT = os.path.join(ROOT, "hht", "assets")
 LIB = os.path.join(ROOT, "hht", "src", "lib")
@@ -85,7 +86,10 @@ def main():
     # ---- web
     fit(logo, 192, 192, scale=0.94).save(os.path.join(STATIC, "icon-192.png"))
     fit(dark, 192, 192, scale=0.94).save(os.path.join(STATIC, "icon-on-dark.png"))
-    fit(mark, 64, 64, scale=0.98).save(os.path.join(STATIC, "favicon.png"))
+    # app icons = the AssetTrack "AT" icon (company logo stays on the login / headers / prints)
+    at = Image.open(AT_SRC).convert("RGBA"); at = at.crop(at.getbbox())
+    fit(at, 64, 64, scale=1.0).save(os.path.join(STATIC, "favicon.png"))
+    fit(at, 192, 192, scale=0.96).save(os.path.join(STATIC, "at-192.png"))
     # A4 prints: white background, high resolution
     up = src.resize((src.width * 2, src.height * 2), Image.LANCZOS)
     pad = Image.new("RGB", (up.width + 28, up.height + 28), "white"); pad.paste(up, (14, 14))
@@ -106,7 +110,8 @@ def main():
     # ---- HHT app
     fit(logo, 1024, 1024, scale=0.9).save(os.path.join(HHT, "icon.png"))
     fit(dark, 1024, 1024, scale=0.9).save(os.path.join(HHT, "icon_on_dark.png"))
-    ad = fit(logo, 1024, 1024, bg=(255, 255, 255, 255), scale=0.62)      # Android adaptive icon: keep inside the safe zone
+    fit(at, 1024, 1024, scale=0.92).save(os.path.join(HHT, "app-icon.png"))
+    ad = fit(at, 1024, 1024, bg=(255, 255, 255, 255), scale=0.64)        # Android adaptive icon: keep inside the safe zone
     ad.convert("RGB").save(os.path.join(HHT, "adaptive-icon.png"))
     sp = Image.new("RGBA", (1284, 2778), (255, 255, 255, 255))
     big = combo(logo, wm, 792, 488)
