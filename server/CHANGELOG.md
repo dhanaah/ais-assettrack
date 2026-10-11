@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## 1.16.0 (2026-10-11) — Dispatch Bench trip and its GCS joined into one record
+- When a GCS file arrives, AssetTrack finds the Dispatch Bench trip of the same vehicle by the part cards they share (fallback: vehicle + customer, when exactly one open trip of the last 3 days fits) and joins them
+- Trip not loaded yet: loading is done on the GCS sheet; the trip is closed as LINKED, its reserved part cards and the PDI / supervisor names move to the GCS sheet
+- Trip already loaded: the trip carries on and takes the GCS number, invoice lines and part-card list (gate pass prints from it); the GCS sheet is LINKED and is not loaded a second time; scanning / opening that GCS number goes to the trip; OUT gate never picks a LINKED record
+- Web Pick Lists: link shown as 🔗 with the other number
 ## 1.15.2 (2026-10-11) — return slip number always automatic; customer DC optional (HHT app 2.5.3)
 - Return slip number is generated automatically everywhere (RTS-... by AIS, RO-<plant>-<device>-<seq> when printed without network); the screens say so
 - Customer DC number: optional - the customer may or may not have one (customer HHT, customer API and IN-gate Option B)

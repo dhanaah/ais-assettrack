@@ -675,5 +675,31 @@ with TestClient(app) as c:
     check(r["slip_no"] == f"RO-CHN-{did}-00002" and r["declared_qty"] == 1, "offline slip without customer DC (optional) keeps its auto number")
     pu = c.get("/api/v1/sync/pull", headers=H).json()
     check("TN09AB7777" in pu.get("vehicles", []), f"plant HHT gets the vehicle list at sync ({len(pu.get('vehicles', []))})")
+    print("25. Dispatch Bench trip and its GCS joined into one record")
+    from app import bench as _bench, gcs as _gcs
+    fake2 = {"/api/dispatches/recent?limit=300": {"dispatches": [
+                {"id": 601, "trip_id": 91, "plant": "HVF1", "vehicle": "TN11Z1", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat(), "pdi_by": "Ravi"},
+                {"id": 602, "trip_id": 92, "plant": "HVF1", "vehicle": "TN11Z2", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()}]},
+             "/api/picks?dispatch_id=601": {"picks": [{"picked_lpn": "BL61", "item_code": "WS-9", "qty": 20, "sub_inv": "HMIL-FG"}, {"picked_lpn": "BL62", "item_code": "WS-9", "qty": 20, "sub_inv": "HMIL-FG"}]},
+             "/api/picks?dispatch_id=602": {"picks": [{"picked_lpn": "BL71", "item_code": "DR-3", "qty": 30, "sub_inv": "HMIL-FG"}]}}
+    with SessionLocal() as db:
+        _bench.pull(db, fetch=lambda path: fake2[path]); db.commit()
+    rows = lambda cards: [{"lpn_no": f"F.6001.{x}", "invoice_no": "INV-9", "part_no": "WS-9", "part_qty": 20} for x in cards]
+    with SessionLocal() as db:
+        _gcs.apply_gcs(db, "CHN", {"gcs_no": "GCS/9001", "vehicle_no": "TN11Z1", "customer_code": "HMIL"}, "t", rows(["BL61", "BL62"])); db.commit()
+        g = db.get(models.PickList, "GCS-CHN-GCS9001"); t = db.get(models.PickList, "DB-CHN-601"); l = db.get(models.Lpn, "BL61")
+        st = (g.status, g.linked_picklist, t.status, t.linked_picklist, l.reserved_for, g.pdi_sign)
+    check(st == ("OPEN", "DB-CHN-601", "LINKED", "GCS-CHN-GCS9001", "GCS-CHN-GCS9001", "Ravi"),
+          f"trip not loaded yet: GCS sheet is the loading record, trip closed as LINKED, its part cards moved, PDI sign kept: {st}")
+    e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "DB-CHN-602", "scanned": "BL71", "pallet": "CHN-P005"})
+    c.post("/api/v1/picklists/DB-CHN-602/confirm", headers=H)
+    with SessionLocal() as db:
+        _gcs.apply_gcs(db, "CHN", {"gcs_no": "GCS/9002", "vehicle_no": "TN11Z2", "customer_code": "HMIL"}, "t",
+                       [{"lpn_no": "F.6002.BL71", "invoice_no": "INV-10", "part_no": "DR-3", "part_qty": 30}]); db.commit()
+        g = db.get(models.PickList, "GCS-CHN-GCS9002"); t = db.get(models.PickList, "DB-CHN-602")
+        st = (g.status, g.linked_picklist, t.gcs_no, t.invoice_no, db.query(models.PickListItem).filter_by(picklist_no="DB-CHN-602").count())
+    check(st == ("LINKED", "DB-CHN-602", "GCS/9002", "INV-10", 1), f"trip already loaded: it takes the GCS no + invoice lines, GCS sheet LINKED (not loaded twice): {st}")
+    o = c.post("/api/v1/picklists/gcs-open", headers=H, json={"gcs_no": "GCS/9002"}).json()
+    check(o["picklist_no"] == "DB-CHN-602", "opening GCS 9002 on the HHT goes to the joined trip")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

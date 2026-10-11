@@ -253,7 +253,9 @@ def gcs_open(body: GcsOpenIn, request: Request, p: Principal = Depends(hht("DOCK
     no = (q["gcs_no"] if q and q.get("gcs_no") else body.gcs_no).strip().upper()
     if q and not q.get("valid"):
         raise HTTPException(400, q["error"])
-    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.gcs_no == no).first()
+    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.gcs_no == no).order_by((models.PickList.status == "LINKED").asc()).first()
+    if k and k.status == "LINKED" and k.linked_picklist and db.get(models.PickList, k.linked_picklist):
+        k = db.get(models.PickList, k.linked_picklist)          # GCS joined with its Bench trip: work on the one record
     if not k:
         if not (body.vehicle_no and body.customer_code):
             raise HTTPException(404, f"GCS {no} not received from the inbox yet - enter vehicle and customer to open it manually")
@@ -513,7 +515,8 @@ def gate_out_scan(body: GateOutIn, request: Request, p: Principal = Depends(hht(
         sc = q["gcs_no"]
     if sc.startswith("CHL|"):
         sc = sc.split("|")[1]
-    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, (models.PickList.gcs_no == sc) | (models.PickList.challan_no == sc)).order_by(models.PickList.created_at.desc()).first()
+    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, (models.PickList.gcs_no == sc) | (models.PickList.challan_no == sc),
+                                         models.PickList.status != "LINKED").order_by(models.PickList.created_at.desc()).first()
     if not k:
         raise HTTPException(404, f"No load found for {sc} - HOLD VEHICLE")
     if q and q.get("vehicle") and k.vehicle_no and q["vehicle"] != k.vehicle_no:

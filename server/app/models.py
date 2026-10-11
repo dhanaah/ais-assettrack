@@ -259,6 +259,7 @@ class TagHistory(Base):
 class PickList(Base):
     __tablename__ = "picklists"
     picklist_no: Mapped[str] = mapped_column(String(40), primary_key=True)
+    linked_picklist: Mapped[str | None] = mapped_column(String(40), index=True)   # Dispatch Bench trip <-> its GCS loading sheet
     plant_code: Mapped[str] = mapped_column(ForeignKey("plants.code"), index=True)
     customer_code: Mapped[str] = mapped_column(String(20))
     transporter_code: Mapped[str | None] = mapped_column(String(20))
