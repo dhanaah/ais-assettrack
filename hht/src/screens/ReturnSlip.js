@@ -57,7 +57,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
   const reset = () => { setCust(null); setVeh(''); setDc(''); setDrv(''); setQty(''); setDone(null); setPreview(null); setPages([]); };
 
   if (done) return (<Screen><Header title="Return slip created" onBack={reset} /><Page>
-    <View style={[S.card, { alignItems: 'center' }]}><Text style={S.big}>{done.slip_no}</Text><Text style={S.mute}>{done.provisional ? 'PROVISIONAL (offline) - will sync' : 'Registered on server'} · {done.declared_qty} pallets</Text></View>
+    <View style={[S.card, { alignItems: 'center' }]}><Text style={S.big}>{done.slip_no}</Text><Text style={S.mute}>{done.provisional ? 'PROVISIONAL (offline) - gate entry made when it syncs' : `Gate entry ${done.gate_entry || 'registered'}`} · {done.declared_qty} pallets</Text></View>
     <Btn title="Reprint" secondary onPress={async () => { const plant = await kv.get('plant'); const r = await printSlip(done, plant); if (!r.printed) setPreview(r.text); }} />
     <Btn title="New slip" onPress={reset} />
     <Modal visible={!!preview} onRequestClose={() => setPreview(null)}><ScrollView style={{ padding: 20, paddingTop: 50 }}><Text style={{ fontFamily: 'monospace', fontSize: 13 }}>{preview}</Text><Text style={[S.mute, { marginTop: 12 }]}>No Bluetooth printer connected - this is the slip content. Pair a printer in Settings.</Text><Btn title="Close" onPress={() => setPreview(null)} /></ScrollView></Modal>

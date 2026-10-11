@@ -314,6 +314,19 @@ def run_retries(db: Session, max_attempts: int = 50) -> dict:
                 ok, g, msg = create_gcs_inward(db, sl)
                 if ok:
                     sl.gcs_in_no = g
+        elif q.kind == "GCS_IN_GE":
+            ge = db.get(models.GateEntry, q.ref)
+            if ge:
+                import types
+                ok, g, msg = create_gcs_inward(db, types.SimpleNamespace(slip_no=ge.ref_no, vehicle_no=ge.vehicle_no, declared_qty=ge.qty,
+                                                                         customer_code=ge.from_party, plant_code=ge.plant_code))
+                if ok:
+                    ge.gcs_in_no = g
+                    sl = db.get(models.ReturnSlip, ge.ref_no)
+                    if sl:
+                        sl.gcs_in_no = g
+            else:
+                ok = True
         else:
             ok, msg = (MODE != "OFF"), "noted"
         if ok:

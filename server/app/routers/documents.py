@@ -682,8 +682,11 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
         sl.declared_qty = len(seen); sl.status = "OPEN"
     db.add(sl)
     audit(db, p, "RETURN_SLIP_CREATE", "slip", no, None, body.model_dump(), request)
+    # Option B is made at the IN gate itself: the gate entry (and GCS inward) is registered with it
+    ge, _ = gate_register(db, p, "SLIP_B", no, cust.code, sl.vehicle_no, sl.declared_qty, request)
+    sl.gcs_in_no = ge.gcs_in_no
     db.commit()
-    return row(sl) | {"warnings": warnings}
+    return row(sl) | {"warnings": warnings, "gate_entry": ge.entry_no}
 
 
 class DocMatchIn(BaseModel):
@@ -771,6 +774,27 @@ class GateInIn(BaseModel):
     vehicle_no: str | None = None   # actual vehicle at gate (optional cross-check)
 
 
+@router.get("/gate-entries")
+def gate_entries(plant: str | None = None, days: int = 7, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """IN-gate inward register (slips A / B and other-plant challans) with the pallet-yard status of each."""
+    from datetime import timedelta
+    pl = p.scope_plant(plant)
+    q = db.query(models.GateEntry).filter(models.GateEntry.created_at >= utcnow() - timedelta(days=max(1, min(days, 366))))
+    if pl:
+        q = q.filter(models.GateEntry.plant_code == pl)
+    out = []
+    for g in q.order_by(models.GateEntry.created_at.desc()).limit(2000).all():
+        r = row(g)
+        if g.kind == "CHALLAN":
+            k = db.query(models.PickList).filter_by(challan_no=g.ref_no).first()
+            r["yard_status"] = "RECEIVED" if k and k.status == "CLOSED" else "AT GATE / YARD"
+        else:
+            sl = db.get(models.ReturnSlip, g.ref_no)
+            r["yard_status"] = (sl.status if sl else "-")
+        out.append(r)
+    return out
+
+
 @router.post("/slips/{no}/gate-in")
 def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principal = Depends(hht("IN_GATE_SCAN")), db: Session = Depends(get_db)):
     if no.startswith("CHL|") or (not no.startswith(("AIS1|", "RTS|")) and not db.get(models.ReturnSlip, no)):
@@ -799,14 +823,29 @@ def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principa
     p.require_plant(sl.plant_code)
     if sl.status not in ("OPEN", "PENDING_VERIFICATION"):
         raise HTTPException(400, f"Slip is {sl.status}")
-    ok, gcs, msg = integration.create_gcs_inward(db, sl)
-    sl.gcs_in_no = gcs if ok else None
-    if not ok:
-        integration.queue_retry(db, "GCS_IN", no, msg)
+    ge, msg = gate_register(db, p, "SLIP_A" if sl.mode == "A" else "SLIP_B", no, sl.customer_code, sl.vehicle_no, sl.declared_qty, request)
+    sl.gcs_in_no = ge.gcs_in_no
     sl.status = "IN_GATE" if sl.mode != "B2" else "PENDING_VERIFICATION"
-    audit(db, p, "GATE_IN", "slip", no, None, {"gcs": gcs, "msg": msg}, request)
+    audit(db, p, "GATE_IN", "slip", no, None, {"gate_entry": ge.entry_no, "gcs": ge.gcs_in_no, "msg": msg}, request)
     db.commit()
-    return row(sl) | {"gcs_message": msg}
+    return row(sl) | {"gcs_message": msg, "gate_entry": ge.entry_no}
+
+
+def gate_register(db, p, kind, ref, party, vehicle, qty, request=None):
+    """One IN-gate register entry + GCS inward per inward vehicle document (repeat scans return the same entry)."""
+    ge = db.query(models.GateEntry).filter_by(plant_code=p.plant, ref_no=ref).first()
+    if ge:
+        return ge, "already registered"
+    import types
+    doc = types.SimpleNamespace(slip_no=ref, vehicle_no=vehicle, declared_qty=qty, customer_code=party, plant_code=p.plant)
+    ok, gcs, msg = integration.create_gcs_inward(db, doc)
+    ge = models.GateEntry(entry_no=services.doc_number(db, p.plant, "GE"), plant_code=p.plant, kind=kind, ref_no=ref, from_party=party,
+                          vehicle_no=vehicle, qty=qty or 0, gcs_in_no=gcs if ok else None, created_by=p.user_id)
+    db.add(ge)
+    if not ok:
+        integration.queue_retry(db, "GCS_IN_GE", ge.entry_no, msg)
+    audit(db, p, "GATE_ENTRY", "gate_entry", ge.entry_no, None, {"kind": kind, "ref": ref, "from": party, "qty": qty, "gcs": gcs, "msg": msg}, request)
+    return ge, msg
 
 
 def _open_offline_slip(db, p, q, request):
@@ -854,14 +893,15 @@ def _gate_in_challan(db, p, k, request):
     """Other-plant return at the IN gate: on the sending plant's challan only. Pallets are received at the yard."""
     if k.status not in ("DISPATCHED", "CLOSED"):
         raise HTTPException(400, f"Challan {k.challan_no} not gated out at {k.plant_code} yet (status {k.status}) - HOLD VEHICLE")
-    seen = db.query(models.AuditLog).filter_by(action="GATE_IN_CHALLAN", entity_id=k.picklist_no).first()
+    seen = db.query(models.GateEntry).filter_by(plant_code=p.plant, ref_no=k.challan_no).first()
     qty = db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count() or k.qty
+    ge, msg = gate_register(db, p, "CHALLAN", k.challan_no, k.plant_code, k.vehicle_no, qty, request)
     if not seen:
-        audit(db, p, "GATE_IN_CHALLAN", "picklist", k.picklist_no, None, {"challan": k.challan_no, "from": k.plant_code, "qty": qty}, request)
-        db.commit()
+        audit(db, p, "GATE_IN_CHALLAN", "picklist", k.picklist_no, None, {"challan": k.challan_no, "from": k.plant_code, "qty": qty, "gate_entry": ge.entry_no}, request)
+    db.commit()
     return {"kind": "CHALLAN", "slip_no": k.challan_no, "challan_no": k.challan_no, "from_plant": k.plant_code, "customer_code": k.plant_code,
-            "vehicle_no": k.vehicle_no, "declared_qty": qty, "status": "IN_GATE", "repeat": bool(seen),
-            "gcs_message": "Other-plant return on challan - receive the pallets at the pallet yard"}
+            "vehicle_no": k.vehicle_no, "declared_qty": qty, "status": "IN_GATE", "repeat": bool(seen), "gate_entry": ge.entry_no,
+            "gcs_in_no": ge.gcs_in_no, "gcs_message": "Other-plant return on challan - registered at gate, receive the pallets at the pallet yard"}
 
 
 class CloseIn(BaseModel):

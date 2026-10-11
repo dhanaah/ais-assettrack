@@ -20,7 +20,7 @@ export function GateIn({ onBack }) {
   const onScan = async (code) => {
     if (!needOnline(toast)) return;
     const no = code.startsWith('AIS1|RS|') || code.startsWith('AIS1|RO|') || code.startsWith('RTS|') ? code.split('|')[code.startsWith('AIS1|') ? 2 : 1] : code;   // RO = printed by a customer HHT without network
-    try { const r = await api(`/slips/${encodeURIComponent(no)}/gate-in`, { method: 'POST', body: { qr: code !== no ? code : null } }); setLast(r); toast(r.kind === 'CHALLAN' ? `Challan ${r.challan_no} from ${r.from_plant}: ${r.declared_qty} pallets - receive at yard` : `${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
+    try { const r = await api(`/slips/${encodeURIComponent(no)}/gate-in`, { method: 'POST', body: { qr: code !== no ? code : null } }); setLast(r); toast(`Gate entry ${r.gate_entry || ''} · ` + (r.kind === 'CHALLAN' ? `challan ${r.challan_no} from ${r.from_plant}: ${r.declared_qty} pallets - receive at yard` : `${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`)); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
   return (<Screen><Header title="IN Gate" sub="Customer: return slip QR · AIS plant: challan QR" onBack={onBack} /><Page>

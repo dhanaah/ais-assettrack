@@ -1,4 +1,14 @@
 # Changelog — AIS AssetTrack Server
+## 1.19.0 (HHT 2.8.0) - 2026-10-11
+- **Gate inward register**: every inward is registered at the IN gate with one entry number (`<plant>-GE-000123`) and one GCS inward:
+  - Option A return slip - registered when its QR is scanned at the gate.
+  - Option B return slip - registered when security makes it at the gate.
+  - Other AIS plant - registered when its challan is scanned (now also gets a GCS inward).
+  - Repeat scans return the same entry, never a second one.
+- Web: new page **Operations › Gate Inward Register** (today / 7 / 30 / 90 days) with the pallet-yard status of each entry.
+- HHT: the gate entry number is shown after the gate scan and on the Option B slip screen.
+- Process flow A3 updated: all three inward routes go through the gate register before pallet-yard receiving.
+
 ## 1.18.1 (2026-10-11) — "Developed by DT" only on the login screens (HHT app 2.7.1)
 - Shown on the HHT login, the customer staff sign-in and the web login page only; removed from the other HHT screens, the web footer after sign-in, thermal slips, gate pass / challan PDFs, prints, Excel / PDF exports, templates, reminder e-mails, the HHT setup page and the tray About box
 ## 1.18.0 (2026-10-11) — one server, plant-wise: plant chosen on the HHT, Bench trips served to their own plant (HHT app 2.7.0)

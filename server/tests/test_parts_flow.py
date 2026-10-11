@@ -750,5 +750,12 @@ with TestClient(app) as c:
         ok3 = db.get(models.PickList, "DB-PUN-701") is not None and db.get(models.PickList, "DB-CHN-702") is not None and db.query(models.PickList).filter(models.PickList.ext_ref == "703").count() == 0
     check(ok3 and res["no_plant"] == 1 and res["plants"] == {"PUN": 1, "CHN": 1},
           f"plant-wise Bench: trip 701 -> PUN, 702 (org 3001 mapped) -> CHN, 703 without plant not taken: {res}")
+    print("28. Every inward is registered at the IN gate (slip A scanned, slip B made at gate, other-plant challan scanned)")
+    gc = c.get("/api/v1/gate-entries", headers=H).json(); kinds = {g["kind"] for g in gc}
+    check({"SLIP_A", "SLIP_B"} <= kinds and all(g["entry_no"].startswith("CHN-GE-") for g in gc), f"CHN gate register: {len(gc)} entries, kinds {sorted(kinds)}")
+    check(all(g["gcs_in_no"] for g in gc), "each gate entry has its GCS inward")
+    gp = c.get("/api/v1/gate-entries", headers=P).json()
+    check(any(g["kind"] == "CHALLAN" and g["from_party"] == "CHN" for g in gp), "PUN gate register has the CHN challan")
+    refs = [g["ref_no"] for g in gc]; check(len(refs) == len(set(refs)), "one entry per document (repeat scans not duplicated)")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

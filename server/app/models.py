@@ -561,6 +561,22 @@ class Device(Base):
     blocked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class GateEntry(Base):
+    """IN-gate inward register: every vehicle bringing pallets in - Option A slip (scanned), Option B slip (made at the
+    gate) or another AIS plant's challan (scanned) - gets one entry and one GCS inward."""
+    __tablename__ = "gate_entries"
+    entry_no: Mapped[str] = mapped_column(String(40), primary_key=True)          # <plant>-GE-000123
+    plant_code: Mapped[str] = mapped_column(ForeignKey("plants.code"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))                               # SLIP_A | SLIP_B | CHALLAN
+    ref_no: Mapped[str] = mapped_column(String(40), index=True)                  # return slip no / challan no
+    from_party: Mapped[str | None] = mapped_column(String(20))                   # customer code or sending plant
+    vehicle_no: Mapped[str | None] = mapped_column(String(20))
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    gcs_in_no: Mapped[str | None] = mapped_column(String(40))
+    created_by: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

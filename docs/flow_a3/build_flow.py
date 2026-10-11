@@ -4,7 +4,7 @@ import html, sys, os
 
 W, H = 1587, 1123          # A3 landscape at 96 dpi
 OUT = os.path.dirname(os.path.abspath(__file__))
-VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.18 · HHT 2.7"
+VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.19 · HHT 2.8"
 
 parts, edges = [], []
 BOX = {}
@@ -110,10 +110,10 @@ parts.append(f'<text class="note" x="702" y="{y2 + ch + 22}">Customer HHT: staff
 
 # ------------------------------------------------------------------ RETURN
 dia("with", 170, 668, 150, 84, "Vehicle brings?", [])
-box("inA", 330, 640, 176, 58, "step", "IN gate · scan slip QR", ["Option A (or offline RO- slip)"])
-box("inB", 330, 724, 176, 70, "step", "IN gate · Option B", ["count + photo of customer", "document → read & matched"])
-box("inP", 330, 818, 176, 58, "step", "IN gate · scan challan", ["other AIS plant: challan only"])
-box("gcsin", 540, 640, 150, 58, "ext", "GCS inward", ["ERP gate entry"])
+box("inA", 330, 640, 176, 58, "step", "Scan return slip QR", ["Option A (or offline RO- slip)"])
+box("inB", 330, 724, 176, 70, "step", "Make slip B at gate", ["count + photo of customer", "document → read & matched"])
+box("inP", 330, 818, 176, 58, "step", "Scan plant challan", ["other AIS plant: challan only"])
+box("gcsin", 540, 718, 168, 82, "app", "Gate inward register", ["IN gate · one entry no.", "for every inward vehicle", "+ GCS inward (ERP)"])
 box("yard", 740, 724, 190, 70, "step", "Pallet yard receiving", ["scan each pallet · slip /", "document list + photo shown"])
 dia("rec", 1012, 759, 150, 92, "Reconcile", ["received vs", "slip / document"])
 box("avail", 1130, 642, 172, 54, "ok", "AVAILABLE", ["back in plant stock"])
@@ -124,8 +124,9 @@ edge([P("veh", "b"), (376, 600), (170, 600), (170, 626)])
 edge([(245, 668), P("inA", "l")], "", "slip", (262, 660), "start")
 edge([(170, 710), (170, 759), P("inB", "l")], "", "no slip", (180, 752), "start")
 edge([(170, 759), (170, 847), P("inP", "l")], "", "plant challan", (180, 840), "start")
-edge([P("inA", "r"), P("gcsin", "l")], "ext"); edge([P("inB", "r"), (520, 759), (520, 669), P("gcsin", "l", 0.7)], "ext")
-edge([P("gcsin", "b"), (615, 759), P("yard", "l")]); edge([P("inP", "r"), (700, 847), (700, 778), P("yard", "l", 0.78)])
+edge([P("inA", "r"), (522, 669), (522, 740), (540, 740)]); edge([P("inB", "r"), P("gcsin", "l")])
+edge([P("inP", "r"), (522, 847), (522, 778), (540, 778)])
+edge([P("gcsin", "r"), P("yard", "l")])
 edge([P("yard", "r"), (937, 759)])
 edge([(1012, 713), (1012, 669), P("avail", "l")], "yes", "match", (1030, 662), "start")
 edge([(1087, 759), P("held", "l")], "", "other plant", (1092, 728), "start")
@@ -154,7 +155,7 @@ svg = f'''<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" role="im
     (1010, 52, "lgx", "External (Bench/ERP/EBS)"), (1180, 52, "lgu", "Customer HHT step"), (1340, 52, "lgo", "Normal end state"), (1480, 52, "lgw", "Exception")])}
 {"".join(parts)}
 {"".join(edges)}
-<text class="foot" x="40" y="{H - 34}">Rules: a part card not in the GCS is stopped (do PDI) · other AIS plants return pallets only with that plant's challan · Option B slips are a count, knocked off at the pallet yard · a pallet found where it should not be is recorded as a missed scan and corrected.</text>
+<text class="foot" x="40" y="{H - 34}">Rules: every inward (slip A, slip B, plant challan) is registered at the IN gate · a part card not in the GCS is stopped (do PDI) · Option B slips are a count, knocked off at the pallet yard</text>
 <text class="foot" x="40" y="{H - 16}">AIS AssetTrack · process flow A3 · Developed by DT</text>
 </svg>'''
 
