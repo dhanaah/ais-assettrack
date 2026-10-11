@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { THEMES } from './theme';
 import { feedback } from '../lib/feedback';
+import { kv } from '../lib/db';
 
 export const C = { ...THEMES.glass.C };
 export const GRAD = { ...THEMES.glass.GRAD };
@@ -74,29 +75,45 @@ export function useToast() {
   return [msg, show];
 }
 
-/** ScanInput: hardware scanners act as a keyboard and send Enter; the field keeps focus and clears after each read.
- *  The camera button opens a barcode/QR scanner for phones. */
+/** Scan mode for every scan field: 'native' = the device's built-in scanner (keyboard wedge, sends Enter) or
+ *  'camera' = phone camera. Switch on any scan field or in Settings, so any Android device can do every task. */
+export const SCAN = { mode: 'native', listeners: new Set() };
+export async function loadScanMode() { try { const m = await kv.get('scan_mode'); if (m) { SCAN.mode = m; SCAN.listeners.forEach((f) => f(m)); } } catch (e) { } }
+export async function setScanMode(m) { SCAN.mode = m; SCAN.listeners.forEach((f) => f(m)); try { await kv.set('scan_mode', m); } catch (e) { } }
+export function useScanMode() { const [m, setM] = useState(SCAN.mode); useEffect(() => { SCAN.listeners.add(setM); setM(SCAN.mode); return () => { SCAN.listeners.delete(setM); }; }, []); return m; }
+
+function ScanModeSwitch({ mode }) {
+  const opt = (k, icon, label) => <TouchableOpacity key={k} onPress={() => setScanMode(k)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: mode === k ? C.accent : 'transparent' }}><Ionicons name={icon} size={sc(13)} color={mode === k ? '#fff' : C.mute} /><Text style={{ fontSize: sc(11.5), fontWeight: '700', color: mode === k ? '#fff' : C.mute }}>{label}</Text></TouchableOpacity>;
+  return <View style={{ flexDirection: 'row', alignSelf: 'flex-end', borderWidth: 1, borderColor: C.line, borderRadius: 999, padding: 2, marginBottom: 6 }}>{opt('native', 'barcode-outline', 'Scanner')}{opt('camera', 'camera-outline', 'Camera')}</View>;
+}
+
+/** ScanInput: Scanner mode - the built-in / Bluetooth scanner types into the field and sends Enter (field keeps focus,
+ *  clears after each read). Camera mode - one big button opens the camera. Manual typing works in both. */
 export function ScanInput({ onScan, placeholder = 'Scan tag / QR', autoFocus = true, disabled }) {
+  const mode = useScanMode(); const camMode = mode === 'camera';
   const [v, setV] = useState(''); const [cam, setCam] = useState(false); const [focused, setFocused] = useState(false); const [last, setLast] = useState(null); const [kb, setKb] = useState(false); const ref = useRef(); const busy = useRef(false);
   const submit = async (val) => {
     const s = (val ?? v).trim(); if (!s || busy.current) return;
     busy.current = true; setV(''); setLast({ s: s.length > 34 ? s.slice(0, 32) + '…' : s, t: new Date() });
-    try { await onScan(s); } finally { busy.current = false; setTimeout(() => ref.current?.focus(), 50); }
+    try { await onScan(s); } finally { busy.current = false; if (!camMode) setTimeout(() => ref.current?.focus(), 50); }
   };
-  useEffect(() => { if (autoFocus) setTimeout(() => ref.current?.focus(), 200); }, []);
-  useEffect(() => { if (!cam && autoFocus) setTimeout(() => ref.current?.focus(), 300); }, [cam]);
+  useEffect(() => { if (autoFocus && !camMode) setTimeout(() => ref.current?.focus(), 200); }, [camMode]);
+  useEffect(() => { if (!cam && autoFocus && !camMode) setTimeout(() => ref.current?.focus(), 300); }, [cam]);
+  const showField = !camMode || kb;
   return (
     <View>
+      <ScanModeSwitch mode={mode} />
+      {camMode ? <TouchableOpacity disabled={disabled} onPress={() => setCam(true)} style={[S.btn, { marginTop: 0, marginBottom: 8, paddingVertical: sc(18), flexDirection: 'row', justifyContent: 'center', gap: 10 }]}><LinearGradient colors={GRAD.btn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ ...StyleSheet.absoluteFillObject }} /><Ionicons name="camera-outline" size={sc(26)} color="#fff" /><Text style={[S.btnText, { fontSize: sc(17) }]}>Tap to scan</Text></TouchableOpacity> : null}
       <View style={S.row}>
-        <View style={{ flex: 1 }}>
-          <TextInput ref={ref} value={v} onChangeText={setV} onSubmitEditing={() => submit()} blurOnSubmit={false} placeholder={placeholder} editable={!disabled} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-            style={[S.input, { marginBottom: 0, fontSize: sc(17), borderColor: focused ? C.ok : C.accent, borderWidth: 2, paddingRight: 34 }]} autoCapitalize="characters" autoCorrect={false} showSoftInputOnFocus={kb} returnKeyType="done" />
-          <View style={{ position: 'absolute', right: 10, top: 0, bottom: 0, justifyContent: 'center' }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: focused ? C.ok : C.warn }} /></View>
-        </View>
-        <TouchableOpacity onPress={() => { setKb(k => !k); setTimeout(() => { ref.current?.blur(); ref.current?.focus(); }, 30); }} style={[S.btnS, { paddingHorizontal: 12, marginTop: 0, backgroundColor: kb ? C.accent : undefined }]}><Ionicons name="keypad-outline" size={sc(20)} color={kb ? '#fff' : C.accent} /></TouchableOpacity>
-        <TouchableOpacity onPress={() => setCam(true)} style={[S.btn, { paddingHorizontal: 14, marginTop: 0, paddingVertical: sc(11) }]}><LinearGradient colors={GRAD.btn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ ...StyleSheet.absoluteFillObject }} /><Ionicons name="camera-outline" size={sc(22)} color="#fff" /></TouchableOpacity>
+        {showField ? <View style={{ flex: 1 }}>
+          <TextInput ref={ref} value={v} onChangeText={setV} onSubmitEditing={() => submit()} blurOnSubmit={false} placeholder={camMode ? 'Type the code' : placeholder} editable={!disabled} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+            style={[S.input, { marginBottom: 0, fontSize: sc(17), borderColor: focused ? C.ok : C.accent, borderWidth: 2, paddingRight: 34 }]} autoCapitalize="characters" autoCorrect={false} showSoftInputOnFocus={kb || camMode} returnKeyType="done" />
+          {!camMode ? <View style={{ position: 'absolute', right: 10, top: 0, bottom: 0, justifyContent: 'center' }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: focused ? C.ok : C.warn }} /></View> : null}
+        </View> : <View style={{ flex: 1 }} />}
+        <TouchableOpacity onPress={() => { setKb(k => !k); setTimeout(() => { ref.current?.blur(); ref.current?.focus(); }, 60); }} style={[S.btnS, { paddingHorizontal: 12, marginTop: 0, backgroundColor: kb ? C.accent : undefined, flexDirection: 'row', gap: 4 }]}><Ionicons name="keypad-outline" size={sc(20)} color={kb ? '#fff' : C.accent} />{camMode && !kb ? <Text style={S.btnSText}>Type</Text> : null}</TouchableOpacity>
+        {!camMode ? <TouchableOpacity onPress={() => setCam(true)} style={[S.btn, { paddingHorizontal: 14, marginTop: 0, paddingVertical: sc(11) }]}><LinearGradient colors={GRAD.btn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ ...StyleSheet.absoluteFillObject }} /><Ionicons name="camera-outline" size={sc(22)} color="#fff" /></TouchableOpacity> : null}
       </View>
-      <Text style={[S.mute, { marginTop: 4, fontSize: sc(11.5) }]}>{focused ? '● Scanner ready' : '○ Tap the field to activate the scanner'}{last ? `  ·  last: ${last.s} ${last.t.toTimeString().slice(0, 8)}` : ''}</Text>
+      <Text style={[S.mute, { marginTop: 4, fontSize: sc(11.5) }]}>{camMode ? '📷 Camera mode' : focused ? '● Scanner ready' : '○ Tap the field to activate the scanner'}{last ? `  ·  last: ${last.s} ${last.t.toTimeString().slice(0, 8)}` : ''}</Text>
       <CameraScanner visible={cam} onClose={() => setCam(false)} onScan={(d) => { setCam(false); submit(d); }} />
     </View>);
 }

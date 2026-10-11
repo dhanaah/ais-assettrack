@@ -2,19 +2,45 @@
   "expo": {
     "name": "AIS AssetTrack",
     "slug": "ais-assettrack",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#ffffff" },
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "android": {
-      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#ffffff" },
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
       "package": "com.aisglass.pallethht",
-      "versionCode": 23,
-      "permissions": ["CAMERA", "BLUETOOTH", "BLUETOOTH_ADMIN", "BLUETOOTH_CONNECT", "BLUETOOTH_SCAN", "ACCESS_FINE_LOCATION", "INTERNET", "ACCESS_NETWORK_STATE"],
+      "versionCode": 24,
+      "permissions": [
+        "CAMERA",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "ACCESS_FINE_LOCATION",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
       "usesCleartextTraffic": true
     },
-    "plugins": [["expo-camera", { "cameraPermission": "Camera is used to scan pallet tags and slip QR codes." }]],
-    "extra": { "developer": "Developed by DT" }
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Camera is used to scan pallet tags and slip QR codes."
+        }
+      ],
+      "react-native-ble-plx"
+    ],
+    "extra": {
+      "developer": "Developed by DT"
+    }
   }
 }

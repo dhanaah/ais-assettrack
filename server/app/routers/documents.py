@@ -592,11 +592,20 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
     require_hht(request)
     if not p.plant:
         raise HTTPException(400, "Plant user required")
+    # Return slips: Option A only by the customer's own HHT (/api/ext), Option B only by IN-gate security, and it is a
+    # count only - the pallets are scanned and the slip knocked off at pallet-yard receiving. Pallets coming back from
+    # another AIS plant come on that plant's challan (scan it at the IN gate) - never on a return slip.
     mode = body.mode.upper()
-    if mode.startswith("B"):
-        p.require("RETURN_SLIP_B")
-    elif mode != "A":
-        raise HTTPException(400, "mode must be A, B1 or B2")
+    if mode == "A":
+        raise HTTPException(403, "Option A return slips are made only on the customer's HHT")
+    if not mode.startswith("B"):
+        raise HTTPException(400, "mode must be B")
+    p.require("RETURN_SLIP_B")
+    if mode == "B1":                    # older HHT apps: keep the count, the yard scans the pallets
+        body.declared_qty = body.declared_qty or len(set(body.pallets)); body.pallets = []
+    mode = "B2"
+    if db.get(models.Plant, body.customer_code):
+        raise HTTPException(400, f"{body.customer_code} is an AIS plant - other-plant returns come with that plant's challan only (scan the challan at the IN gate)")
     cust = db.query(models.Customer).filter_by(code=body.customer_code, plant_code=p.plant).first()
     if not cust:
         raise HTTPException(400, "Customer not mapped to this plant")
@@ -649,6 +658,10 @@ class GateInIn(BaseModel):
 
 @router.post("/slips/{no}/gate-in")
 def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principal = Depends(hht("IN_GATE_SCAN")), db: Session = Depends(get_db)):
+    if no.startswith("CHL|") or (not no.startswith(("AIS1|", "RTS|")) and not db.get(models.ReturnSlip, no)):
+        k = _interplant_challan(db, p, no)
+        if k:
+            return _gate_in_challan(db, p, k, request)
     if no.startswith("AIS1|") or no.startswith("RTS|"):
         body = body or GateInIn(); body.qr = no
     q = services.parse_slip_qr(body.qr) if body and body.qr else None
@@ -677,6 +690,33 @@ def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principa
     audit(db, p, "GATE_IN", "slip", no, None, {"gcs": gcs, "msg": msg}, request)
     db.commit()
     return row(sl) | {"gcs_message": msg}
+
+
+def _interplant_challan(db, p, scanned):
+    """A challan (CHL|challan|picklist|n or the challan number) of pallets sent by another AIS plant to this plant."""
+    sc = scanned.split("|")[1] if scanned.startswith("CHL|") else scanned
+    k = db.query(models.PickList).filter((models.PickList.challan_no == sc) | (models.PickList.picklist_no == sc)).order_by(models.PickList.created_at.desc()).first()
+    if not k:
+        if scanned.startswith("CHL|"):
+            raise HTTPException(404, f"Challan {sc} not found - HOLD VEHICLE")
+        return None
+    if k.dispatch_type not in ("EMPTY_RETURN", "STOCK_TRANSFER") or (k.to_plant or k.customer_code) != p.plant:
+        raise HTTPException(400, f"Challan {sc} is not addressed to {p.plant} - HOLD VEHICLE")
+    return k
+
+
+def _gate_in_challan(db, p, k, request):
+    """Other-plant return at the IN gate: on the sending plant's challan only. Pallets are received at the yard."""
+    if k.status not in ("DISPATCHED", "CLOSED"):
+        raise HTTPException(400, f"Challan {k.challan_no} not gated out at {k.plant_code} yet (status {k.status}) - HOLD VEHICLE")
+    seen = db.query(models.AuditLog).filter_by(action="GATE_IN_CHALLAN", entity_id=k.picklist_no).first()
+    qty = db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).count() or k.qty
+    if not seen:
+        audit(db, p, "GATE_IN_CHALLAN", "picklist", k.picklist_no, None, {"challan": k.challan_no, "from": k.plant_code, "qty": qty}, request)
+        db.commit()
+    return {"kind": "CHALLAN", "slip_no": k.challan_no, "challan_no": k.challan_no, "from_plant": k.plant_code, "customer_code": k.plant_code,
+            "vehicle_no": k.vehicle_no, "declared_qty": qty, "status": "IN_GATE", "repeat": bool(seen),
+            "gcs_message": "Other-plant return on challan - receive the pallets at the pallet yard"}
 
 
 class CloseIn(BaseModel):

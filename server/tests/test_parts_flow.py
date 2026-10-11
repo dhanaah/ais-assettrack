@@ -32,7 +32,7 @@ def setup():
         for i in range(1, 4):
             db.add(models.Pallet(pallet_no=f"PUN-P{i:03d}", home_plant="PUN", location_plant=None, status="AT_CUSTOMER", customer_code="CHN",
                                  challan_ref="PUN-ST-1", dispatch_date=datetime.utcnow()))
-        for uid, plant, roles in (("chn", "CHN", ["FGWH", "QA", "LOG", "SEC_OUT", "SEC_IN", "YARD", "PACK", "PADMIN"]), ("pun", "PUN", ["YARD", "FGWH"]),
+        for uid, plant, roles in (("chn", "CHN", ["FGWH", "QA", "LOG", "SEC_OUT", "SEC_IN", "YARD", "PACK", "PADMIN"]), ("pun", "PUN", ["YARD", "FGWH", "SEC_IN"]),
                                   ("master", None, ["MASTER"])):
             u = models.User(user_id=uid, full_name=uid, plant_code=plant, password_hash=hash_pw("x"), must_change_pw=False,
                             supervisor_allowed=True, supervisor_pin_hash=hash_pw("1234"))
@@ -130,8 +130,15 @@ with TestClient(app) as c:
     pr = c.get(f"/print/challan/{no}?tok=" + H["Authorization"][7:])
     check(pr.status_code == 200 and "L1" in pr.text and r["invoice_no"] in pr.text, "challan print shows LPN lines + invoice")
     print("8. missed scans on return")
-    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "A", "pallets": ["CHN-P001", "CHN-P006"]}).json()
-    check(any("MISSED SCAN (OUT_GATE)" in w for w in r["warnings"]), "returned pallet never dispatched -> missed OUT_GATE recorded")
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "A", "pallets": ["CHN-P001", "CHN-P006"]})
+    check(r.status_code == 403 and "customer" in r.text, "Option A slip refused for AIS users (customer HHT only)")
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "PUN", "mode": "B2", "declared_qty": 3})
+    check(r.status_code == 400 and "challan" in r.text, "other-plant return refused on a return slip (challan only)")
+    with SessionLocal() as db:
+        from app.security import hash_pw as _h
+        cu = db.query(models.Customer).filter_by(code="HMIL", plant_code="CHN").first(); cu.api_key_hash = _h("ais_testkey_123456"); cu.api_key_prefix = "ais_test"; db.commit()
+    r = c.post("/api/ext/v1/return-slip", headers={"X-API-Key": "ais_testkey_123456"}, json={"pallets": ["CHN-P001", "CHN-P006"], "vehicle_no": "TN09AB0001", "customer_challan_no": "DC-76"}).json()
+    check(any("MISSED SCAN (OUT_GATE)" in w for w in r.get("warnings", [])), f"returned pallet never dispatched -> missed OUT_GATE recorded {str(r)[:300]}")
     pk2 = c.post("/api/v1/picklists", headers=H, json={"dispatch_type": "CUSTOMER", "blanket_id": b["id"], "part_qty": 10, "qty": 1})
     check(pk2.status_code == 200, "second release ok")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": pk2.json()["picklist_no"], "scanned": "L5", "pallet": "CHN-P002"})
@@ -155,6 +162,10 @@ with TestClient(app) as c:
     c.post(f"/api/v1/picklists/{rno}/approve", headers=H, json={"vehicle_no": "TN02X1"})
     k = c.get(f"/api/v1/picklists/{rno}", headers=H).json()["picklist"]
     c.post(f"/api/v1/picklists/{rno}/gate-out", headers=H, json={"scanned": k["challan_no"]})
+    g = c.post(f"/api/v1/slips/{k['challan_no']}/gate-in", headers=H)
+    check(g.status_code == 400 and "not addressed" in g.text, "challan for PUN refused at CHN IN gate")
+    g = c.post("/api/v1/slips/" + f"CHL|{k['challan_no']}|{rno}|2".replace("|", "%7C") + "/gate-in", headers=P)
+    check(g.status_code == 200 and g.json()["kind"] == "CHALLAN" and g.json()["from_plant"] == "CHN", f"PUN IN gate accepts CHN challan: {g.text[:90]}")
     e = ev(c, P, "PALLET_SCAN_YARD", {"scanned": "PUN-P001"})
     p = c.get("/api/v1/pallets/PUN-P001", headers=P).json(); p = p.get("pallet") or p
     check(p["status"] == "AVAILABLE" and p["load_state"] == "EMPTY" and p["zone"] == "YARD", "PUN yard receives its empty pallet")

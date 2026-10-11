@@ -108,6 +108,8 @@ class ExtSlipIn(BaseModel):
 
 @router.post("/return-slip")
 def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
+    if db.get(models.Plant, c.code):
+        raise HTTPException(400, "Other AIS plants return pallets with a challan only - not a return slip")
     if body.client_ref:
         dup = db.query(models.ReturnSlip).filter_by(customer_code=c.code, plant_code=c.plant_code, remarks=f"ref:{body.client_ref}").first()
         if dup:
@@ -125,7 +127,13 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
             warnings.append(f"{scv}: unknown tag, listed as declared"); pno = scv
         else:
             pno = pal.pallet_no
-            if pal.customer_code != c.code or pal.status != "AT_CUSTOMER":
+            from .. import lpn as lpnsvc
+            miss = lpnsvc.check_return_slip(db, pal, c.plant_code, no, c.code, user_id=f"EXT:{c.code}")
+            if miss:                             # returned but the dispatch was never scanned: correct the ledger
+                warnings.append(miss)
+                services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_MISSED_DISPATCH", user_id=f"EXT:{c.code}", ref=no, customer=c.code, force=True)
+                lpnsvc.set_load(db, pal, "EMPTY")
+            elif pal.customer_code != c.code or pal.status != "AT_CUSTOMER":
                 warnings.append(f"{pno}: ledger shows {pal.status} {pal.customer_code or ''}".strip())
             else:
                 services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_EXT", user_id=f"EXT:{c.code}", ref=no, customer=c.code)

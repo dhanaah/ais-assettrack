@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## 1.13.0 (2026-10-11) — return slip rules, other-plant returns on challan, any portable printer, scanner / camera switch (HHT app 2.3.0)
+- Return slips only by: customer staff on the customer HHT (Option A, pallets scanned) and IN-gate security (Option B, number of pallets only - the pallets are scanned and the slip knocked off at pallet-yard receiving). AIS users can no longer make Option A slips; older HHTs sending B1 lists are kept as a count
+- Pallets from another AIS plant: only on that plant's challan - a return slip naming a plant is refused; the IN gate scans the challan QR (or challan number), checks it is addressed to this plant and gated out at the sender, and records the inward; pallets are received at the yard
+- Option A slips from the customer HHT now also correct pallets whose dispatch was never scanned (missed OUT gate recorded)
+- HHT printing for any portable printer: Bluetooth (paired), Bluetooth LE (scan) or Android print; languages ESC/POS, CPCL (Zebra/Honeywell), ZPL, TSPL; paper 2" / 3" / 4"; logo/QR as raster, old ESC* or the printer's own QR; "Find my printer language" test
+- Thermal slip: AssetTrack wordmark smaller under the AIS logo (logo 236 -> 175 dots high); Option B slip shows a large NO. OF PALLETS and "scanned & knocked off at pallet yard receiving"
+- HHT scanning: Scanner (built-in / Bluetooth wedge) or Camera on every scan field (switch on the field or in Settings) - any Android phone can do every task
 ## 1.12.0 (2026-10-11) — customer HHT for Option A return slips (HHT app 2.2.0)
 - Customer HHT paired by QR (web: Masters › Customers › 📱 HHT): own device key per HHT (new table customer_devices), removable one by one; list shows last seen, route (AIS network / internet) and app version
 - HHT customer mode: new Option A return slip (scan pallets - each checked against the customer's AIS ledger - vehicle, customer DC, driver) -> slip with AIS-signed QR, printed on the portable printer and shown on screen; pallets held at the site (days, overdue); the customer's slips with status and reprint

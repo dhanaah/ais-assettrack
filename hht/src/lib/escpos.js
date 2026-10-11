@@ -27,6 +27,26 @@ export class EscPos {
     for (const r of rows) for (let i = 0; i < widthBytes; i++) this.b.push(r[i] || 0);
     return this;
   }
+  /** ESC * 33 (24-dot double density) bands - for older ESC/POS printers that ignore GS v 0. */
+  bitImage(rows, widthBytes) {
+    const w = widthBytes * 8; const bit = (y, x) => (y < rows.length && (rows[y][x >> 3] & (0x80 >> (x & 7)))) ? 1 : 0;
+    this.raw(ESC, 0x33, 24);                               // line spacing = 24 dots, so bands touch
+    for (let y0 = 0; y0 < rows.length; y0 += 24) {
+      this.raw(ESC, 0x2a, 33, w & 0xff, (w >> 8) & 0xff);
+      for (let x = 0; x < w; x++) for (let k = 0; k < 3; k++) { let v = 0; for (let b = 0; b < 8; b++) v |= bit(y0 + k * 8 + b, x) << (7 - b); this.b.push(v); }
+      this.b.push(0x0a);
+    }
+    return this.raw(ESC, 0x32);                            // default line spacing
+  }
+  /** Printer's own QR engine (GS ( k) - smallest data, needs a printer that supports it. */
+  qrNative(text, size = 6) {
+    const d = enc(text); const L = d.length + 3;
+    this.raw(GS, 0x28, 0x6b, 4, 0, 0x31, 0x41, 0x32, 0x00);              // model 2
+    this.raw(GS, 0x28, 0x6b, 3, 0, 0x31, 0x43, Math.max(1, Math.min(16, size)));
+    this.raw(GS, 0x28, 0x6b, 3, 0, 0x31, 0x45, 0x31);                    // ECC M
+    this.raw(GS, 0x28, 0x6b, L & 0xff, (L >> 8) & 0xff, 0x31, 0x50, 0x30, ...d);
+    return this.raw(GS, 0x28, 0x6b, 3, 0, 0x31, 0x51, 0x30, 0x0a);
+  }
   logo() {
     const { widthBytes, height, data } = LOGO_RASTER;
     const bytes = base64ToBytes(data);

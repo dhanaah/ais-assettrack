@@ -2,12 +2,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
-import { Screen, applyTheme, T } from '../ui/kit';
+import { Screen, applyTheme, T, useScanMode, setScanMode } from '../ui/kit';
 import { THEMES, THEME_KEYS } from '../ui/theme';
 import { api, getServer, setServer, APP_VERSION } from '../lib/api';
 import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity, getLpn, lpnsOnPallet } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
-import { listPaired, connect, printerAvailable, testPrint, setPaperWidth } from '../lib/printer';
+import { listPrinters, connect, connAvailable, testPrint, findLanguage, getConfig, setConfig, LANGS, CONNS, WIDTHS, IMGS } from '../lib/printer';
 import { setSoundEnabled, soundEnabled, feedback } from '../lib/feedback';
 import { checkUpdate, openUpdate } from '../lib/update';
 import { fDT, fDate, fTimeS } from '../lib/when';
@@ -19,13 +19,13 @@ export function GateIn({ onBack }) {
   const onScan = async (code) => {
     if (!needOnline(toast)) return;
     const no = code.startsWith('AIS1|RS|') || code.startsWith('RTS|') ? code.split('|')[code.startsWith('AIS1|') ? 2 : 1] : code;
-    try { const r = await api(`/slips/${encodeURIComponent(no)}/gate-in`, { method: 'POST', body: { qr: code !== no ? code : null } }); setLast(r); toast(`${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
+    try { const r = await api(`/slips/${encodeURIComponent(no)}/gate-in`, { method: 'POST', body: { qr: code !== no ? code : null } }); setLast(r); toast(r.kind === 'CHALLAN' ? `Challan ${r.challan_no} from ${r.from_plant}: ${r.declared_qty} pallets - receive at yard` : `${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
-  return (<Screen><Header title="IN Gate" sub="Scan return slip QR → GCS inward" onBack={onBack} /><Page>
-    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan return slip QR" /></View>
-    {last ? <View style={S.card}><Text style={S.h2}>{last.slip_no} <Pill s={last.status} /></Text><Text style={S.mute}>Customer {last.customer_code} · vehicle {last.vehicle_no} · declared {last.declared_qty} · GCS {last.gcs_in_no || 'pending (retry queue)'}</Text></View> : null}
-    <Text style={S.mute}>No slip? Create one with "Return Slip (B1/B2)" first.</Text></Page><Toast msg={msg} /></Screen>);
+  return (<Screen><Header title="IN Gate" sub="Customer: return slip QR · AIS plant: challan QR" onBack={onBack} /><Page>
+    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan return slip / challan QR" /></View>
+    {last ? <View style={S.card}><Text style={S.h2}>{last.slip_no} <Pill s={last.status} /></Text><Text style={S.mute}>{last.kind === 'CHALLAN' ? `Other-plant return from ${last.from_plant} · vehicle ${last.vehicle_no || '-'} · ${last.declared_qty} pallets on challan · receive at pallet yard` : `Customer ${last.customer_code} · vehicle ${last.vehicle_no} · declared ${last.declared_qty} · GCS ${last.gcs_in_no || 'pending (retry queue)'}`}</Text></View> : null}
+    <Text style={S.mute}>Customer vehicle without slip: make one with "Return Slip (Option B)". Pallets from another AIS plant come only with that plant's challan - scan the challan QR.</Text></Page><Toast msg={msg} /></Screen>);
 }
 
 export function GateOut({ onBack }) {
@@ -102,14 +102,15 @@ export function Pending({ onBack }) {
 }
 
 export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra }) {
-  const [srv, setSrv] = useState(getServer()); const [printers, setPrinters] = useState([]); const [sel, setSel] = useState(null); const [selName, setSelName] = useState(null); const [paper, setPaper] = useState('58'); const [busy, setBusy] = useState(false); const [msg, toast] = useToast();
+  const [srv, setSrv] = useState(getServer()); const [busy, setBusy] = useState(false); const [msg, toast] = useToast();
   const [sound, setSound] = useState(soundEnabled()); const [scale, setScale] = useState(T.scale || 1); const [idle, setIdle] = useState(30); const [upd, setUpd] = useState(null);
-  useEffect(() => { kv.get('printer').then(setSel); kv.get('printer_name').then(setSelName); kv.get('printer_width').then(w => setPaper(w || '58')); kv.get('idle_min').then(v => setIdle(v ?? 30)); }, []);
+  useEffect(() => { kv.get('idle_min').then(v => setIdle(v ?? 30)); }, []);
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>
     {extra || null}
     {customer ? null : <View style={S.card}><Text style={S.h2}>Server name</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" autoCorrect={false} placeholder="assettrack" /><Text style={S.mute}>Ports 80 / 8001 / 8002 / 8003 are tried automatically.</Text><Btn title="Save" secondary icon="save-outline" onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId} · app v{APP_VERSION}</Text>
       <Btn title={upd?.busy ? 'Checking…' : 'Check for app update'} secondary icon="cloud-download-outline" busy={upd?.busy} onPress={async () => { setUpd({ busy: true }); const r = await checkUpdate(); setUpd(r || { none: true }); if (!r) toast('Server has no APK published', 'warn'); else if (r.newer) toast(`v${r.version} available`, 'warn'); else toast('You have the latest version', 'ok'); }} />
       {upd?.newer ? <Btn title={`Download v${upd.version}`} icon="download-outline" onPress={() => openUpdate(upd)} /> : null}</View>}
+    <ScanModeCard />
     <View style={S.card}><Text style={S.h2}>Operator feedback</Text>
       <SwitchRow label="Scan sounds" hint="High beep = OK · two beeps = warning · low buzz = rejected (vibration always on)" value={sound} onChange={async (v) => { setSound(v); await setSoundEnabled(v); if (v) feedback('ok'); }} />
       <View style={S.row}>{[['ok', 'Test OK'], ['warn', 'Warn'], ['err', 'Error']].map(([k, l]) => <TouchableOpacity key={k} onPress={() => feedback(k)} style={[S.btnS, { flex: 1, marginTop: 0 }]}><Text style={S.btnSText}>{l}</Text></TouchableOpacity>)}</View>
@@ -120,15 +121,47 @@ export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra }) {
       <Text style={S.mute}>After this time without a touch the password is asked again. Scans and the outbox are kept.</Text></View>
     <View style={S.card}><Text style={S.h2}>Theme</Text><Text style={S.mute}>Current: {THEMES[T.key].name}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{THEME_KEYS.map(k => <TouchableOpacity key={k} onPress={async () => { applyTheme(k); await kv.set('theme', k); onTheme && onTheme(k); toast('Theme: ' + THEMES[k].name); }} style={[S.btnS, { flex: 1, minWidth: '45%', marginTop: 0, minHeight: 44, justifyContent: 'center', backgroundColor: T.key === k ? C.accent : undefined }]}><Text style={[S.btnSText, T.key === k ? { color: '#fff' } : null]}>{THEMES[k].name}</Text></TouchableOpacity>)}</View></View>
-    <View style={S.card}><Text style={S.h2}>Bluetooth printer {printerAvailable() ? '' : '(module not in this build)'}</Text>
-      <Text style={S.mute}>Selected: {selName ? `${selName} (${sel})` : (sel || 'none')}</Text>
-      <Text style={[S.mute, { marginTop: 4 }]}>1. Switch the printer on. 2. Pair it once in Android Settings > Bluetooth. 3. List and tap it here. 4. Test print.</Text>
-      <View style={{ height: 8 }} /><Segmented options={[['58', '2" / 58 mm (SEZNIK)'], ['80', '3" / 80 mm']]} value={paper} onChange={async (w) => { setPaper(w); await setPaperWidth(w); }} />
-      <Btn title="List paired printers" secondary icon="bluetooth-outline" busy={busy} onPress={async () => { try { const l = await listPaired(); setPrinters(l); if (!l.length) toast('No paired Bluetooth devices - pair the printer in Android Settings first', 'warn'); } catch (e) { toast(e.message, 'err'); } }} />
-      {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { setBusy(true); try { await connect(p.address); await kv.set('printer_name', p.name); setSel(p.address); setSelName(p.name); toast('Connected ' + p.name); } catch (e) { toast('Cannot connect: ' + e.message, 'err'); } finally { setBusy(false); } }} style={[S.btnS, { alignItems: 'flex-start', backgroundColor: sel === p.address ? C.ok : undefined }]}><Text style={[S.btnSText, sel === p.address ? { color: '#fff' } : null]}>{p.name}  {p.address}</Text></TouchableOpacity>)}
-      {sel ? <Btn title="Test print" icon="print-outline" busy={busy} onPress={async () => { setBusy(true); try { await testPrint(await kv.get('plant')); toast('Test sent - check the printer'); logActivity('PRINT_TEST', sel, 'ok'); } catch (e) { toast('Test print failed: ' + e.message, 'err'); logActivity('PRINT_TEST', sel, e.message); } finally { setBusy(false); } }} /> : null}
-      <Text style={[S.mute, { marginTop: 6 }]}>Blank paper after a test = the printer does not use ESC/POS; tell DT the printer model.</Text></View>
+    <PrinterCard toast={toast} />
     {customer ? null : <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary icon="refresh-circle-outline" onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done', sync.lastError ? 'err' : 'done'); }} /></View>}
     <Footer />
   </Page><Toast msg={msg} /></Screen>);
+}
+
+/** Any portable printer: connection, language, paper width and image mode are chosen here (not tied to one model). */
+function PrinterCard({ toast }) {
+  const [cfg, setCfg] = useState(null); const [list, setList] = useState([]); const [sel, setSel] = useState(null); const [selName, setSelName] = useState(null); const [busy, setBusy] = useState(false);
+  useEffect(() => { getConfig().then(setCfg); kv.get('printer').then(setSel); kv.get('printer_name').then(setSelName); }, []);
+  if (!cfg) return null;
+  const put = async (part) => { await setConfig(part); setCfg({ ...cfg, ...part }); };
+  const run = async (fn) => { setBusy(true); try { await fn(); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
+  const sys = cfg.conn === 'system'; const ble = cfg.conn === 'ble';
+  return (<View style={S.card}><Text style={S.h2}>Printer (any portable printer)</Text>
+    <Text style={S.mute}>Connection</Text>
+    <Segmented options={CONNS} value={cfg.conn} onChange={(v) => { put({ conn: v }); setList([]); }} />
+    {!connAvailable(cfg.conn) ? <Text style={[S.mute, { color: C.amber }]}>Not available in this build</Text> : null}
+    {sys ? <Text style={S.mute}>Uses the Android print service - install the printer maker's print app / plugin (Bluetooth or Wi-Fi). Android asks which printer each time.</Text> : <>
+      <Text style={S.mute}>Selected: {selName ? `${selName} (${sel})` : (sel || 'none')}</Text>
+      <Text style={[S.mute, { marginTop: 4 }]}>{ble ? '1. Switch the printer on. 2. Scan and tap it. 3. Test print.' : '1. Switch the printer on. 2. Pair it once in Android Settings > Bluetooth. 3. List and tap it here. 4. Test print.'}</Text>
+      <Btn title={ble ? 'Scan for printers (6 s)' : 'List paired printers'} secondary icon="bluetooth-outline" busy={busy} onPress={() => run(async () => { const l = await listPrinters(cfg.conn); setList(l); if (!l.length) toast(ble ? 'No Bluetooth LE devices found - is the printer on?' : 'No paired devices - pair the printer in Android Settings first', 'warn'); })} />
+      {list.map(p => <TouchableOpacity key={p.id} onPress={() => run(async () => { await connect(p.id, cfg.conn); await kv.set('printer_name', p.name); setSel(p.id); setSelName(p.name); toast('Connected ' + p.name); })} style={[S.btnS, { alignItems: 'flex-start', backgroundColor: sel === p.id ? C.ok : undefined }]}><Text style={[S.btnSText, sel === p.id ? { color: '#fff' } : null]}>{p.name}  {p.id}</Text></TouchableOpacity>)}
+      <Text style={[S.mute, { marginTop: 8 }]}>Printer language</Text>
+      <Segmented options={LANGS} value={cfg.lang} onChange={(v) => put({ lang: v })} />
+      <Text style={S.mute}>ESC/POS: most receipt printers (SEZNIK, Xprinter, Rongta, Epson, MTP). CPCL: Zebra / Honeywell mobile. ZPL: Zebra. TSPL: TSC / label printers.</Text>
+      {cfg.lang === 'escpos' ? <><Text style={[S.mute, { marginTop: 8 }]}>Logo / QR printing</Text>
+        <Segmented options={IMGS} value={cfg.img} onChange={(v) => put({ img: v })} />
+        <Text style={S.mute}>Logo or QR missing / garbled: try Old ESC*. Still wrong: Text only (printer draws its own QR).</Text></> : null}
+    </>}
+    <Text style={[S.mute, { marginTop: 8 }]}>Paper width</Text>
+    <Segmented options={WIDTHS} value={String(cfg.dots)} onChange={(v) => put({ dots: Number(v) })} />
+    {(sys || sel) ? <Btn title="Test print" icon="print-outline" busy={busy} onPress={() => run(async () => { await testPrint(await kv.get('plant')); toast('Test sent - check the printer'); logActivity('PRINT_TEST', sel || 'system', `${cfg.conn} ${cfg.lang} ${cfg.dots}`); })} /> : null}
+    {!sys && sel ? <Btn title="Find my printer language" secondary icon="help-circle-outline" busy={busy} onPress={() => run(async () => { await findLanguage(); toast('4 samples sent - choose the language whose sample printed clean text', 'warn'); })} /> : null}
+    {!sys ? <Text style={[S.mute, { marginTop: 6 }]}>{'Unknown printer? Tap "Find my printer language": it prints one short sample per language. Choose the one that printed a clean ">> NAME <<" heading (the others print code like "! 0 200", "^XA", "TEXT" or nothing).'}</Text> : null}
+  </View>);
+}
+
+function ScanModeCard() {
+  const m = useScanMode();
+  return (<View style={S.card}><Text style={S.h2}>Scanning</Text>
+    <Segmented options={[['native', 'Built-in scanner'], ['camera', 'Camera']]} value={m} onChange={setScanMode} />
+    <Text style={S.mute}>Built-in scanner: HHTs with a scan key (or a Bluetooth ring scanner). Camera: any Android phone / tablet. Also switchable on every scan screen.</Text></View>);
 }
