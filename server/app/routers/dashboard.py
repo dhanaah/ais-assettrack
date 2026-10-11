@@ -22,7 +22,7 @@ def _rep(p: Principal):
 
 
 def _week(d: datetime) -> str:
-    return (d - timedelta(days=d.weekday())).strftime("%d %b")
+    return (d - timedelta(days=d.weekday())).strftime("%d-%b")
 
 
 @router.get("/dashboard")
@@ -97,7 +97,7 @@ def dashboard(plant: str | None = None, weeks: int = 12, p: Principal = Depends(
             out_at[h.pallet_no] = h.ts
         elif h.from_status in ("AT_CUSTOMER", "IN_RETURN") and h.to_status in ("AVAILABLE", "HELD", "DAMAGED") and h.pallet_no in out_at:
             d = (h.ts - out_at.pop(h.pallet_no)).days
-            m = h.ts.strftime("%b %y")
+            m = h.ts.strftime("%b-%y")
             t = turn.setdefault(m, {"month": m, "n": 0, "days": 0, "max": 0, "_k": h.ts.strftime("%Y%m")})
             t["n"] += 1; t["days"] += d; t["max"] = max(t["max"], d)
     turnaround = [{"month": t["month"], "cycles": t["n"], "avg_days": round(t["days"] / t["n"], 1), "max_days": t["max"]}
@@ -221,7 +221,7 @@ def export_report(name: str, plant: str | None = None, p: Principal = Depends(cu
     title, fn = EXPORTS[name]
     rows = fn(db, p, pl)
     wb = Workbook(); ws = wb.active; ws.title = title[:30]
-    ws.append([f"{config.APP_NAME} - {title}" + (f" - plant {pl}" if pl else " - all plants"), "", f"as of {utcnow():%d-%m-%Y %H:%M} UTC", "", config.DEVELOPER])
+    ws.append([f"{config.APP_NAME} - {title}" + (f" - plant {pl}" if pl else " - all plants"), "", f"as of {utcnow():%d-%b-%y %H:%M} UTC", "", config.DEVELOPER])
     ws["A1"].font = Font(bold=True, size=12)
     cols = list(rows[0].keys()) if rows else ["(no data)"]
     cols = [c for c in cols if not isinstance(rows[0].get(c), (dict, list))] if rows else cols
@@ -233,6 +233,7 @@ def export_report(name: str, plant: str | None = None, p: Principal = Depends(cu
     for i, c in enumerate(cols, 1):
         ws.column_dimensions[get_column_letter(i)].width = min(40, max(10, len(str(c)) + 2, *[len(str(r.get(c) or "")) + 2 for r in rows[:200]]))
     ws.freeze_panes = "A3"; ws.auto_filter.ref = f"A2:{get_column_letter(len(cols))}{len(rows) + 2}"
+    from ..services import xl_dates; xl_dates(wb)
     bio = BytesIO(); wb.save(bio); bio.seek(0)
     fname = f"AssetTrack_{name}_{pl or 'ALL'}_{utcnow():%Y%m%d}.xlsx"
     return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -288,20 +289,20 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:3p
 .k.bad{border-color:#dc2626;background:#fef2f2}.none{color:#666;margin:2px 0}.foot{margin-top:14px;font-size:10px;color:#666;display:flex;justify-content:space-between}
 @media print{button{display:none}}"""
     kpi = lambda n, label, bad=False: f"<div class='k{' bad' if bad else ''}'><b>{n}</b>{label}</div>"
-    html_out = f"""<!doctype html><html><head><meta charset="utf-8"><title>Daily exceptions {pl} {day:%d-%m-%Y}</title><style>{css}</style></head><body>
-<div class="top"><div><h1>{config.APP_NAME} - Daily Exception Report</h1><div>Plant <b>{esc(pl)} {esc(plant_obj.name if plant_obj else '')}</b> · covering {frm:%d-%m-%Y} 00:00 to {to:%d-%m-%Y} 00:00 (UTC)</div></div>
+    html_out = f"""<!doctype html><html><head><meta charset="utf-8"><title>Daily exceptions {pl} {day:%d-%b-%y}</title><style>{css}</style></head><body>
+<div class="top"><div><h1>{config.APP_NAME} - Daily Exception Report</h1><div>Plant <b>{esc(pl)} {esc(plant_obj.name if plant_obj else '')}</b> · covering {frm:%d-%b-%y} 00:00 to {to:%d-%b-%y} 00:00 (UTC)</div></div>
 <div><button onclick="print()">Print</button></div></div>
 <div class="kpis">{kpi(len(misses), 'missed scans (period)', bool(misses))}{kpi(open_total, 'missed scans still open', open_total > 0)}{kpi(len(rejected), 'HHT scans rejected', bool(rejected))}
 {kpi(len(slip_rows), 'return slips with issues', bool(slip_rows))}{kpi(len(overdue), 'pallets overdue at customers', bool(overdue))}{kpi(len(stuck), 'pick lists open > 2 days', bool(stuck))}
 {kpi((str(wms['age_hours']) + ' h') if wms['age_hours'] is not None else 'never', 'WMS stock age', wms['stale'])}</div>
 <h2>1. Missed scans detected</h2>{tbl(['Time', 'Pallet / LPN', 'Found at', 'Missed point', 'Responsible', 'Action', 'Message', 'Resolved'],
-    [(f"{m.ts:%d-%m %H:%M}", m.pallet_no or m.lpn_no, m.detected_at, m.missed_point, m.responsible_role, m.action, m.message, 'yes' if m.resolved else '') for m in misses])}
-<h2>2. HHT scans rejected by the server</h2>{tbl(['Time', 'Device', 'User', 'Type', 'Reason'], [(f"{e.received_ts:%d-%m %H:%M}", e.device_id, e.user_id, e.event_type, e.result) for e in rejected])}
+    [(f"{m.ts:%d-%b %H:%M}", m.pallet_no or m.lpn_no, m.detected_at, m.missed_point, m.responsible_role, m.action, m.message, 'yes' if m.resolved else '') for m in misses])}
+<h2>2. HHT scans rejected by the server</h2>{tbl(['Time', 'Device', 'User', 'Type', 'Reason'], [(f"{e.received_ts:%d-%b %H:%M}", e.device_id, e.user_id, e.event_type, e.result) for e in rejected])}
 <h2>3. Return slips with short / exception lines or open for 2+ days</h2>{tbl(['Slip', 'Customer', 'Mode', 'Status', 'Created', 'Short', 'Exceptions'],
-    [(s.slip_no, s.customer_code, s.mode, s.status, f"{s.created_at:%d-%m-%Y}", sh, ex) for s, sh, ex in slip_rows])}
+    [(s.slip_no, s.customer_code, s.mode, s.status, f"{s.created_at:%d-%b-%y}", sh, ex) for s, sh, ex in slip_rows])}
 <h2>4. Pallets overdue at customers</h2>{tbl(['Pallet', 'Customer', 'Name', 'Days', 'Limit', 'Challan'], [(r['pallet_no'], r['customer'], r['customer_name'], r['days'], r['limit'], r['challan']) for r in overdue[:150]])}
 {('<p class="none">… and ' + str(len(overdue) - 150) + ' more (see Reports > Overdue)</p>') if len(overdue) > 150 else ''}
-<h2>5. Pick lists open for more than 2 days</h2>{tbl(['Pick list', 'Type', 'Customer', 'Status', 'Created', 'Pallets'], [(k.picklist_no, k.dispatch_type, k.customer_code, k.status, f"{k.created_at:%d-%m-%Y}", k.qty) for k in stuck])}
-<div class="foot"><span>Printed by {esc(p.user_id)} on {utcnow():%d-%m-%Y %H:%M} UTC</span><span>{config.DEVELOPER} · v{config.APP_VERSION}</span></div>
+<h2>5. Pick lists open for more than 2 days</h2>{tbl(['Pick list', 'Type', 'Customer', 'Status', 'Created', 'Pallets'], [(k.picklist_no, k.dispatch_type, k.customer_code, k.status, f"{k.created_at:%d-%b-%y}", k.qty) for k in stuck])}
+<div class="foot"><span>Printed by {esc(p.user_id)} on {utcnow():%d-%b-%y %H:%M} UTC</span><span>{config.DEVELOPER} · v{config.APP_VERSION}</span></div>
 </body></html>"""
     return HTMLResponse(html_out)

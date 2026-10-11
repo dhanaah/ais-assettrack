@@ -58,8 +58,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=config.APP_NAME, version=config.APP_VERSION, lifespan=lifespan,
               description=f"{config.DEVELOPER} · Returnable pallet asset tracking for AIS Glass")
-from .routers import dashboard, reminders as reminders_router
-for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations, dashboard, reminders_router):
+from .routers import dashboard, reminders as reminders_router, masterio, exports
+for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations, dashboard, reminders_router, masterio, exports):
     app.include_router(r.router)
 app.include_router(external.admin)
 app.add_middleware(ActivityMiddleware)

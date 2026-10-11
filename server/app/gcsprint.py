@@ -166,7 +166,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             left = [("GatePass Number:", pk.gcs_no), ("To M/s:", to_name), ("Vehicle No:", pk.vehicle_no or ""),
                     ("Transporter:", pk.transporter_name or pk.transporter_code or ""), ("Remarks:", pk.gcs_remarks or ""),
                     ("Pallet Challan No:", pk.challan_no or "pending")]
-            rightc = [("Date:", f"{gp_dt:%d/%m/%Y}"), ("Location:", loc), ("Time:", f"{gp_dt:%H:%M:%S}"),
+            rightc = [("Date:", f"{gp_dt:%d-%b-%y}"), ("Location:", loc), ("Time:", f"{gp_dt:%H:%M:%S}"),
                       ("No of Invoices:", str(len(invs)) if invs else ""), ("GR/LR No.", pk.gr_lr_no or ""), ("Sales Type", sales_type),
                       ]
             rows = max(len(left), len(rightc)) + 1                 # last row: pallets loaded
@@ -228,7 +228,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             return y - RH
 
         def footer():
-            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · pick list {pk.picklist_no} · printed {now:%d-%m-%Y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
+            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · pick list {pk.picklist_no} · printed {now:%d-%b-%y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
             txt(x0 + tw, 13.5 * mm, f"Page {st['page']} of {total or '?'}", 8, True, align="r")
             txt(x0, 9.5 * mm, "The OUT gate accepts only a QR printed by AssetTrack for this gate pass and vehicle.", 6.8, color=red)
 
@@ -244,7 +244,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             for k, it in enumerate(items):
                 if y - RH < BOTTOM:
                     y = table_head(new_page())
-                y = table_row(y, [str(k + 1), it["invoice_no"] or "", f"{it['invoice_date']:%d/%m/%Y}" if it["invoice_date"] else "",
+                y = table_row(y, [str(k + 1), it["invoice_no"] or "", f"{it['invoice_date']:%d-%b-%y}" if it["invoice_date"] else "",
                                   (it["part_no"] or "")[:30], (it["cust_part"] or "")[:22], fnum(it["cases"]), fnum(it["qty_per_case"]),
                                   fnum(it["qty"]), fnum(it.get("amount"), 2), (it.get("pallet_type") or "")[:6]])
             if y - RH - 9 * mm < BOTTOM:
@@ -296,7 +296,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             y = new_page()
         signs = [("PDI", "Planning Bench login", pk.pdi_sign or "—", ""),
                  ("LOGISTICS", "Shift supervisor · Planning Bench login", pk.supervisor_sign or "—", ""),
-                 ("SECURITY", "Loading verified · HHT login", who, f"{now:%d/%m/%Y %H:%M}")]
+                 ("SECURITY", "Loading verified · HHT login", who, f"{now:%d-%b-%y %H:%M}")]
         sw = tw / 3
         for k, (label, sub, name, when) in enumerate(signs):
             x = x0 + k * sw

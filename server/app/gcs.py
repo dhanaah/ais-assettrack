@@ -245,8 +245,25 @@ def _time(v):
         return None
 
 
+_STOP = {"PVT", "PRIVATE", "LTD", "LIMITED", "INDIA", "THE", "CO", "AND", "&", "OF", "INC", "LLP", "P", "M", "S",
+         "ENTERPRISES", "ENTERPRISE", "TRANSPORT", "TRANSPORTS", "LOGISTICS", "CARRIERS", "ROADWAYS", "ROADLINES", "TRAVELS", "MOVERS"}
+
+
+def _short_code(name: str, taken) -> str:
+    """'RENAULT NISSAN AUTOMOTIVE INDIA PVT. LTD.' -> 'RENAULT' (unique: RENAULT2, RENAULT3 ...)."""
+    words = [w for w in re.sub(r"[^A-Z0-9 ]+", " ", name.upper()).split() if w not in _STOP] or ["CUST"]
+    base = words[0][:12]
+    if len(base) < 5 and len(words) > 1 and len(words[0]) < 4:      # 'SRI RAGAVENDRA' -> SRIRAGAVENDR (SRI alone is too common)
+        base = (base + words[1])[:12]
+    code, n = base, 2
+    while taken(code):
+        code, n = f"{base[:10]}{n}", n + 1
+    return code
+
+
 def _customer(db: Session, plant: str, f: dict) -> str:
-    """Customer code: file code -> customer master by name -> short name in REMARKS -> name (cut to 20)."""
+    """Customer code: file code -> customer master by name -> short name in REMARKS -> new customer created from
+    the GCS (code = the short name in REMARKS when it is part of the customer name, e.g. NISSAN / WEBASTO)."""
     if f.get("customer_code"):
         return str(f["customer_code"]).strip()[:20]
     name = str(f.get("customer_name") or "").strip()
@@ -255,9 +272,39 @@ def _customer(db: Session, plant: str, f: dict) -> str:
         if c:
             return c.code
     short = str(f.get("remarks") or "").strip().upper()
-    if short and len(short) <= 20 and db.query(models.Customer).filter_by(plant_code=plant, code=short).first():
+    if short and len(short) <= 20 and db.query(models.Customer).filter_by(plant_code=plant, code=short).first() and not name:
         return short
-    return (name or short or "?")[:20]
+    if not name:
+        return (short or "?")[:20]
+    taken = lambda c: db.query(models.Customer).filter_by(plant_code=plant, code=c).first() is not None
+    code = short if (short and re.fullmatch(r"[A-Z0-9]{3,12}", short) and short in name.upper() and not taken(short)) else _short_code(name, taken)
+    st = str(f.get("sales_type") or "").upper()
+    db.add(models.Customer(code=code, name=name[:120], plant_code=plant, city=(str(f.get("customer_location") or "")[:60] or None),
+                           ctype=st if st in ("OEM", "OES", "AFM") else None, active=True,
+                           notes=f"Created automatically from GCS {f.get('gcs_no') or ''} - check details"[:250]))
+    db.flush()
+    log.info("customer %s created from GCS %s", code, f.get("gcs_no"))
+    return code
+
+
+def _transporter(db: Session, plant: str, f: dict) -> str | None:
+    """Transporter master by name; created from the GCS when new. Vehicle and plant are added to it."""
+    name = str(f.get("transporter") or "").strip()
+    if not name:
+        return None
+    t = db.query(models.Transporter).filter(func.upper(models.Transporter.name) == name.upper()).first() or db.get(models.Transporter, name.upper()[:20])
+    if not t:
+        code = _short_code(name, lambda c: db.get(models.Transporter, c) is not None)
+        t = models.Transporter(code=code, name=name[:120], active=True, notes=f"Created automatically from GCS {f.get('gcs_no') or ''}"[:250])
+        db.add(t); db.flush()
+    pls = [x for x in (t.plant_codes or "").split(";") if x]
+    if plant not in pls:
+        t.plant_codes = ";".join(pls + [plant])[:200]
+    veh = str(f.get("vehicle_no") or "").upper().replace(" ", "")
+    vs = [x for x in (t.vehicles or "").split(";") if x]
+    if veh and veh not in vs:
+        t.vehicles = ";".join(vs + [veh])[-500:].lstrip(";")
+    return t.code
 
 
 def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, items: list[dict] | None = None) -> tuple[str, models.PickList | None]:
@@ -307,7 +354,7 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
     pk.vehicle_type = str(f.get("vehicle_type") or pk.vehicle_type or "")[:30] or None
     pk.sales_type = str(f.get("sales_type") or pk.sales_type or "")[:30] or None
     pk.ewaybill_no = str(f.get("ewaybill_no") or pk.ewaybill_no or "")[:20] or None
-    pk.transporter_code = str(f.get("transporter") or pk.transporter_code or "")[:20] or None
+    pk.transporter_code = _transporter(db, plant, f) or pk.transporter_code
     pk.pdi_sign = (sign(f.get("pdi_sign"), f.get("pdi_login")) or pk.pdi_sign or None)
     pk.supervisor_sign = (sign(f.get("supervisor_sign"), f.get("supervisor_login")) or pk.supervisor_sign or None)
     lpn_rows = [r for r in items if r.get("lpn_no")]
@@ -376,13 +423,56 @@ def _ftp(cfg):
     return f
 
 
-def pull(db: Session, fetch=None) -> dict:
-    """fetch() -> list of (name, bytes); injectable for tests. Files are moved to the done folder after import."""
+def plant_cfg(db: Session, plant: models.Plant) -> dict:
+    """Shared FTP settings with this plant's own folder (and optional own server / login) on top."""
     cfg = get_settings(db)
-    _state["last_run"] = utcnow()
-    plant = (cfg["gcs_plant"] or "").upper()
-    if not db.get(models.Plant, plant):
-        raise RuntimeError(f"Set the AIS plant for the GCS inbox (now '{plant or '-'}')")
+    for k in ("gcs_folder", "gcs_done_folder", "gcs_host", "gcs_port", "gcs_user", "gcs_password"):
+        v = getattr(plant, k, None)
+        if v not in (None, ""):
+            cfg[k] = v
+    return cfg
+
+
+def ftp_plants(db: Session) -> list[models.Plant]:
+    """Plants that read their own GCS folder (folder set and reading switched on)."""
+    return [p for p in db.query(models.Plant).filter(models.Plant.gcs_folder.isnot(None)).all() if p.gcs_folder and p.gcs_enabled]
+
+
+_pstate: dict = {}
+
+
+def pull(db: Session, fetch=None, plant: str | None = None) -> dict:
+    """Read GCS files. plant given -> that plant's folder; else every plant with its own folder (or, before folders
+    are set per plant, the single shared folder for the plant chosen on the GCS inbox page).
+    fetch() -> list of (name, bytes); injectable for tests. Files are moved to the done folder after import."""
+    if plant:
+        pl = db.get(models.Plant, plant.upper())
+        if not pl:
+            raise RuntimeError(f"Unknown plant {plant}")
+        return _pull_one(db, pl.code, plant_cfg(db, pl) if pl.gcs_folder else get_settings(db), fetch)
+    plants = ftp_plants(db)
+    if not plants:
+        cfg = get_settings(db)
+        code = (cfg["gcs_plant"] or "").upper()
+        if not db.get(models.Plant, code):
+            raise RuntimeError(f"Set the GCS FTP folder per plant (or the AIS plant for the shared folder; now '{code or '-'}')")
+        return _pull_one(db, code, cfg, fetch)
+    tot = {"files": 0, "created": 0, "updated": 0, "skipped": 0, "cancelled": 0, "plants": {}}
+    for pl in plants:
+        try:
+            r = _pull_one(db, pl.code, plant_cfg(db, pl), fetch)
+        except Exception as e:
+            _pstate.setdefault(pl.code, {})["last_error"] = str(e)[:300]
+            r = {"error": str(e)[:200]}
+        tot["plants"][pl.code] = r
+        for k in ("files", "created", "updated", "skipped", "cancelled"):
+            tot[k] += r.get(k, 0)
+    return tot
+
+
+def _pull_one(db: Session, plant: str, cfg: dict, fetch=None) -> dict:
+    st = _pstate.setdefault(plant, {})
+    _state["last_run"] = st["last_run"] = utcnow()
     pat = re.compile(cfg["gcs_pattern"], re.I)
     done_names = []
     if fetch is None:
@@ -396,6 +486,7 @@ def pull(db: Session, fetch=None) -> dict:
     else:
         f = None; files = [(n, b) for n, b in fetch() if pat.match(n)]
     created = updated = skipped = cancelled = 0
+    err = None
     for name, data in files:
         try:
             for head, items in group_rows(parse_file(name, data)):
@@ -403,7 +494,7 @@ def pull(db: Session, fetch=None) -> dict:
                 created += what == "created"; updated += what == "updated"; skipped += what == "skipped"; cancelled += what == "cancelled"
             done_names.append(name)
         except Exception as e:
-            log.warning("GCS file %s: %s", name, e); _state["last_error"] = f"{name}: {e}"[:300]
+            log.warning("GCS file %s: %s", name, e); err = f"{name}: {e}"[:300]
     db.commit()
     if f is not None:
         for n in done_names:
@@ -418,10 +509,13 @@ def pull(db: Session, fetch=None) -> dict:
             f.quit()
         except Exception:
             pass
-    _state.update(last_ok=utcnow(), files=len(files), created=created, updated=updated, skipped=skipped, cancelled=cancelled)
-    if not _state.get("last_error") or done_names:
-        _state["last_error"] = None if len(done_names) == len(files) else _state["last_error"]
-    return {"files": len(files), "created": created, "updated": updated, "skipped": skipped, "cancelled": cancelled}
+    res = {"files": len(files), "created": created, "updated": updated, "skipped": skipped, "cancelled": cancelled}
+    st.update(res, last_ok=utcnow(), last_error=err); _state.update(res, last_ok=utcnow(), last_error=err)
+    return res
+
+
+def plant_status() -> dict:
+    return {k: dict(v) for k, v in _pstate.items()}
 
 
 def status() -> dict:
@@ -435,7 +529,7 @@ def start_scheduler(SessionLocal):
             try:
                 with SessionLocal() as db:
                     cfg = get_settings(db)
-                    if cfg["gcs_enabled"]:
+                    if cfg["gcs_enabled"] or ftp_plants(db):     # shared folder switched on, or plants with their own folder
                         pull(db)
                     wait = cfg["gcs_interval_sec"]
             except Exception as e:

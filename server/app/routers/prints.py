@@ -95,18 +95,18 @@ def challan(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <button class="btn" onclick="window.print()">Print / Save PDF</button>
     {_head(plant, title, f'CHL|{k.challan_no}|{k.picklist_no}|{len(lines)}')}
     <div class="grid">
-      <div class="box"><b>CHALLAN NO / DATE</b>{k.challan_no} · {k.updated_at:%d-%m-%Y %H:%M}</div>
+      <div class="box"><b>CHALLAN NO / DATE</b>{k.challan_no} · {k.updated_at:%d-%b-%y %H:%M}</div>
       <div class="box"><b>PICK LIST / SO</b>{k.picklist_no} · {('SO ' + (k.so_number or 'pending')) if dt != 'EMPTY_RETURN' else 'Empty return'}{f' · PO {k.po_number}' if k.po_number else ''}</div>
       <div class="box"><b>CONSIGNEE</b>{consignee}</div>
       <div class="box"><b>TRANSPORT</b>Vehicle {k.vehicle_no or '—'} · {tr.name if tr else (k.transporter_code or '')}<br>GCS {k.gcs_no or '—'}</div>
-      <div class="box"><b>INVOICE</b>{(k.invoice_no + ' · ' + (k.invoice_date.strftime('%d-%m-%Y') if k.invoice_date else '')) if k.invoice_no else '—'}</div>
+      <div class="box"><b>INVOICE</b>{(k.invoice_no + ' · ' + (k.invoice_date.strftime('%d-%b-%y') if k.invoice_date else '')) if k.invoice_no else '—'}</div>
       <div class="box"><b>E-WAY BILL</b>{k.ewaybill_no or ('with invoice' if k.invoice_no else '—')}</div>
     </div>
     <table><tr><th>#</th><th>Pallet No</th><th>Tag</th><th>{'LPN · part × qty' if lpn_rows else 'Type / size'}</th><th>Qty</th></tr>{rows}
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS {len(lines)}{f' · PART {k.part_no} QTY' if lpn_rows else ''}</th><th>{sum(x.qty for x in lpn_rows) if lpn_rows else len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>Purpose:</b> {purpose}</div>
     <div class="sig"><div>Prepared by (FG Warehouse)</div><div>Approved by (Logistics)</div><div>Received by (Customer / Driver)</div></div>
-    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {p.user_id}</div></body></html>"""
+    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
     return HTMLResponse(html)
 
 
@@ -121,15 +121,15 @@ def slip_html(db, s, printed_by: str) -> str:
     <button class="btn" onclick="window.print()">Print / Save PDF</button>
     {_head(plant, 'PALLET RETURN SLIP', qr)}
     <div class="grid">
-      <div class="box"><b>SLIP NO / DATE</b>{s.slip_no} · {s.created_at:%d-%m-%Y %H:%M} · mode {s.mode} · {s.status}</div>
+      <div class="box"><b>SLIP NO / DATE</b>{s.slip_no} · {s.created_at:%d-%b-%y %H:%M} · mode {s.mode} · {s.status}</div>
       <div class="box"><b>CUSTOMER</b>{cust.name if cust else s.customer_code} ({s.customer_code})</div>
       <div class="box"><b>VEHICLE / DRIVER</b>{s.vehicle_no or '—'} · {s.driver_name or ''} {s.driver_mobile or ''}</div>
-      <div class="box"><b>CUSTOMER CHALLAN / GCS-IN</b>{s.customer_challan_no or '—'} {f'· {s.customer_challan_date:%d-%m-%Y}' if s.customer_challan_date else ''} · GCS {s.gcs_in_no or '—'}</div>
+      <div class="box"><b>CUSTOMER CHALLAN / GCS-IN</b>{s.customer_challan_no or '—'} {f'· {s.customer_challan_date:%d-%b-%y}' if s.customer_challan_date else ''} · GCS {s.gcs_in_no or '—'}</div>
     </div>
     <table><tr><th>#</th><th>Pallet No</th><th>Declared</th><th>Received</th><th>Exception</th></tr>{rows or '<tr><td colspan=5>Quantity-only slip (B2) — pallets identified at yard scan</td></tr>'}
     <tr><th colspan="4" style="text-align:right">DECLARED QTY</th><th>{s.declared_qty}</th></tr></table>
     <div class="sig"><div>Security (IN gate)</div><div>Driver</div><div>Pallet yard in-charge</div></div>
-    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {printed_by}</div></body></html>"""
+    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%b-%y %H:%M} by {printed_by}</div></body></html>"""
 
 
 @router.get("/gcs/{no}", response_class=HTMLResponse)
@@ -147,7 +147,7 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     lpn_by = {}
     for r in db.query(models.PickListLpn).filter_by(picklist_no=k.picklist_no).all():
         lpn_by.setdefault(r.pallet_no, []).append(r)
-    rows = "".join(f"<tr><td>{i}</td><td><b>{gcssvc.short_pallet(l.pallet_no)}</b></td><td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in lpn_by.get(l.pallet_no, [])) or '—'}</td><td>{l.scanned_at:%d-%m %H:%M}</td><td>{l.user_id or ''}</td></tr>" for i, l in enumerate(lines, 1))
+    rows = "".join(f"<tr><td>{i}</td><td><b>{gcssvc.short_pallet(l.pallet_no)}</b></td><td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in lpn_by.get(l.pallet_no, [])) or '—'}</td><td>{l.scanned_at:%d-%b %H:%M}</td><td>{l.user_id or ''}</td></tr>" for i, l in enumerate(lines, 1))
     qr = gcssvc.gcs_qr(k, len(lines))
     RED = ' style="color:#c8102e;font-weight:700"'
     items = gcssvc.items_loaded(db, k.picklist_no); has_cards = any(lpn_by.values())
@@ -155,7 +155,7 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     fn = lambda v, d=0: "" if v in (None, "") else (f"{v:,.{d}f}" if d else f"{v:,}")
     tot = lambda key: sum((i.get(key) or 0) for i in items)
     item_tbl = ("<table><tr><th>Sl</th><th>Inv No.</th><th>Inv Date</th><th>Item Code</th><th>Cust Part No</th><th>No of Case</th><th>Qty/Case</th><th>Act Qty</th><th>Line Amount</th><th>Pallet Type</th></tr>"
-                + "".join(f"<tr><td>{n}</td><td>{i['invoice_no'] or ''}</td><td>{i['invoice_date'].strftime('%d/%m/%Y') if i['invoice_date'] else ''}</td>"
+                + "".join(f"<tr><td>{n}</td><td>{i['invoice_no'] or ''}</td><td>{i['invoice_date'].strftime('%d-%b-%y') if i['invoice_date'] else ''}</td>"
                           f"<td><b>{i['part_no'] or ''}</b></td><td>{i['cust_part'] or ''}</td><td>{fn(i['cases'])}</td><td>{fn(i['qty_per_case'])}</td>"
                           f"<td>{fn(i['qty'])}</td><td>{fn(i.get('amount'), 2)}</td><td>{i.get('pallet_type') or ''}</td></tr>" for n, i in enumerate(items, 1))
                 + f"<tr><th colspan='5' style='text-align:right'>Total:</th><th>{fn(tot('cases'))}</th><th>{fn(tot('qty_per_case'))}</th><th>{tot('qty'):,.2f}</th><th>{fn(tot('amount'), 2) if tot('amount') else ''}</th><th></th></tr></table>") if items else ""
@@ -175,7 +175,7 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS LOADED</th><th>{len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>OUT gate:</b> scan the QR at the top right. The gate accepts only a QR printed by AssetTrack for this GCS and vehicle.</div>
     <div class="sig"><div>PDI (Planning Bench)<br><b>{k.pdi_sign or '—'}</b></div><div>Logistics (Shift supervisor, Planning Bench)<br><b>{k.supervisor_sign or '—'}</b></div><div>Security (loading verified)<br><b>{p.user.full_name} ({p.user_id})</b></div></div>
-    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%m-%Y %H:%M} by {p.user_id}</div></body></html>"""
+    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
     return HTMLResponse(html)
 
 

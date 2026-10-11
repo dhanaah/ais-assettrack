@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { openDb, kv } from '../lib/db';
 import { checkUpdate, openUpdate } from '../lib/update';
 import { getActiveServer } from '../lib/api';
+import { fTime } from '../lib/when';
 
 const TILES = [
   ['dock', 'Vehicle Loading (GCS)', 'Scan pallets / part cards against the GCS', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline', 'dock'],
@@ -59,11 +60,11 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
   return (<Screen>
     <Header logo sub={`${me.name} · ${me.plant} · ${me.roles.join(', ')}`} right={<TouchableOpacity onPress={onLogout} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Ionicons name="log-out-outline" size={18} color="#fff" /><Text style={{ color: '#fff' }}>Logout</Text></TouchableOpacity>} />
     <TouchableOpacity onPress={() => nav('pending')} style={{ backgroundColor: col, paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '92%' }}>
-      <Ionicons name={sync.online ? 'wifi' : 'cloud-offline-outline'} size={14} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }} numberOfLines={1}>{sync.online ? 'ONLINE' : 'OFFLINE'} · {sync.pending} pending{sync.syncing ? ' · syncing…' : ''}{sync.lastSync ? ' · synced ' + sync.lastSync.slice(11, 16) : ''}{srv ? ' · ' + srv : ''}{sync.lastError && sync.lastError !== 'LOGIN' ? ' · ' + sync.lastError : ''}</Text></TouchableOpacity>
+      <Ionicons name={sync.online ? 'wifi' : 'cloud-offline-outline'} size={14} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }} numberOfLines={1}>{sync.online ? 'ONLINE' : 'OFFLINE'} · {sync.pending} pending{sync.syncing ? ' · syncing…' : ''}{sync.lastSync ? ' · synced ' + fTime(sync.lastSync) : ''}{srv ? ' · ' + srv : ''}{sync.lastError && sync.lastError !== 'LOGIN' ? ' · ' + sync.lastError : ''}</Text></TouchableOpacity>
     <Page>
       {upd ? <TouchableOpacity onPress={() => openUpdate(upd)} style={[S.card, { borderLeftWidth: 5, borderLeftColor: upd.required ? C.warn : C.accent, flexDirection: 'row', alignItems: 'center', gap: 10 }]}><Ionicons name="cloud-download-outline" size={24} color={upd.required ? C.warn : C.accent} /><View style={{ flex: 1 }}><Text style={{ fontWeight: '700', color: C.fg }}>AssetTrack app v{upd.version} available{upd.required ? ' - update required' : ''}</Text><Text style={S.mute}>Tap to download, then open the file to install.</Text></View></TouchableOpacity> : null}
       <View style={[S.card, { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 10 }]}>
-        {[[n.scansToday || 0, 'scans today', C.accent], [n.pending || 0, 'to sync', n.pending ? C.amber : C.ok], [n.rejected || 0, 'rejected today', n.rejected ? C.warn : C.ok], [n.lastScan ? String(n.lastScan).slice(11, 16) : '—', 'last scan', C.mute]].map(([v, l, c]) => (
+        {[[n.scansToday || 0, 'scans today', C.accent], [n.pending || 0, 'to sync', n.pending ? C.amber : C.ok], [n.rejected || 0, 'rejected today', n.rejected ? C.warn : C.ok], [n.lastScan ? fTime(n.lastScan) : '—', 'last scan', C.mute]].map(([v, l, c]) => (
           <View key={l} style={{ alignItems: 'center' }}><Text style={{ fontSize: Math.round(22 * T.scale), fontWeight: '800', color: c }}>{v}</Text><Text style={[S.mute, { fontSize: 11 }]}>{l}</Text></View>))}
       </View>
       <View style={[S.card, { paddingVertical: 10 }]}><Text style={[S.mute, { marginBottom: 4 }]}>Quick lookup - scan any pallet, tag or LPN</Text><ScanInput autoFocus={false} placeholder="Scan to look up" onScan={(code) => onLookup && onLookup(code)} /></View>

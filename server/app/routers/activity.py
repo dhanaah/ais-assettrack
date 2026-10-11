@@ -84,6 +84,7 @@ def export(user: str | None = None, plant: str | None = None, device: str | None
     ws.append(cols)
     for r in rows:
         ws.append([getattr(r, c) for c in cols])
+    from ..services import xl_dates; xl_dates(wb)
     bio = BytesIO(); wb.save(bio); bio.seek(0)
     record(db, source="WEB", user_id=p.user_id, plant_code=p.plant, action="EXPORT", entity="activity", ref=f"{len(rows)} rows", status=200, result="ok")
     db.commit()

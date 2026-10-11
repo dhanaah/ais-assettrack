@@ -102,7 +102,7 @@ def render(item: dict) -> str:
     pl = item["plant"]
     rows = "".join(
         f"<tr style='background:{'#fff5f5' if r['overdue'] else '#fff'}'><td>{e(r['pallet_no'])}</td><td>{e(r['type'] or '')}</td><td>{e(r['challan'] or '')}</td>"
-        f"<td>{r['dispatched']:%d-%m-%Y}</td><td style='text-align:right'>{r['days']}</td><td style='text-align:right;color:{'#b91c1c' if r['overdue'] else '#555'}'>{r['over_by'] or ''}</td></tr>"
+        f"<td>{r['dispatched']:%d-%b-%y}</td><td style='text-align:right'>{r['days']}</td><td style='text-align:right;color:{'#b91c1c' if r['overdue'] else '#555'}'>{r['over_by'] or ''}</td></tr>"
         if r["dispatched"] else "" for r in item["pallets"])
     return f"""<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222">
 <p>Dear {e(item.get('contact') or item['name'])},</p>
@@ -140,7 +140,7 @@ def run(db: Session, plant: str | None = None, force: bool = False, dry: bool | 
         entry = EmailLog(plant_code=item["plant"], customer_code=item["customer"], kind=item["kind"], to=";".join(item["to"]),
                          cc=";".join(item["cc"]), subject=item["subject"], pallets=item["total"], overdue=item["overdue"], body=body)
         if not item["due"]:
-            entry.status, entry.error = "SKIPPED", f"sent {item['last_sent']:%d-%m-%Y}, every {item['every']} days"; res["skipped"] += 1
+            entry.status, entry.error = "SKIPPED", f"sent {item['last_sent']:%d-%b-%y}, every {item['every']} days"; res["skipped"] += 1
         elif not item["to"]:
             entry.status, entry.error = "SKIPPED", "no email address on the customer master"; res["skipped"] += 1
         elif dry:

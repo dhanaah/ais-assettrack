@@ -292,3 +292,16 @@ def parse_slip_qr(code: str) -> dict:
     if s.startswith("RTS|"):
         return {"slip_no": s.split("|")[1], "signed": False, "valid": True, "error": None}
     return {"slip_no": s, "signed": False, "valid": True, "error": None}
+
+
+def xl_dates(wb):
+    """Every date cell in the workbook shown as dd-mmm-yy (with time when it has one)."""
+    from datetime import datetime as _dt, date as _d
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for c in row:
+                if isinstance(c.value, _dt):
+                    c.number_format = "dd-mmm-yy hh:mm" if (c.value.hour or c.value.minute) else "dd-mmm-yy"
+                elif isinstance(c.value, _d):
+                    c.number_format = "dd-mmm-yy"
+    return wb

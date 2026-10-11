@@ -5,6 +5,7 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { kv } from './db';
 import { EscPos } from './escpos';
+import { fDT } from './when';
 
 let RNBC = null;
 try { RNBC = require('react-native-bluetooth-classic').default; } catch (e) { RNBC = null; }
@@ -158,7 +159,7 @@ export async function testPrint(plant) {
   if (!RNBC) throw new Error('Printer module not available in this build');
   const dots = await paperDots();
   const p = new EscPos(dots);
-  p.init().align('center').logo().line().bold(true).size(2, 2).line('AssetTrack').size(1, 1).bold(false).line('Printer test OK').line(`${plant?.code || ''} ${new Date().toLocaleString()}`).line()
+  p.init().align('center').logo().line().bold(true).size(2, 2).line('AssetTrack').size(1, 1).bold(false).line('Printer test OK').line(`${plant?.code || ''} ${fDT(new Date())}`).line()
     .qr('AIS1|TEST|' + Date.now(), { scale: 5 }).line().align('left').rule().pad('Paper', dots >= 576 ? '80 mm / 48 cols' : '58 mm / 32 cols').pad('Columns', '0123456789'.repeat(5).slice(0, p.cols - 8)).rule().line('If you can read this and see the').line('QR, the printer is set up.').feed(4).cut();
   await send(p);
 }

@@ -9,6 +9,7 @@ import { validateDockScan2 } from '../lib/rules';
 import { api } from '../lib/api';
 import { printGcs } from '../lib/printer';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
+import { fTimeS } from '../lib/when';
 
 const isPart = (k) => ['CUSTOMER', 'STOCK_TRANSFER'].includes(k?.dispatch_type);
 const isYard = (k) => k?.load_point === 'YARD';
@@ -137,7 +138,7 @@ export default function Dock({ onBack, yard = false }) {
     </View>
     <FlatList style={{ flex: 1, paddingHorizontal: 14, marginTop: 8 }} data={byPallet} keyExtractor={x => x.pallet_no} renderItem={({ item, index }) => (
       <View style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}>
-        <TouchableOpacity onLongPress={() => remove(item, false)} style={{ flexDirection: 'row' }}><Text style={{ flex: 1, fontWeight: '700' }}>{index + 1}. {item.pallet_no}</Text><Text style={S.mute}>{item.ts.slice(11, 19)}</Text></TouchableOpacity>
+        <TouchableOpacity onLongPress={() => remove(item, false)} style={{ flexDirection: 'row' }}><Text style={{ flex: 1, fontWeight: '700' }}>{index + 1}. {item.pallet_no}</Text><Text style={S.mute}>{fTimeS(item.ts)}</Text></TouchableOpacity>
         {item.lpns.map(l => <TouchableOpacity key={l.lpn} onLongPress={() => remove(l, true)}><Text style={[S.mute, { marginLeft: 14 }]}>• {l.lpn} × {l.qty}</Text></TouchableOpacity>)}
       </View>)} />
     <View style={S.pad}><Btn title={isGcs(pk) ? 'Finish loading → challan + gate QR' : isPart(pk) ? 'Confirm → send to PDI' : isYard(pk) ? 'Finish loading → make challan' : 'Confirm load list (Pick List Control)'} icon="checkmark-circle-outline" onPress={confirm} color={complete ? C.ok : C.accent} /><Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Long-press a pallet or LPN to remove</Text></View>

@@ -10,6 +10,7 @@ import { state as sync, syncNow, subscribe } from '../lib/sync';
 import { listPaired, connect, printerAvailable, testPrint, setPaperWidth } from '../lib/printer';
 import { setSoundEnabled, soundEnabled, feedback } from '../lib/feedback';
 import { checkUpdate, openUpdate } from '../lib/update';
+import { fDT, fDate, fTimeS } from '../lib/when';
 
 const needOnline = (toast) => { if (!sync.online) { toast('This step needs the server (gate documents are online-only). Use manual gate pass + supervisor PIN if the outage continues.', 'err'); return false; } return true; };
 
@@ -78,7 +79,7 @@ export function Lookup({ onBack, initial }) {
     <View style={S.card}><ScanInput onScan={onScan} /></View>
     {!p ? <Empty icon="search-outline" text="Scan a pallet, tag or LPN" hint="Shows status, load, zone, LPNs and recent history (history needs the server)." /> : null}
     {p ? <View style={S.card}><Text style={S.h1}>{p.pallet_no} <Pill s={p.status} /></Text><View style={[S.row, { marginVertical: 4 }]}><Pill s={p.load || 'EMPTY'} /><Text style={S.mute}>  zone {p.zone || '-'}{p.load_ref ? ' · ' + p.load_ref : ''}</Text></View><Text style={S.mute}>Home {p.home} · type {p.type} · tag {p.tag}</Text>{lp.map(l => <Text key={l.lpn} style={S.mute}>• LPN {l.lpn} · {l.part} × {l.qty} · {l.status}</Text>)}{p.customer ? <Text style={S.mute}>At customer {p.customer}</Text> : null}{p.picklist ? <Text style={S.mute}>Pick list {p.picklist}</Text> : null}</View> : null}
-    {hist ? <View style={S.card}><Text style={S.h2}>Recent history</Text>{hist.map(h => <Text key={h.id} style={[S.mute, { marginBottom: 3 }]}>{String(h.ts).slice(0, 16)} · {h.event_type} → {h.to_status || ''} {h.ref_doc || ''} {h.customer_code || ''} · {h.user_id}</Text>)}</View> : null}
+    {hist ? <View style={S.card}><Text style={S.h2}>Recent history</Text>{hist.map(h => <Text key={h.id} style={[S.mute, { marginBottom: 3 }]}>{fDT(h.ts)} · {h.event_type} → {h.to_status || ''} {h.ref_doc || ''} {h.customer_code || ''} · {h.user_id}</Text>)}</View> : null}
   </Page><Toast msg={msg} /></Screen>);
 }
 
@@ -90,7 +91,7 @@ export function Pending({ onBack }) {
     <View style={[S.card, { flexDirection: 'row', justifyContent: 'space-around' }]}>
       <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: st.online ? C.ok : C.warn }]}>{st.online ? 'ON' : 'OFF'}</Text><Text style={S.mute}>network</Text></View>
       <View style={{ alignItems: 'center' }}><Text style={[S.big, { color: st.pending ? C.amber : C.ok }]}>{st.pending}</Text><Text style={S.mute}>pending events</Text></View>
-      <View style={{ alignItems: 'center' }}><Text style={[S.big, { fontSize: 18, marginTop: 10 }]}>{st.lastSync ? st.lastSync.slice(11, 19) : '—'}</Text><Text style={S.mute}>last sync</Text></View></View>
+      <View style={{ alignItems: 'center' }}><Text style={[S.big, { fontSize: 18, marginTop: 10 }]}>{st.lastSync ? fDate(st.lastSync) + ' ' + fTimeS(st.lastSync) : '—'}</Text><Text style={S.mute}>last sync</Text></View></View>
     {st.lastError ? <View style={[S.card, { borderLeftWidth: 4, borderLeftColor: C.warn }]}><Text style={{ color: C.warn }}>{st.lastError === 'LOGIN' ? 'Session expired - login again to sync' : st.lastError}</Text></View> : null}
     <Btn title="Sync now" icon="sync-outline" onPress={() => syncNow()} busy={st.syncing} />
     {docs.length ? <View style={S.card}><Text style={S.h2}>Offline documents waiting</Text>{docs.map(d => <Text key={d.doc_no} style={S.mute}>{d.kind} {d.doc_no}</Text>)}</View> : null}

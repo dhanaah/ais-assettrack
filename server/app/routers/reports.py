@@ -129,6 +129,7 @@ def export_pallets(plant: str | None = None, p: Principal = Depends(current_user
     ws.append(cols)
     for x in q.order_by(models.Pallet.pallet_no).all():
         ws.append([getattr(x, c) for c in cols])
+    from ..services import xl_dates; xl_dates(wb)
     bio = BytesIO(); wb.save(bio); bio.seek(0)
     return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": "attachment; filename=pallets.xlsx"})

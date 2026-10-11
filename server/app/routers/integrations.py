@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from .. import bench, gcs
+from .. import bench, gcs, models
 from ..db import get_db
 from ..security import need, Principal, audit, current_user
 
@@ -76,7 +76,43 @@ def get_gcs(p: Principal = Depends(current_user), db: Session = Depends(get_db))
         raise HTTPException(403, "Not allowed")
     cfg = gcs.get_settings(db)
     cfg["gcs_password"] = "••••••" if cfg.get("gcs_password") else ""
-    return {"settings": cfg, "status": gcs.status()}
+    ps = gcs.plant_status()
+    q = db.query(models.Plant).filter(models.Plant.active.is_(True))
+    if p.plant:
+        q = q.filter(models.Plant.code == p.plant)
+    plants = [{"code": x.code, "name": x.name, "gcs_enabled": bool(x.gcs_enabled), "gcs_folder": x.gcs_folder, "gcs_done_folder": x.gcs_done_folder,
+               "gcs_host": x.gcs_host, "gcs_port": x.gcs_port, "gcs_user": x.gcs_user, "has_password": bool(x.gcs_password),
+               "status": ps.get(x.code, {})} for x in q.order_by(models.Plant.code).all()]
+    return {"settings": cfg, "status": gcs.status(), "plants": plants}
+
+
+class PlantFtpIn(BaseModel):
+    plant: str
+    gcs_enabled: bool = False
+    gcs_folder: str | None = None
+    gcs_done_folder: str | None = None
+    gcs_host: str | None = None
+    gcs_port: int | None = None
+    gcs_user: str | None = None
+    gcs_password: str | None = None      # blank = keep
+
+
+@router.post("/gcs-inbox/plant")
+def save_plant_ftp(body: PlantFtpIn, request: Request, p: Principal = Depends(need("INTEGRATION_CONFIG")), db: Session = Depends(get_db)):
+    pl = db.get(models.Plant, body.plant.upper())
+    if not pl:
+        raise HTTPException(404, "Unknown plant")
+    p.require_plant(pl.code)
+    if body.gcs_enabled and not (body.gcs_folder or "").strip():
+        raise HTTPException(400, "Set the FTP folder for this plant first")
+    for k in ("gcs_enabled", "gcs_folder", "gcs_done_folder", "gcs_host", "gcs_port", "gcs_user"):
+        v = getattr(body, k)
+        setattr(pl, k, (v.strip() or None) if isinstance(v, str) else v)
+    if body.gcs_password:
+        pl.gcs_password = body.gcs_password
+    audit(db, p, "GCS_PLANT_FTP", "plant", pl.code, None, body.model_dump(exclude={"gcs_password"}), request)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/gcs-inbox")
@@ -91,9 +127,9 @@ def save_gcs(body: GcsIn, request: Request, p: Principal = Depends(need("INTEGRA
 
 
 @router.post("/gcs-inbox/pull")
-def pull_gcs(request: Request, p: Principal = Depends(need("INTEGRATION_CONFIG")), db: Session = Depends(get_db)):
+def pull_gcs(request: Request, plant: str | None = None, p: Principal = Depends(need("INTEGRATION_CONFIG")), db: Session = Depends(get_db)):
     try:
-        res = gcs.pull(db)
+        res = gcs.pull(db, plant=plant or p.plant)
     except Exception as e:
         gcs._state["last_error"] = str(e)[:300]
         raise HTTPException(502, f"GCS inbox pull failed: {e}")

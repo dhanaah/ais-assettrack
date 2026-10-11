@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## 1.11.0 (2026-10-11) — masters from Excel, delete, auto customers / transporters, clock, auto refresh, dd-mmm-yy, FTP per plant, Excel / PDF everywhere (HHT 2.1.5)
+- Customers and transporters: add / edit forms on the web; created automatically from the GCS file when new (customer code = short name in REMARKS when it is part of the name, else from the name; transporter with its vehicles and plant); marked "from GCS"
+- Masters from Excel (plants, customers, transporters, pallet types, pallets): template with 2 sample rows + "How to fill" sheet, current data download, upload (adds / updates by code, row errors listed, samples skipped)
+- Delete on every master row: removed when never used, otherwise set INACTIVE (pallets: DISCONTINUED; refused while out at a customer) so history stays correct
+- Web header: live clock (Sun 11-Oct-26 07:36:49) and "updated hh:mm:ss"; data refreshes every 30 s while the page is untouched (paused while editing, filters set or a detail is open)
+- Dates dd-mmm-yy everywhere: web, gate pass, challan, prints, Excel exports, emails, HHT (HHT times now local, not UTC)
+- GCS inbox: FTP folder per plant (own server / login optional, else the shared server); each plant read automatically; status per plant; "Read now" per plant
+- Every web table has "⬇ Excel" and "⬇ PDF" (A4 landscape with logo, page numbers)
 ## 1.10.9 (2026-10-10) — GCS pallets linked to the pallet QR (HHT app 2.1.4)
 - The pallet part of LPN_NUMBER (F.2948 / NF7944) = pallet type + serial of the pallet QR: matched to AIS-<plant>-F-02948-... (own plant first); part cards linked to their pallet at import
 - Scan the pallet QR -> its part cards from the GCS are picked; scan a part card -> its pallet is known (no second scan)

@@ -496,5 +496,60 @@ with TestClient(app) as c:
         res = gcssvc.pull(db, fetch=lambda: [("cancel.csv", buf.getvalue().encode())])
     k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
     check(res.get("cancelled") == 1 and k2["status"] == "CANCELLED", f"GCS cancelled in the ERP (CANCELLED_DATE) -> loading sheet cancelled: {res}")
+    print("21. Masters: auto-created from GCS, Excel template / upload / delete, table export, per-plant FTP folder")
+    cu = {x["code"]: x for x in c.get("/api/v1/customers?plant=CHN", headers=M).json()}
+    trs = {x["code"]: x for x in c.get("/api/v1/transporters", headers=M).json()}
+    check("NISSAN" in cu and cu["NISSAN"]["name"].startswith("RENAULT NISSAN") and cu["NISSAN"]["city"] == "ORAGADAM" and cu["NISSAN"]["ctype"] == "OEM",
+          f"customer NISSAN created from the GCS (code = short name in REMARKS, name / location / OEM from the file)")
+    check("ARC" in trs and "TN87D2115" in (trs["ARC"]["vehicles"] or "") and "SRIRAGAVENDR" in trs and "CHN" in (trs["ARC"]["plant_codes"] or ""),
+          f"transporters created from the GCS with vehicle and plant: {sorted(trs)}")
+    k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
+    check(k2["customer_code"] == "NISSAN" and k2["transporter_code"] == "ARC", "loading sheet linked to the new customer / transporter codes")
+    from openpyxl import load_workbook, Workbook
+    for kind in ("plants", "customers", "transporters", "pallet-types", "pallets"):
+        r = c.get(f"/api/v1/masters/{kind}/template.xlsx", headers=M)
+        wb = load_workbook(_io.BytesIO(r.content))
+        check(r.status_code == 200 and wb.worksheets[0].max_row == 3 and "How to fill" in wb.sheetnames, f"{kind}: template with headings + 2 sample rows + help sheet")
+    r = c.get("/api/v1/masters/customers/template.xlsx", headers=M)
+    res = c.post("/api/v1/masters/customers/upload", headers=M, files={"file": ("t.xlsx", r.content)}).json()
+    check(res["inserted"] == 0 and res["skipped"] == 2, f"untouched template uploads nothing (samples skipped): {res}")
+    wb = Workbook(); ws = wb.active
+    ws.append(["Code *", "Name (as on GCS) *", "Plant *", "Type (OEM/OES/AFM)", "City", "GSTIN", "Hold Days", "Chargeable (Y/N)", "Active (Y/N)"])
+    ws.append(["tvsm", "TVS MOTOR COMPANY LTD", "CHN", "OEM", "Hosur", "33AAACT0000A1Z1", 30, "Y", "Y"])
+    ws.append(["NISSAN", "RENAULT NISSAN AUTOMOTIVE INDIA PVT. LTD.", "CHN", "OEM", "Oragadam", "33AAACR0000A1Z9", 45, "N", "Y"])
+    ws.append(["BAD", "", "CHN", "", "", "", "x", "", ""])
+    ws.append(["XYZ", "Unknown plant cust", "ZZZ", "", "", "", "", "", ""])
+    b = _io.BytesIO(); wb.save(b)
+    res = c.post("/api/v1/masters/customers/upload", headers=M, files={"file": ("c.xlsx", b.getvalue())}).json()
+    cu = {x["code"]: x for x in c.get("/api/v1/customers?plant=CHN", headers=M).json()}
+    check(res["inserted"] == 1 and res["updated"] == 1 and len(res["errors"]) == 2 and "TVSM" in cu and cu["NISSAN"]["gstin"] == "33AAACR0000A1Z9"
+          and cu["NISSAN"]["holding_limit_days"] == 45 and cu["NISSAN"]["chargeable"] is False, f"upload: 1 added, 1 updated, 2 row errors listed: {res['errors']}")
+    r = c.get("/api/v1/masters/customers/data.xlsx", headers=M)
+    check(r.status_code == 200 and "TVSM" in str([x for x in load_workbook(_io.BytesIO(r.content)).worksheets[0].iter_rows(values_only=True)]), "current customers downloaded in the template layout")
+    d = c.delete(f"/api/v1/masters/customers/{cu['TVSM']['id']}", headers=M).json()
+    d2 = c.delete(f"/api/v1/masters/customers/{cu['NISSAN']['id']}", headers=M).json()
+    cu = {x["code"]: x for x in c.get("/api/v1/customers?plant=CHN", headers=M).json()}
+    check(d["result"] == "deleted" and "TVSM" not in cu and d2["result"] == "deactivated" and cu["NISSAN"]["active"] is False,
+          f"delete: unused customer removed; customer with gate passes set inactive ({d2['message']})")
+    dp = c.delete("/api/v1/masters/pallets/CHN-P001", headers=M).json()
+    check(dp.get("result") == "deactivated" or "cannot be removed now" in str(dp), f"pallet with history -> DISCONTINUED or refused while out (never removed): {dp}")
+    check(c.delete("/api/v1/masters/customers/1", headers=H).status_code == 403, "delete needs the master-data right")
+    body = {"title": "Pallets test", "columns": ["Pallet", "Dispatched", "Qty"], "rows": [["CHN-P001", "2026-10-09T14:42:22", "120"], ["CHN-P002", "", "7"]]}
+    rx = c.post("/api/v1/export/xlsx", headers=W, json=body); rp = c.post("/api/v1/export/pdf", headers=W, json=body)
+    ws = load_workbook(_io.BytesIO(rx.content)).worksheets[0]
+    check(rx.status_code == 200 and ws.cell(row=5, column=2).number_format.startswith("dd-mmm-yy") and ws.cell(row=5, column=3).value == 120
+          and rp.content[:4] == b"%PDF" and "09-Oct-26" in PdfReader(_io.BytesIO(rp.content)).pages[0].extract_text(), "table export: Excel (dates dd-mmm-yy, numbers as numbers) and PDF")
+    r = c.post("/api/v1/integrations/gcs-inbox/plant", headers=A, json={"plant": "PUN", "gcs_enabled": True, "gcs_folder": "/GCS/PUN", "gcs_user": "pun_ftp", "gcs_password": "s3cret"})
+    check(r.status_code == 200, "per-plant FTP folder saved")
+    g = c.get("/api/v1/integrations/gcs-inbox", headers=A).json()
+    pun = [x for x in g["plants"] if x["code"] == "PUN"][0]
+    check(pun["gcs_folder"] == "/GCS/PUN" and pun["gcs_enabled"] and pun["has_password"] and "s3cret" not in str(g), "plant folder listed, password never shown")
+    with SessionLocal() as db:
+        cfg = gcssvc.plant_cfg(db, db.get(models.Plant, "PUN"))
+        check(cfg["gcs_folder"] == "/GCS/PUN" and cfg["gcs_user"] == "pun_ftp" and cfg["gcs_host"] == "ftp.test", "plant uses its own folder / login and the shared server")
+        pun_csv = real[1][1].replace(b"FGCHN2627/12814", b"FGPUN2627/00001")
+        res = gcssvc.pull(db, fetch=lambda: [("pun.csv", pun_csv)])
+        k = db.query(models.PickList).filter_by(gcs_no="FGPUN2627/00001").first()
+    check(res["plants"]["PUN"]["created"] == 1 and k and k.plant_code == "PUN", f"automatic read goes plant by plant: the PUN folder's file opens a PUN loading sheet: {res['plants']}")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

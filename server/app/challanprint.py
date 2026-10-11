@@ -144,7 +144,7 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
             return top - hh - 3 * mm
 
         def details(y):
-            left = [("Challan No:", pk.challan_no or "pending"), ("Challan Date:", f"{cdate:%d/%m/%Y %H:%M}"),
+            left = [("Challan No:", pk.challan_no or "pending"), ("Challan Date:", f"{cdate:%d-%b-%y %H:%M}"),
                     ("To M/s:", c_name), ("Address:", c_addr), ("GSTIN:", c_gstin), ("Place of Supply:", c_state or (pk.customer_location or ""))]
             right = [("Gate Pass No:", pk.gcs_no or ""), ("Vehicle No:", pk.vehicle_no or ""), ("Vehicle Type:", pk.vehicle_type or ""),
                      ("Transporter:", pk.transporter_name or pk.transporter_code or ""), ("Invoice(s):", (", ".join(invs) if invs else (pk.invoice_no or ""))),
@@ -212,7 +212,7 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
             return y - rh
 
         def footer():
-            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · pick list {pk.picklist_no} · printed {now:%d-%m-%Y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
+            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · pick list {pk.picklist_no} · printed {now:%d-%b-%y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
             txt(x0 + tw, 13.5 * mm, f"Page {st['page']} of {total or '?'}", 8, True, align="r")
             txt(x0, 9.5 * mm, "Returnable packing material - property of Asahi India Glass Ltd. Not for sale.", 6.8, color=red)
 
@@ -290,7 +290,7 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
             sh = 28 * mm * max(F, 0.85)
             if y - sh < BOTTOM:
                 y = new_page()
-            signs = [("PREPARED BY", "Logistics · AssetTrack login", who, f"{cdate:%d/%m/%Y %H:%M}"),
+            signs = [("PREPARED BY", "Logistics · AssetTrack login", who, f"{cdate:%d-%b-%y %H:%M}"),
                      ("SECURITY", "Checked at OUT gate", "", ""),
                      ("RECEIVED BY", "Consignee / driver - name & seal", "", "")]
             sw = tw / 3

@@ -8,6 +8,7 @@ import { validateReturnPallet } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow } from '../lib/sync';
 import { printSlip, slipText } from '../lib/printer';
+import { fDT } from '../lib/when';
 
 export default function ReturnSlip({ onBack, deviceId }) {
   const [custs, setCusts] = useState([]); const [cust, setCust] = useState(null); const [mode, setMode] = useState('B1'); const [veh, setVeh] = useState(''); const [dc, setDc] = useState(''); const [drv, setDrv] = useState(''); const [qty, setQty] = useState('');
@@ -34,7 +35,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
       const slip_no = `RTS-${plant.code}-${deviceId.replace(/[^A-Z0-9]/gi, '').slice(-6)}-${String(n).padStart(5, '0')}`;
       await enqueueDoc(slip_no, 'RETURN_SLIP', body); slip = { slip_no, status: 'OPEN', declared_qty: mode === 'B2' ? +qty : pallets.length }; provisional = true;
     }
-    const printable = { ...slip, mode, customer_code: cust.code, customer_name: cust.name, vehicle_no: body.vehicle_no, customer_challan_no: dc, driver_name: drv, pallets: body.pallets, declared_qty: slip.declared_qty, date: new Date().toLocaleString(), provisional };
+    const printable = { ...slip, mode, customer_code: cust.code, customer_name: cust.name, vehicle_no: body.vehicle_no, customer_challan_no: dc, driver_name: drv, pallets: body.pallets, declared_qty: slip.declared_qty, date: fDT(new Date()), provisional };
     logActivity(provisional ? 'SLIP_CREATE_OFFLINE' : 'SLIP_CREATE', slip.slip_no, `${mode} ${cust.code} qty ${printable.declared_qty}`);
     setDone(printable);
     try { const r = await printSlip(printable, plant); if (!r.printed) setPreview(r.text); else toast('Printed 2 copies'); logActivity('PRINT_SLIP', slip.slip_no, r.printed ? 'printed' : 'no printer - shown'); } catch (e) { toast('Print failed: ' + e.message, 'err'); logActivity('PRINT_ERROR', slip.slip_no, e.message); setPreview(slipText(printable, plant)); }

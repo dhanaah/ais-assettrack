@@ -6,6 +6,7 @@ import { enqueue, setPalletLocal, logActivity, resolveTag, listPicklists } from 
 import { validateMove } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
+import { fDT, fTimeS } from '../lib/when';
 
 const ROUTES = [
   ['PRODUCTION', 'Pallet Yard → Production', 'empty pallets to the line'],
@@ -27,7 +28,7 @@ export function Move({ onBack }) {
     await setPalletLocal(v.pallet.pallet_no, { zone: route[0], load, status: route[0] === 'PRODUCTION' && v.pallet.status === 'HELD' ? 'IN_WIP' : (route[0] === 'YARD' && v.pallet.status === 'IN_WIP' ? 'HELD' : v.pallet.status) });
     const id = await enqueue('PALLET_MOVE', { scanned: code, to_zone: route[0] }, !sync.online);
     logActivity('PALLET_MOVE', v.pallet.pallet_no, route[0]);
-    setDone(d => [{ p: v.pallet.pallet_no, load, t: new Date().toISOString().slice(11, 19) }, ...d].slice(0, 50));
+    setDone(d => [{ p: v.pallet.pallet_no, load, t: fTimeS(new Date()) }, ...d].slice(0, 50));
     toast(`${v.pallet.pallet_no} → ${route[0]} (${load})`, v.warn.length ? 'warn' : 'ok');
     if (v.warn.length) setAlert(v.warn.join('\n'));
     const r = await pushAndResult(id);
@@ -55,7 +56,7 @@ export function Receipt({ onBack }) {
     const id = await enqueue('PLANT_RECEIPT', { scanned: code, zone, ref: ref || null }, !sync.online);
     await setPalletLocal(pallet.pallet_no, { status: 'IN_WIP', zone, load: 'LOADED' });
     logActivity('PLANT_RECEIPT', pallet.pallet_no, zone);
-    setDone(d => [{ p: pallet.pallet_no, h: pallet.home, t: new Date().toISOString().slice(11, 19) }, ...d]);
+    setDone(d => [{ p: pallet.pallet_no, h: pallet.home, t: fTimeS(new Date()) }, ...d]);
     toast(`${pallet.pallet_no} (${pallet.home}) received at ${zone}`);
     const r = await pushAndResult(id);
     if (r.status === 'REJECTED') { setAlert(r.result); toast(r.result, 'err'); } else if (r.status === 'EXCEPTION') setAlert(r.result);
@@ -106,6 +107,6 @@ export function Misses({ onBack }) {
   return (<Screen><Header title="Missed Scans" sub="Open alerts for this plant" onBack={onBack} /><Page>
     {rows.length === 0 ? <Empty text="No open missed scans" hint="Every scan point was followed." /> : null}
     {rows.map(r => <View key={r.id} style={S.card}><View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{r.missed_point.replace(/_/g, ' ')}</Text><Pill s={r.action} /></View>
-      <Text style={{ marginTop: 4 }}>{r.message}</Text><Text style={S.mute}>{(r.ts || '').slice(0, 16).replace('T', ' ')} · found at {r.detected_at} by {r.user_id} · should scan: {r.responsible_role || '-'}</Text></View>)}
+      <Text style={{ marginTop: 4 }}>{r.message}</Text><Text style={S.mute}>{fDT(r.ts)} · found at {r.detected_at} by {r.user_id} · should scan: {r.responsible_role || '-'}</Text></View>)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
 }
