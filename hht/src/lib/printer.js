@@ -173,7 +173,7 @@ export function slipDoc(slip, plant, dots, qr) {
     (slip.pallets || []).forEach((x, i) => p.pad(`${i + 1}.`, x));
     p.rule().bold(true).line(`TOTAL PALLETS: ${slip.declared_qty}`).bold(false);
   }
-  if (slip.provisional) p.line('** PROVISIONAL - created offline **');
+  if (slip.provisional) p.align('center').bold(true).line('PRINTED WITHOUT NETWORK').bold(false).line(slip.mode === 'A' ? 'QR signed by this HHT' : 'Sent to AIS when online').align('left');
   p.line().line('Security: ____________').line().line('Driver  : ____________').line().align('center').line('Developed by DT').feed(4).cut();
   return p;
 }

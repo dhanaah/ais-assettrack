@@ -75,6 +75,7 @@ jobs:
           sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=armeabi-v7a,arm64-v8a/' android/gradle.properties
           printf '\nandroid { defaultConfig { ndk { abiFilters "armeabi-v7a", "arm64-v8a" } } }\n' >> android/app/build.gradle
           grep -q "Latin model only" <(node scripts/patch-mlkit-latin.js) && echo "OCR: Latin model only"
+          grep -q 'usesCleartextTraffic="true"' android/app/src/main/AndroidManifest.xml && echo "HTTP to the AssetTrack server allowed" || (echo "usesCleartextTraffic missing - HHT could not reach the server over http"; exit 1)
       - name: Build release APK (debug-signed; replace with keystore secrets for store release)
         env: { GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g }
         run: cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon --stacktrace

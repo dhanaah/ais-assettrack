@@ -1,4 +1,13 @@
 # Changelog — AIS AssetTrack Server
+## 1.15.0 (2026-10-11) — HHT could not reach the server (fixed); login first, Setup; server QR; offline customer slips; online badge (HHT app 2.5.0)
+- FIX: the HHT app was not allowed to use http:// (Android blocks it unless the app says so) - the browser on the HHT could open the server but the app could not. Now allowed; the build checks it
+- Login screen: user ID + password only, with a line showing the server and whether it answers (green online / red offline, every 15 s); Setup button
+- Setup (from login and Settings): 1. Server - Scan server QR or type name / IP, Save & test; 2. Printer; 3. Vehicles (list kept on the HHT, AIS vehicles come from the server)
+- Server QR: http://<server>:8001/hht-setup (no login), tray menu "HHT setup QR", link on the web login. The HHT tries every address in it at once and keeps the ones that answer, fastest first; server addresses now leave out 169.254.x and put the full PC name and main IP first
+- Online / Offline / Syncing badge on every screen (online = the AssetTrack server answers, not just Wi-Fi); auto-sync keeps retrying when the server was not reachable
+- Vehicle pick list on the return slips (customer HHT and IN gate): recent AIS loads and slips + transporter vehicles from the server, plus vehicles added on the HHT; recently used first; works offline
+- Customer HHT without network: pick the vehicle, scan pallets, print the slip at once with a QR signed by this HHT (number RO-<plant>-<device>-<seq>); the AIS IN gate accepts it and opens the slip from the QR (pallets from the type + serial list in it); when the HHT is online it sends the slip with the same number and the details are merged. Customer DC number is optional
+- Pairing QR and /me give the HHT its offline signing key (older pairings get it on the next connection)
 ## 1.14.3 (2026-10-11) — AT icon for the HHT app and the browser tab (HHT app 2.4.3)
 - HHT app icon (Android launcher, round and square) and the web browser tab / phone home-screen icon are now the AssetTrack "AT" icon; the AIS company logo stays on the login, headers and prints
 - brand/build_logos.py builds them from brand/at_icon_source.png

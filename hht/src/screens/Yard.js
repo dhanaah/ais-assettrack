@@ -16,7 +16,7 @@ export default function Yard({ onBack }) {
   const [docs, setDocs] = useState({}); const [showDoc, setShowDoc] = useState(false);
   useEffect(() => { kv.get('slip_docs').then(d => setDocs(d || {})); }, [slips]);
   const open = async (s) => { setSlip(s); setScans(await localScans(s.slip_no)); setDocs((await kv.get('slip_docs')) || {}); };
-  const onSlipScan = async (code) => { const no = code.startsWith('AIS1|RS|') ? code.split('|')[2] : code.startsWith('RTS|') ? code.split('|')[1] : code; const s = await getSlip(no); if (!s) return toast('Slip not in cache: ' + no, 'err'); open(s); };
+  const onSlipScan = async (code) => { const no = code.startsWith('AIS1|RS|') || code.startsWith('AIS1|RO|') ? code.split('|')[2] : code.startsWith('RTS|') ? code.split('|')[1] : code; const s = await getSlip(no); if (!s) return toast('Slip not in cache: ' + no, 'err'); open(s); };
   const onScan = async (code) => {
     const v = await validateYardScan(slip, code, accept);
     if (!v.ok) { logActivity('SCAN_REJECTED_LOCAL', slip.slip_no, v.msg, { scanned: code }); return toast(v.msg, v.dup ? 'warn' : 'err'); }

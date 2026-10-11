@@ -783,6 +783,8 @@ def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principa
             raise HTTPException(400, q["error"] + " - HOLD VEHICLE")
         no = q["slip_no"]
     sl = db.get(models.ReturnSlip, no)
+    if not sl and q and q.get("offline"):
+        sl = _open_offline_slip(db, p, q, request)
     if not sl:
         raise HTTPException(404, "Slip not found - create Mode B slip")
     if q and not q.get("signed") and sl.source == "EXT_API" and (body.qr or "").startswith("AIS1|"):
@@ -802,6 +804,34 @@ def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principa
     audit(db, p, "GATE_IN", "slip", no, None, {"gcs": gcs, "msg": msg}, request)
     db.commit()
     return row(sl) | {"gcs_message": msg}
+
+
+def _open_offline_slip(db, p, q, request):
+    """Customer HHT printed the slip without network (signed with its own key) and the vehicle reached AIS first:
+    open the slip from the QR - pallets from the type + serial list on it. The HHT adds the rest when it is online."""
+    d = db.get(models.CustomerDevice, q["device_id"]) if q.get("device_id") else None
+    cust = db.query(models.Customer).filter_by(code=q["customer"], plant_code=q["plant"]).first()
+    if not d or d.revoked_at or not cust or d.customer_id != cust.id:
+        raise HTTPException(400, "Slip printed by an HHT that is not paired with this customer - HOLD VEHICLE")
+    if q["plant"] != p.plant:
+        raise HTTPException(400, f"Slip is for plant {q['plant']} - HOLD VEHICLE")
+    sl = models.ReturnSlip(slip_no=q["slip_no"], plant_code=q["plant"], customer_code=cust.code, mode="A", vehicle_no=q["vehicle"] or None,
+                           source="GATE_RO", created_by=f"HHT:{cust.code}:{d.label}"[:40], declared_qty=q["qty"], status="OPEN",
+                           remarks="printed offline - opened at gate")
+    db.add(sl); db.flush()
+    seen = set()
+    for ref in q.get("refs") or []:
+        pno = services.pallet_from_ref(db, ref, p.plant) or ref
+        if pno in seen:
+            continue
+        seen.add(pno)
+        pal = db.get(models.Pallet, pno)
+        if pal and pal.customer_code == cust.code and pal.status == "AT_CUSTOMER":
+            services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_OFFLINE", user_id=p.user_id, ref=sl.slip_no, customer=cust.code)
+        db.add(models.ReturnSlipLine(slip_no=sl.slip_no, pallet_no=pno[:30], declared=True))
+    sl.declared_qty = max(q["qty"], len(seen))
+    audit(db, p, "RETURN_SLIP_OFFLINE_OPEN", "slip", sl.slip_no, None, {"device": d.label, "refs": q.get("refs")}, request)
+    return sl
 
 
 def _interplant_challan(db, p, scanned):

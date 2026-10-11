@@ -50,6 +50,7 @@ export async function applyPull(data) {
     await d.execAsync('DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;');
     for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned, k.dispatch_type || 'PALLET_ONLY', k.part_no, k.part_qty, k.to_plant, k.picked_qty || 0, k.source || 'APP', k.load_point || null, k.vehicle_no || null, k.gcs_no || null, k.invoice_no || null);
     for (const s of data.slips) await d.runAsync('INSERT OR REPLACE INTO slips VALUES(?,?,?,?,?,?)', s.slip_no, s.customer, s.mode, s.qty, s.status, JSON.stringify(s.pallets));
+    if (Array.isArray(data.vehicles)) await d.runAsync('INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)', 'vehicles_srv', JSON.stringify(data.vehicles));
     { const docs = {}; for (const s of data.slips) if ((s.doc && s.doc.length) || s.doc_photos || s.doc_total || (s.doc_types && Object.keys(s.doc_types).length)) docs[s.slip_no] = { doc: s.doc || [], read: s.doc_read, photos: s.doc_photos || 0, types: s.doc_types || {}, total: s.doc_total }; await d.runAsync('INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)', 'slip_docs', JSON.stringify(docs)); }
     for (const c of data.customers) await d.runAsync('INSERT OR REPLACE INTO customers VALUES(?,?,?)', c.code, c.name, c.return_mode);
   });

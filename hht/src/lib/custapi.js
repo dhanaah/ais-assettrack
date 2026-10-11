@@ -8,6 +8,10 @@
 import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 import { APP_VERSION } from './api';
+import { setNet } from '../ui/kit';
+import { hmacSha256Hex } from './hmac';
+import { setServerVehicles, usedVehicle, cleanVeh } from './vehicles';
+import { parsePalletQr } from './db';
 
 let pair = null;                 // { v, p, c, n, d, lan: [], ports: [], wan, k }
 let route = null;                // { base, kind: 'LAN' | 'WAN', at }
@@ -37,22 +41,35 @@ export function parsePairing(text) {
   try { const j = JSON.parse(b64decode(s.slice(9))); return j && j.k && j.c && j.p ? j : null; } catch (e) { return null; }
 }
 export async function savePairing(j) {
-  const { k, ...meta } = j;
+  const { k, s: sk, ...meta } = j;
   await SecureStore.setItemAsync('cust_key', k);
+  if (sk) await SecureStore.setItemAsync('cust_sign', sk);
   await kv.set('cust_pair', meta);
   pair = j; route = null;
 }
 export async function loadPairing() {
   const meta = await kv.get('cust_pair'); if (!meta) { pair = null; return null; }
   const k = await SecureStore.getItemAsync('cust_key'); if (!k) { pair = null; return null; }
-  pair = { ...meta, k }; return pair;
+  const sk = await SecureStore.getItemAsync('cust_sign');
+  pair = { ...meta, k, s: sk || null }; return pair;
 }
-export async function unpair() { await SecureStore.deleteItemAsync('cust_key'); await kv.set('cust_pair', null); pair = null; route = null; }
+/** /me: sign key + device id for slips printed without network (older pairings get it here), vehicles for quick pick. */
+export async function refreshMe() {
+  const me = await ext('/me');
+  if (me.sign_key && pair && (pair.s !== me.sign_key || pair.i !== me.device_id)) {
+    await SecureStore.setItemAsync('cust_sign', me.sign_key); pair = { ...pair, s: me.sign_key, i: me.device_id };
+    const { k, s: _s, ...meta } = pair; await kv.set('cust_pair', meta);
+  }
+  if (me.vehicles) await setServerVehicles(me.vehicles);
+  return me;
+}
+export const canPrintOffline = () => !!(pair && pair.s && pair.i);
+export async function unpair() { await SecureStore.deleteItemAsync('cust_key'); await SecureStore.deleteItemAsync('cust_sign').catch(() => {}); await kv.set('cust_pair', null); pair = null; route = null; }
 export const getPairing = () => pair;
 export const getRoute = () => route;
 export async function setInternetAddress(url) {        // if IT publishes the address after pairing
   if (!pair) return; pair = { ...pair, wan: (url || '').trim().replace(/\/+$/, '') };
-  const { k, ...meta } = pair; await kv.set('cust_pair', meta); route = null;
+  const { k, s: _s, ...meta } = pair; await kv.set('cust_pair', meta); route = null;
 }
 
 // ---------------------------------------------------------------- route: AIS network first, internet second
@@ -77,9 +94,9 @@ export async function findRoute(force) {
   if (!force && route && Date.now() - route.at < ROUTE_TTL) return route;
   const lan = lanBases();
   const hit = await firstTrue(lan.map((b) => ping(b, 2500)), lan);
-  if (hit) { route = { base: hit, kind: 'LAN', at: Date.now() }; return route; }
-  if (pair.wan && await ping(pair.wan, 8000)) { route = { base: pair.wan, kind: 'WAN', at: Date.now() }; return route; }
-  route = null;
+  if (hit) { route = { base: hit, kind: 'LAN', at: Date.now() }; setNet({ state: 'online' }); return route; }
+  if (pair.wan && await ping(pair.wan, 8000)) { route = { base: pair.wan, kind: 'WAN', at: Date.now() }; setNet({ state: 'online' }); return route; }
+  route = null; setNet({ state: 'offline' });
   const e = new Error(pair.wan ? 'No network to AIS (AIS Wi-Fi or internet)' : 'AIS server not reachable and no internet address set'); e.offline = true; throw e;
 }
 
@@ -113,6 +130,7 @@ async function remember(slip) {
 }
 /** Create an Option A return slip. Returns { sent: true, slip } or { sent: false, queued } when there is no network. */
 export async function createSlip(body) {
+  body = { ...body, vehicle_no: cleanVeh(body.vehicle_no) }; usedVehicle(body.vehicle_no).catch(() => {});
   const item = { client_ref: uid(), body, created: new Date().toISOString(), tries: 0 };
   try {
     const slip = await ext('/return-slip', { method: 'POST', body: { ...body, client_ref: item.client_ref } });
@@ -120,16 +138,38 @@ export async function createSlip(body) {
     return { sent: true, slip };
   } catch (e) {
     if (!e.offline) throw e;
+    let slip = null;
+    if (canPrintOffline()) { slip = await offlineSlip(body, item.created); item.body = { ...body, slip_no: slip.slip_no }; await remember(slip); }
     const ob = await outbox(); ob.push({ ...item, last_error: e.message }); await kv.set('cust_outbox', ob);
-    return { sent: false, queued: item, reason: e.message };
+    setNet({ state: 'offline', pending: ob.length });
+    return { sent: false, queued: item, reason: e.message, slip };
   }
+}
+
+// ---------------------------------------------------------------- slip printed without network (signed by this HHT)
+const pad = (n, w) => String(n).padStart(w, '0');
+function stamp(d) { return `${pad(d.getFullYear() % 100, 2)}${pad(d.getMonth() + 1, 2)}${pad(d.getDate(), 2)}${pad(d.getHours(), 2)}${pad(d.getMinutes(), 2)}`; }
+/** Short pallet reference (type + serial, e.g. F-02948) for the QR - the AIS gate finds the pallet from it. */
+function shortRef(scanned) {
+  const q = parsePalletQr(scanned); const pn = q?.pallet_no || String(scanned || '').trim().toUpperCase();
+  const m = /^AIS-[A-Z0-9]+-([A-Z0-9]+)-(\d+)-\d+$/.exec(pn); return m ? `${m[1]}-${m[2]}` : null;
+}
+async function offlineSlip(body, created) {
+  const seq = ((await kv.get('ro_seq')) || 0) + 1; await kv.set('ro_seq', seq);
+  const slip_no = `RO-${pair.p}-${pair.i}-${pad(seq, 5)}`;
+  const qty = body.pallets.length; const veh = cleanVeh(body.vehicle_no);
+  let refs = body.pallets.map(shortRef).filter(Boolean); if (refs.join(',').length > 600) refs = [];   // very long list: count only in the QR
+  const head = `AIS1|RO|${slip_no}|${pair.p}|${pair.c}|${veh}|${qty}|${stamp(new Date(created))}|${pair.i}|${refs.join(',')}`;
+  const qr = `${head}|${hmacSha256Hex(pair.s, head).slice(0, 10).toUpperCase()}`;
+  return { slip_no, status: 'PRINTED OFFLINE', plant: pair.p, customer: pair.c, vehicle_no: veh, customer_challan_no: body.customer_challan_no || '',
+    declared_qty: qty, created_at: created, qr_payload: qr, offline: true, pallets: body.pallets.map((x) => ({ pallet_no: parsePalletQr(x)?.pallet_no || x })) };
 }
 /** Send waiting slips (same client reference: never doubled). Returns the slips sent now. */
 export async function sendPending() {
   const ob = await outbox(); if (!ob.length) return [];
   const left = [], sent = [];
   for (const it of ob) {
-    try { const slip = await ext('/return-slip', { method: 'POST', body: { ...it.body, client_ref: it.client_ref } }); await remember({ ...slip, made_on_device: it.created }); sent.push(slip); }
+    try { const slip = await ext('/return-slip', { method: 'POST', body: { ...it.body, client_ref: it.client_ref } }); await remember({ ...slip, offline: false, made_on_device: it.created }); sent.push(slip); }
     catch (e) { left.push({ ...it, tries: (it.tries || 0) + 1, last_error: e.message }); if (e.offline) { left.push(...ob.slice(ob.indexOf(it) + 1)); break; } }
   }
   await kv.set('cust_outbox', left);

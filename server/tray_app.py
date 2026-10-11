@@ -291,6 +291,7 @@ def main():
     menu = pystray.Menu(pystray.MenuItem("Open AssetTrack", on_open, default=True),
                         pystray.MenuItem("Copy network address", on_copy),
                         pystray.MenuItem("About / HHT address", on_about),
+                        pystray.MenuItem("HHT setup QR (scan on the HHT)", lambda icon, item: webbrowser.open(_u("localhost", PORT) + "/hht-setup")),
                         pystray.MenuItem("Backup database now", lambda icon, item: (backup_db(), info_box("Backup written to the backups folder next to the database."))),
                         pystray.Menu.SEPARATOR,
                         pystray.MenuItem("Stop server (admin)", on_exit))

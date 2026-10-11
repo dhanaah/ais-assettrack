@@ -73,6 +73,26 @@ def index():
     return FileResponse(static_dir / "index.html")
 
 
+@app.get("/hht-setup", include_in_schema=False)
+def hht_setup():
+    """Page with the server QR: on the HHT, Setup > Server > Scan server QR. No login needed (addresses only)."""
+    import segno, io, html
+    from fastapi.responses import HTMLResponse
+    from .routers.external import server_setup_text, _lan_addresses
+    t = server_setup_text(); buf = io.BytesIO(); segno.make(t, error="m").save(buf, kind="svg", scale=7, border=3, dark="#0f172a")
+    addrs = "".join(f"<li><code>{html.escape(a)}</code></li>" for a in _lan_addresses())
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AssetTrack - HHT setup QR</title><link rel="icon" href="/static/favicon.png"><style>body{{font-family:system-ui,Segoe UI,Arial;margin:0;background:#f1f5f9;color:#0f172a}}
+.c{{max-width:560px;margin:24px auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 6px 24px #0f172a14;text-align:center}}
+h1{{font-size:20px;margin:6px 0}}ol,ul{{text-align:left}}.q svg{{width:300px;height:300px}}.m{{color:#64748b;font-size:13px}}</style></head><body><div class="c">
+<img src="/static/at-192.png" style="height:64px"><h1>AssetTrack server - HHT setup</h1>
+<div class="q">{buf.getvalue().decode()}</div>
+<ol><li>On the HHT open AssetTrack - tap <b>Setup</b> (gear on the login screen)</li><li><b>1. Server</b> - <b>Scan server QR</b> - point at this code</li>
+<li>The HHT checks every address and keeps the ones that answer - then sign in</li></ol>
+<p class="m">Addresses in the code (ports {", ".join(map(str, config.SERVER_PORTS or [80, 8001, 8002, 8003]))}):</p><ul class="m">{addrs}</ul>
+<p class="m">The HHT must be on the same network as this server. AIS AssetTrack v{config.APP_VERSION} · {config.DEVELOPER}</p></div></body></html>""")
+
+
 @app.get("/api/v1/health")
 def health():
     try:

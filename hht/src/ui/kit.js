@@ -140,12 +140,25 @@ export const AisLogo = ({ size = 34, onDark }) => <Image source={onDark ? requir
 export const pillColors = () => T.dark ? { AVAILABLE: ['#064e3b', '#6ee7b7'], AT_CUSTOMER: ['#0c4a6e', '#7dd3fc'], ALLOCATED: ['#78350f', '#fcd34d'], HELD: ['#7f1d1d', '#fca5a5'], DAMAGED: ['#7f1d1d', '#fca5a5'], REJECTED: ['#7f1d1d', '#fca5a5'], APPLIED: ['#064e3b', '#6ee7b7'], DONE: ['#064e3b', '#6ee7b7'], PENDING: ['#78350f', '#fcd34d'], EXCEPTION: ['#78350f', '#fcd34d'], OPEN: ['#0c4a6e', '#7dd3fc'], READY: ['#78350f', '#fcd34d'], IN_RETURN: ['#78350f', '#fcd34d'], FAILED: ['#7f1d1d', '#fca5a5'], LOADED: ['#0c4a6e', '#7dd3fc'], EMPTY: ['#064e3b', '#6ee7b7'], OK: ['#064e3b', '#6ee7b7'], REJECT: ['#7f1d1d', '#fca5a5'], PDI_PENDING: ['#78350f', '#fcd34d'], IN_WIP: ['#78350f', '#fcd34d'], CUSTOMER: ['#0c4a6e', '#7dd3fc'], STOCK_TRANSFER: ['#4c1d95', '#c4b5fd'], EMPTY_RETURN: ['#78350f', '#fcd34d'] } : pillColor;
 export const Wordmark = ({ height = 30, onDark }) => <Image source={onDark ? require('../../assets/wordmark_on_dark.png') : require('../../assets/wordmark.png')} style={{ height, width: height * 3.5, resizeMode: 'contain' }} />;
 
+/** Connection state shown on every screen: set by the app (sync / customer route), read by the header dot. */
+export const NET = { state: null, pending: 0, text: '', listeners: new Set() };   // state: 'online' | 'offline' | 'syncing' | null
+export function setNet(part) { Object.assign(NET, part); NET.listeners.forEach((f) => f({ ...NET })); }
+export function useNet() { const [n, setN] = useState({ ...NET }); useEffect(() => { NET.listeners.add(setN); setN({ ...NET }); return () => { NET.listeners.delete(setN); }; }, []); return n; }
+export function NetBadge({ onPress }) {
+  const n = useNet(); if (!n.state) return null;
+  const col = n.state === 'online' ? '#22c55e' : n.state === 'syncing' ? '#f59e0b' : '#ef4444';
+  const txt = n.state === 'online' ? 'Online' : n.state === 'syncing' ? 'Syncing' : 'Offline';
+  return (<TouchableOpacity onPress={onPress} disabled={!onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.22)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, marginLeft: 6 }}>
+    <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: col, borderWidth: 1, borderColor: '#fff' }} />
+    <Text style={{ color: '#fff', fontWeight: '700', fontSize: sc(11) }}>{txt}{n.pending ? ` · ${n.pending}` : ''}</Text></TouchableOpacity>);
+}
+
 export const Header = ({ title, sub, onBack, right, logo }) => (
   <LinearGradient colors={GRAD.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingTop: 42, paddingBottom: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderBottomLeftRadius: 18, borderBottomRightRadius: 18, shadowColor: '#312e81', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
     {onBack ? <TouchableOpacity onPress={onBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ paddingRight: 12, paddingVertical: 4 }}><Ionicons name="chevron-back" size={26} color="#fff" /></TouchableOpacity> : null}
     {logo ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 10 }}><AisLogo size={38} onDark /><Wordmark height={26} onDark /></View> : null}
     <View style={{ flex: 1 }}>{title ? <Text style={{ color: '#fff', fontWeight: '700', fontSize: sc(17) }}>{title}</Text> : null}{sub ? <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: sc(12) }}>{sub}</Text> : null}</View>
-    {right}
+    {right}<NetBadge />
   </LinearGradient>);
 
 /** Segmented control: options [[value,label]], one look everywhere (replaces ad-hoc button rows). */

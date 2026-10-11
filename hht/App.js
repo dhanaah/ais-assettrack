@@ -6,7 +6,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import * as Application from 'expo-application';
 import * as Clipboard from 'expo-clipboard';
 import { openDb, kv, logActivity, pendingCount } from './src/lib/db';
-import { applyTheme, T, S, C, Btn, Screen, Page, Header, AisLogo, loadScanMode } from './src/ui/kit';
+import { applyTheme, T, S, C, Btn, Screen, Page, Header, AisLogo, loadScanMode, setNet } from './src/ui/kit';
 import { loadSession, setToken, me as getMe, hasToken, setApiDevice, APP_VERSION } from './src/lib/api';
 import { state as syncState, subscribe, syncNow, startAutoSync, stopAutoSync, setDeviceId, refreshPending } from './src/lib/sync';
 import { initFeedback } from './src/lib/feedback';
@@ -18,6 +18,7 @@ import ReturnSlip from './src/screens/ReturnSlip';
 import { GateIn, GateOut, Damage, Lookup, Pending, Settings } from './src/screens/Misc';
 import { Move, Receipt, Pdi, Misses } from './src/screens/Movement';
 import CustomerApp, { PairDevice } from './src/screens/Customer';
+import Setup from './src/screens/Setup';
 import { loadPairing, setCustDevice } from './src/lib/custapi';
 
 /** Crash guard: a screen error shows a recovery page instead of a frozen white screen; details can be copied for DT. */
@@ -39,7 +40,7 @@ class Guard extends React.Component {
 export default function App() {
   useKeepAwake();
   const [ready, setReady] = useState(false); const [me, setMe] = useState(null); const [screen, setScreen] = useState('home'); const [sync, setSync] = useState({ ...syncState });
-  const [cust, setCust] = useState(null); const [pairing, setPairing] = useState(false);
+  const [cust, setCust] = useState(null); const [pairing, setPairing] = useState(false); const [setupOpen, setSetupOpen] = useState(false);
   const [deviceId, setDev] = useState('HHT'); const [themeKey, setThemeKey] = useState('glass'); const [uiKey, setUiKey] = useState(0); const [locked, setLocked] = useState(false); const [lookupCode, setLookupCode] = useState(null);
   const lastTouch = useRef(Date.now()); const idleMin = useRef(30);
 
@@ -55,7 +56,7 @@ export default function App() {
       const m = await getMe(); if (m && hasToken()) { setMe(m); startAutoSync(); syncNow().catch(() => { }); }
       await refreshPending(); setReady(true);
     })();
-    const un = subscribe(s => { setSync(s); if (s.lastError === 'LOGIN') { setMe(null); } });
+    const un = subscribe(s => { setSync(s); setNet({ state: s.syncing ? 'syncing' : s.online ? 'online' : 'offline', pending: s.pending }); if (s.lastError === 'LOGIN') { setMe(null); } });
     return () => { un(); stopAutoSync(); };
   }, []);
   useEffect(() => { const h = BackHandler.addEventListener('hardwareBackPress', () => { if (screen !== 'home') { setScreen('home'); return true; } return false; }); return () => h.remove(); }, [screen]);
@@ -73,7 +74,8 @@ export default function App() {
     <CustomerApp deviceId={deviceId} onUnpaired={() => setCust(null)} onTheme={(k) => { setThemeKey(k); setUiKey(x => x + 1); }} onUi={() => setUiKey(x => x + 1)} /></Guard></React.Fragment>;
   if (pairing && !me) return <PairDevice onBack={() => setPairing(false)} onPaired={async () => { setPairing(false); setCust(await loadPairing()); }} />;
   const onLogin = (r) => { logActivity('LOGIN', r.user_id, r.plant); setMe(r); setLocked(false); lastTouch.current = Date.now(); setScreen('home'); startAutoSync(); syncNow({ full: true }).catch(() => { }); };
-  if (!me || locked) return <React.Fragment key={themeKey + uiKey}><StatusBar style={T.dark ? 'light' : 'dark'} /><Login deviceId={deviceId} locked={locked && !!me} user={me?.user_id} onDone={onLogin} onCustomer={() => setPairing(true)} /></React.Fragment>;
+  if ((!me || locked) && setupOpen) return <Setup onBack={() => setSetupOpen(false)} />;
+  if (!me || locked) return <React.Fragment key={themeKey + uiKey}><StatusBar style={T.dark ? 'light' : 'dark'} /><Login deviceId={deviceId} locked={locked && !!me} user={me?.user_id} onDone={onLogin} onCustomer={() => setPairing(true)} onSetup={() => setSetupOpen(true)} /></React.Fragment>;
 
   const go = (sc) => { if (sc !== 'home') logActivity('SCREEN_OPEN', sc); setScreen(sc); };
   const back = () => { setLookupCode(null); setScreen('home'); };
@@ -89,7 +91,7 @@ export default function App() {
     dock: <Dock onBack={back} />, yardret: <Dock onBack={back} yard />, yard: <Yard onBack={back} />, slip: <ReturnSlip onBack={back} deviceId={deviceId} />,
     gatein: <GateIn onBack={back} />, gateout: <GateOut onBack={back} />, damage: <Damage onBack={back} />, lookup: <Lookup onBack={back} initial={lookupCode} />,
     move: <Move onBack={back} />, receipt: <Receipt onBack={back} />, pdi: <Pdi onBack={back} />, misses: <Misses onBack={back} />,
-    pending: <Pending onBack={back} />, settings: <Settings onBack={back} deviceId={deviceId} onTheme={(k) => { setThemeKey(k); refreshUi(); }} onUi={(opts) => { if (opts.idle_min != null) idleMin.current = opts.idle_min; refreshUi(); }} />,
+    pending: <Pending onBack={back} />, setup: <Setup onBack={() => setScreen('settings')} />, settings: <Settings onBack={back} onSetup={() => go('setup')} deviceId={deviceId} onTheme={(k) => { setThemeKey(k); refreshUi(); }} onUi={(opts) => { if (opts.idle_min != null) idleMin.current = opts.idle_min; refreshUi(); }} />,
   };
   return (<View style={{ flex: 1 }} onTouchStart={() => { lastTouch.current = Date.now(); }}>
     <React.Fragment key={themeKey + ':' + uiKey}><StatusBar style="light" /><Guard screen={screen} onHome={back}>{screens[screen] || screens.home}</Guard></React.Fragment>

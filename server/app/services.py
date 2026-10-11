@@ -278,9 +278,32 @@ def label_token_ok(slip_no: str, t: str | None) -> bool:
     return hmac.compare_digest(t, label_token(slip_no)) or hmac.compare_digest(t, label_token(slip_no, config.LEGACY_SECRET))
 
 
+def device_sign_key(device_id) -> str:
+    """Per customer-HHT secret for slips printed without network (given to the HHT at pairing / on /me)."""
+    import hmac, hashlib
+    from . import config
+    return hmac.new(config.JWT_SECRET.encode(), f"DEVSIGN|{device_id}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def offline_sig(key: str, body: str) -> str:
+    import hmac, hashlib
+    return hmac.new(key.encode(), body.encode(), hashlib.sha256).hexdigest()[:10].upper()
+
+
 def parse_slip_qr(code: str) -> dict:
-    """Accepts AIS1|RS|... (verifies check code) or legacy RTS|slip|plant|cust|qty or a bare slip number."""
+    """Accepts AIS1|RS|... (verifies check code), AIS1|RO|... (slip printed by a customer HHT without network, signed with
+    that HHT's own key), legacy RTS|slip|plant|cust|qty or a bare slip number."""
     s = (code or "").strip()
+    if s.startswith("AIS1|RO|"):
+        parts = s.split("|")
+        if len(parts) != 11:
+            return {"slip_no": None, "error": "QR format not recognised"}
+        body, sig = "|".join(parts[:10]), parts[10]
+        dev = parts[8]
+        ok = dev.isdigit() and __import__("hmac").compare_digest(sig.upper(), offline_sig(device_sign_key(int(dev)), body))
+        return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": int(parts[6] or 0), "ts": parts[7],
+                "device_id": int(dev) if dev.isdigit() else None, "refs": [x for x in parts[9].split(",") if x], "offline": True,
+                "signed": True, "valid": ok, "error": None if ok else "QR check code invalid - slip altered or not made by a paired AIS HHT"}
     if s.startswith("AIS1|RS|"):
         parts = s.split("|")
         if len(parts) != 9:

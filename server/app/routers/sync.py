@@ -266,7 +266,7 @@ def pull(request: Request, since: datetime | None = None, p: Principal = Depends
     return {"server_time": utcnow().isoformat(), "full": since is None, "plant": {"code": plant.code, "name": plant.name,
             "accept_other_plant_default": plant.accept_other_plant_default, "challan_source": plant.challan_source,
             "wms": lpnsvc.wms_status(db, p.plant)},
-            "pallets": pallets, "lpns": lpns, "tags": tags, "picklists": picklists, "slips": slips, "customers": customers}
+            "pallets": pallets, "lpns": lpns, "tags": tags, "picklists": picklists, "slips": slips, "customers": customers, "vehicles": _plant_vehicles(db, p.plant)}
 
 
 @router.get("/monitor")
@@ -295,3 +295,26 @@ def block_device(device_id: str, blocked: bool = True, p: Principal = Depends(ne
     d.blocked = blocked
     db.commit()
     return {"ok": True, "blocked": blocked}
+
+
+def _plant_vehicles(db, plant) -> list[str]:
+    """Vehicles for quick pick on the HHT (return slip at gate): recent loads / slips of this plant, then transporter vehicles."""
+    from datetime import timedelta
+    from ..models import utcnow
+    since = utcnow() - timedelta(days=90); out = []
+    def add(v):
+        v = (v or "").upper().replace(" ", "")
+        if v and v not in out:
+            out.append(v)
+    for (v,) in db.query(models.ReturnSlip.vehicle_no).filter(models.ReturnSlip.plant_code == plant, models.ReturnSlip.vehicle_no.isnot(None),
+                                                            models.ReturnSlip.created_at >= since).order_by(models.ReturnSlip.created_at.desc()).limit(300):
+        add(v)
+    for (v,) in db.query(models.PickList.vehicle_no).filter(models.PickList.plant_code == plant, models.PickList.vehicle_no.isnot(None),
+                                                          models.PickList.created_at >= since).order_by(models.PickList.created_at.desc()).limit(300):
+        add(v)
+    for t in db.query(models.Transporter).all():
+        if t.plant_codes and plant not in [x.strip() for x in t.plant_codes.split(";")]:
+            continue
+        for v in (t.vehicles or "").replace(",", ";").split(";"):
+            add(v)
+    return out[:400]

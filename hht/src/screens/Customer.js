@@ -7,7 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import qrcode from 'qrcode-generator';
 import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer } from '../ui/kit';
-import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress } from '../lib/custapi';
+import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline } from '../lib/custapi';
+import { VehiclePicker } from '../ui/vehicle';
+import Setup from './Setup';
 import { parsePalletQr } from '../lib/db';
 import { printSlip } from '../lib/printer';
 import { feedback } from '../lib/feedback';
@@ -68,7 +70,8 @@ export default function CustomerApp({ deviceId, onUnpaired, onTheme, onUi }) {
   if (screen === 'new') return <NewSlip onBack={back} onDone={() => setScreen('slips')} />;
   if (screen === 'holding') return <Holding onBack={back} />;
   if (screen === 'slips') return <Slips onBack={back} />;
-  if (screen === 'settings') return <CustSettings onBack={back} deviceId={deviceId} onUnpaired={onUnpaired} onTheme={onTheme} onUi={onUi} />;
+  if (screen === 'setup') return <Setup customer onBack={() => setScreen('settings')} />;
+  if (screen === 'settings') return <CustSettings onBack={back} onSetup={() => setScreen('setup')} deviceId={deviceId} onUnpaired={onUnpaired} onTheme={onTheme} onUi={onUi} />;
   return <CustHome pair={pair} nav={setScreen} />;
 }
 
@@ -78,14 +81,14 @@ function CustHome({ pair, nav }) {
     try { const r = await findRoute(force); setRoute(r); } catch (e) { setRoute(null); }
     const sent = await sendPending().catch(() => []); if (sent.length) toast(`${sent.length} waiting slip(s) sent`, 'done');
     setPend((await outbox()).length);
-    try { setMe(await ext('/me')); const h = await ext('/holding'); setHeld(h); } catch (e) { if (e.status === 401) toast(e.message, 'err'); }
+    try { setMe(await refreshMe()); const h = await ext('/holding'); setHeld(h); } catch (e) { if (e.status === 401) toast(e.message, 'err'); }
   }, []);
   useEffect(() => { refresh(true); const t = setInterval(() => refresh(false), 60000); return () => clearInterval(t); }, []);
   const overdue = held ? held.pallets.filter((p) => p.overdue).length : 0;
   const tiles = [['new', 'New return slip', 'Option A · scan pallets, print slip', ['#a855f7', '#7e22ce'], 'document-text-outline'],
     ['holding', 'Pallets with us', held ? `${held.count} pallet(s)${overdue ? ` · ${overdue} overdue` : ''}` : 'AIS pallets at this site', ['#0ea5e9', '#2563eb'], 'cube-outline'],
     ['slips', 'Our return slips', pend ? `${pend} waiting to send` : 'Status, reprint', ['#22c55e', '#15803d'], 'list-outline'],
-    ['settings', 'Settings', 'Printer · text size · pairing', ['#64748b', '#334155'], 'settings-outline']];
+    ['settings', 'Settings', 'Setup: printer, vehicles · pairing', ['#64748b', '#334155'], 'settings-outline']];
   return (<Screen><Header logo sub={`${me?.name || pair?.n || ''} · AIS ${pair?.p || ''}`} />
     <TouchableOpacity onPress={() => refresh(true)} style={{ backgroundColor: routeColor(route), paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}>
       <Ionicons name={route ? (route.kind === 'LAN' ? 'business-outline' : 'globe-outline') : 'cloud-offline-outline'} size={14} color="#fff" />
@@ -119,7 +122,7 @@ function NewSlip({ onBack, onDone }) {
   };
   const submit = async () => {
     if (!list.length) return toast('Scan the pallets first', 'err');
-    if (!veh.trim() || !dc.trim()) return toast('Vehicle number and your challan number are required', 'err');
+    if (!veh.trim()) return toast('Select or type the vehicle number', 'err');
     const warn = list.filter((x) => x.state === 'warn').length;
     const ok = await new Promise((res) => Alert.alert('Create return slip', `${list.length} pallet(s) on ${veh.toUpperCase()}${warn ? `\n${warn} pallet(s) not in your AIS ledger - AIS will check them at the gate` : ''}`, [{ text: 'Cancel', onPress: () => res(false) }, { text: 'Create slip', onPress: () => res(true) }]));
     if (!ok) return;
@@ -127,7 +130,8 @@ function NewSlip({ onBack, onDone }) {
     try {
       const r = await createSlip({ pallets: list.map((x) => x.scanned).reverse(), vehicle_no: veh.trim(), customer_challan_no: dc.trim(), customer_challan_date: new Date().toISOString(), driver_name: drv.trim() || null, driver_mobile: mob.trim() || null });
       if (r.sent) { feedback('done'); setDone(r.slip); doPrint(r.slip); }
-      else { feedback('warn'); Alert.alert('Saved on this HHT', 'There is no network to AIS right now. The slip is sent automatically when the HHT is online; print it from "Our return slips" then (the QR comes from AIS).', [{ text: 'OK', onPress: onDone }]); }
+      else if (r.slip) { feedback('done'); setDone(r.slip); doPrint(r.slip); }          // no network: printed with this HHT's own signed QR
+      else { feedback('warn'); Alert.alert('Saved on this HHT', 'There is no network to AIS and this HHT has not got its offline signing key yet (connect once). The slip is sent automatically when online; print it from "Our return slips" then.', [{ text: 'OK', onPress: onDone }]); }
     } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   const doPrint = async (s) => {
@@ -136,7 +140,8 @@ function NewSlip({ onBack, onDone }) {
   };
   if (done) return (<Screen><Header title="Return slip ready" sub={`${done.slip_no} · ${done.vehicle_no}`} onBack={onDone} /><Page>
     <View style={[S.card, { alignItems: 'center' }]}><QrView text={done.qr_payload} size={230} /><Text style={[S.h2, { marginTop: 10 }]}>{done.slip_no}</Text>
-      <Text style={S.mute}>{done.declared_qty} pallet(s) · vehicle {done.vehicle_no} · your DC {done.customer_challan_no}</Text>
+      <Text style={S.mute}>{done.declared_qty} pallet(s) · vehicle {done.vehicle_no}{done.customer_challan_no ? ` · your DC ${done.customer_challan_no}` : ''}</Text>
+      {done.offline ? <Text style={[S.body, { marginTop: 8, color: C.amber, textAlign: 'center', fontWeight: '700' }]}>No network - slip printed with this HHT's signed QR. AIS accepts it at the gate; the HHT sends the details when it is online.</Text> : null}
       <Text style={[S.body, { marginTop: 8, textAlign: 'center' }]}>Hand the printed slip to the driver. The AIS IN gate scans this QR.</Text></View>
     {done.warnings?.length ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.amber }]}>{done.warnings.map((w, i) => <Text key={i} style={S.mute}>• {w}</Text>)}</View> : null}
     <Btn title="Print again" icon="print-outline" onPress={() => doPrint(done)} />
@@ -149,16 +154,17 @@ function NewSlip({ onBack, onDone }) {
         <Pill s={x.state === 'ok' ? 'AVAILABLE' : x.state === 'warn' ? 'HELD' : 'IN_RETURN'} /><Text style={[S.mute, { marginLeft: 6, fontSize: 11 }]}>{x.state === 'ok' ? 'in ledger' : x.state === 'warn' ? 'check' : x.state === 'checking' ? '…' : 'not checked'}</Text></TouchableOpacity>)}
       {list.length ? <Text style={[S.mute, { marginTop: 4 }]}>Long-press a pallet to remove it.</Text> : null}</View>
     <View style={S.card}>
-      <Text style={S.mute}>Vehicle number *</Text><TextInput style={S.input} value={veh} onChangeText={(t) => setVeh(t.toUpperCase())} autoCapitalize="characters" placeholder="TN09AB1234" />
-      <Text style={S.mute}>Your delivery challan number *</Text><TextInput style={S.input} value={dc} onChangeText={setDc} autoCapitalize="characters" />
+      <VehiclePicker value={veh} onChange={setVeh} />
+      <Text style={S.mute}>Your delivery challan number</Text><TextInput style={S.input} value={dc} onChangeText={setDc} autoCapitalize="characters" />
       <Text style={S.mute}>Driver name</Text><TextInput style={S.input} value={drv} onChangeText={setDrv} />
       <Text style={S.mute}>Driver mobile</Text><TextInput style={S.input} value={mob} onChangeText={setMob} keyboardType="phone-pad" />
-      <Btn title={`Create slip · ${list.length} pallet(s)`} icon="checkmark-circle-outline" onPress={submit} busy={busy} color={list.length && veh && dc ? C.ok : C.accent} /></View>
+      <Btn title={`Create slip · ${list.length} pallet(s)`} icon="checkmark-circle-outline" onPress={submit} busy={busy} color={list.length && veh ? C.ok : C.accent} />
+      {!getRoute() ? <Text style={[S.mute, { marginTop: 6, color: canPrintOffline() ? C.ok : C.amber, textAlign: 'center' }]}>{canPrintOffline() ? 'No network is fine: the slip prints with this HHT\'s signed QR and is sent later.' : 'Connect once to AIS so this HHT can print slips without network.'}</Text> : null}</View>
   </Page><Toast msg={msg} /></Screen>);
 }
 
 const toPrint = (s, pair) => ({ slip_no: s.slip_no, mode: 'A', date: fDT(s.created_at), customer_code: s.customer, customer_name: pair?.n || '', vehicle_no: s.vehicle_no,
-  customer_challan_no: s.customer_challan_no, pallets: (s.pallets || []).map((p) => p.pallet_no), declared_qty: s.declared_qty });
+  customer_challan_no: s.customer_challan_no, pallets: (s.pallets || []).map((p) => p.pallet_no), declared_qty: s.declared_qty, provisional: !!s.offline });
 
 function Holding({ onBack }) {
   const [h, setH] = useState(null); const [msg, toast] = useToast();
@@ -192,10 +198,10 @@ function Slips({ onBack }) {
   </Page><Toast msg={msg} /></Screen>);
 }
 
-function CustSettings({ onBack, deviceId, onUnpaired, onTheme, onUi }) {
+function CustSettings({ onBack, onSetup, deviceId, onUnpaired, onTheme, onUi }) {
   const pair = getPairing(); const [wan, setWan] = useState(pair?.wan || ''); const [msg, toast] = useToast();
   return (<View style={{ flex: 1 }}>
-    <Settings onBack={onBack} deviceId={deviceId} onTheme={onTheme} onUi={onUi} customer
+    <Settings onBack={onBack} onSetup={onSetup} deviceId={deviceId} onTheme={onTheme} onUi={onUi} customer
       extra={<View style={S.card}><Text style={S.h2}>AIS connection</Text>
         <Text style={S.mute}>Customer {pair?.c} · AIS plant {pair?.p} · device "{pair?.d}"</Text>
         <Text style={[S.mute, { marginTop: 4 }]}>AIS network: {(pair?.lan || []).join(', ')}</Text>

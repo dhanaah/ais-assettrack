@@ -13,6 +13,8 @@ import { printSlip, slipText } from '../lib/printer';
 import { fDT } from '../lib/when';
 import { readPhoto, matchPage, mergeResults, queuePhotos, sendPhotos, ocrAvailable } from '../lib/docscan';
 import { DocCamera, DocResult } from '../ui/docs';
+import { VehiclePicker } from '../ui/vehicle';
+import { usedVehicle } from '../lib/vehicles';
 
 export default function ReturnSlip({ onBack, deviceId }) {
   const [custs, setCusts] = useState([]); const [cust, setCust] = useState(null); const mode = 'B2'; const [veh, setVeh] = useState(''); const [dc, setDc] = useState(''); const [drv, setDrv] = useState(''); const [qty, setQty] = useState('');
@@ -33,7 +35,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
   const create = async () => {
     if (!veh.trim()) return toast('Vehicle number required', 'err');
     if (!(+qty > 0)) return toast('Enter the number of pallets', 'err');
-    const plant = await kv.get('plant');
+    const plant = await kv.get('plant'); usedVehicle(veh).catch(() => {});
     const body = { customer_code: cust.code, mode, vehicle_no: veh.trim().toUpperCase().replace(/\s/g, ''), pallets: [], declared_qty: +qty, customer_challan_no: dc || null, driver_name: drv || null };
     if (pages.length) Object.assign(body, { doc_text: pages.map(p => p.text).join('\n----\n').slice(0, 20000), doc_pallets: res ? [...res.matched, ...res.probable].map(x => x.pallet_no) : [], doc_unread: res ? res.unread : [], doc_read_qty: res ? res.read : null, doc_types: res ? Object.fromEntries((res.type_counts || []).map(t => [t.type, t.doc_qty])) : {}, doc_total: res ? res.stated_total : null });
     let slip, provisional = false;
@@ -69,7 +71,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
   return (<Screen><Header title={cust.name} sub="Return slip at IN gate" onBack={() => setCust(null)} /><Page>
     <View style={S.card}><Text style={S.h2}>Option B · number of pallets only</Text><Text style={S.mute}>No pallet scanning at the gate. The pallets are scanned and this slip is knocked off at pallet-yard receiving.</Text></View>
     <View style={S.card}>
-      <TextInput style={S.input} placeholder="Vehicle number *" value={veh} onChangeText={setVeh} autoCapitalize="characters" />
+      <VehiclePicker value={veh} onChange={setVeh} />
       <TextInput style={S.input} placeholder="Customer challan / DC number" value={dc} onChangeText={setDc} autoCapitalize="characters" />
       <TextInput style={S.input} placeholder="Driver name / mobile" value={drv} onChangeText={setDrv} />
       <TextInput style={[S.input, { fontSize: 22, fontWeight: '700' }]} placeholder="Number of pallets *" value={qty} onChangeText={setQty} keyboardType="number-pad" />

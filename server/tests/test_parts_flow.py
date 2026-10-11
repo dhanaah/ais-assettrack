@@ -638,5 +638,41 @@ with TestClient(app) as c:
     d3 = c.get(f"/api/v1/slips/{r3['slip_no']}", headers=H).json()["doc"]
     bt = {x["type"]: (x["doc_qty"], x["received"]) for x in d3["by_type"]}
     check(d3["doc_total"] == 3 and bt.get("F") == (2, 0) and bt.get("RW") == (1, 1), f"yard compares by type: {d3['by_type']}")
+    print("24. HHT setup QR; customer HHT without network: vehicle list, slip printed with the HHT's signed QR, opened at the gate, merged later")
+    pg = c.get("/hht-setup")
+    check(pg.status_code == 200 and "<svg" in pg.text and "Scan server QR" in pg.text, "server setup QR page (no login) for plant HHTs")
+    with SessionLocal() as db:
+        for i in range(3):
+            db.add(models.Pallet(pallet_no=f"AIS-CHN-F-0600{i + 1}-009{1000 + i}", home_plant="CHN", status="AT_CUSTOMER", customer_code="HMIL", load_state="EMPTY"))
+        db.commit()
+    pr = c.post(f"/api/v1/customers/{hm_id}/devices", headers=M, json={"label": "HMIL gate HHT 2"}).json()
+    raw = pr["pairing"].split("|", 1)[1]; pl2 = _json.loads(_b64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+    DK2 = {"X-API-Key": pl2["k"], "X-Route": "WAN"}
+    me2 = c.get("/api/ext/v1/me", headers=DK2).json()
+    check(pl2.get("s") and pl2.get("i") and me2["sign_key"] == pl2["s"] and me2["device_id"] == pl2["i"] and "TN09AB4321" in me2["vehicles"],
+          f"pairing QR and /me give the offline signing key and the vehicle list ({len(me2['vehicles'])} vehicles)")
+    from app import services as _sv
+    did, key = pl2["i"], pl2["s"]; ro = f"RO-CHN-{did}-00001"
+    head = f"AIS1|RO|{ro}|CHN|HMIL|TN09AB7777|2|2610111200|{did}|F-06001,F-06002"
+    qr = f"{head}|{_sv.offline_sig(key, head)}"
+    bad = qr.replace("TN09AB7777", "TN09AB7778")
+    g = c.post("/api/v1/slips/" + bad.replace("|", "%7C") + "/gate-in", headers=H)
+    check(g.status_code == 400 and "check code" in g.text, "altered offline slip refused at the gate")
+    g = c.post("/api/v1/slips/" + qr.replace("|", "%7C") + "/gate-in", headers=H, json={"vehicle_no": "TN09AB7777"})
+    check(g.status_code == 200 and g.json()["slip_no"] == ro and g.json()["status"] == "IN_GATE", f"slip printed without network opened at the gate from its QR: {g.text[:120]}")
+    with SessionLocal() as db:
+        st = db.get(models.Pallet, "AIS-CHN-F-06001-0091000").status; nl = db.query(models.ReturnSlipLine).filter_by(slip_no=ro).count()
+    check(st == "IN_RETURN" and nl == 2, f"pallets from the QR's type + serial list put IN_RETURN ({st}, {nl} lines)")
+    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": ro, "pallets": ["AIS-CHN-F-06001-0091000", "AIS-CHN-F-06002-0091001", "AIS-CHN-F-06003-0091002"],
+                                                                 "vehicle_no": "TN09AB7777", "customer_challan_no": "HM/DC/901", "client_ref": "dev2-uuid-1"}).json()
+    with SessionLocal() as db:
+        nl = db.query(models.ReturnSlipLine).filter_by(slip_no=ro).count(); dc = db.get(models.ReturnSlip, ro).customer_challan_no
+    check(r.get("duplicate") and nl == 3 and dc == "HM/DC/901" and r["slip_no"] == ro, "HHT online again: same slip number, details merged (3rd pallet, DC)")
+    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": "RO-CHN-999-00001", "pallets": ["AIS-CHN-F-06003-0091002"], "vehicle_no": "TN09AB7777"})
+    check(r.status_code == 400, "offline number of another HHT refused")
+    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": f"RO-CHN-{did}-00002", "pallets": ["AIS-CHN-F-06003-0091002"], "vehicle_no": "TN09AB7777"}).json()
+    check(r["slip_no"] == f"RO-CHN-{did}-00002" and r["declared_qty"] == 1, "offline slip sent before reaching the gate keeps its printed number (no DC needed)")
+    pu = c.get("/api/v1/sync/pull", headers=H).json()
+    check("TN09AB7777" in pu.get("vehicles", []), f"plant HHT gets the vehicle list at sync ({len(pu.get('vehicles', []))})")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

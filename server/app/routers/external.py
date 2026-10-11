@@ -42,7 +42,7 @@ def customer_auth(request: Request, x_api_key: str = Header(default=None), x_rou
                     break
                 d.last_seen = utcnow(); d.last_route = (x_route or "")[:10] or None; d.app_version = (x_app_version or "")[:15] or None
                 db.commit()
-                request.state.device = d.label
+                request.state.device = d.label; request.state.device_id = d.id
                 return c
         raise HTTPException(401, "This HHT is not paired (or was removed) - pair it again from AIS")
     for c in db.query(models.Customer).filter(models.Customer.api_key_prefix == prefix, models.Customer.active == True).all():
@@ -61,8 +61,38 @@ def ping():
 @router.get("/me")
 def me(request: Request, c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
     pl = db.get(models.Plant, c.plant_code)
+    did = getattr(request.state, "device_id", None)
     return {"customer": c.code, "name": c.name, "plant": c.plant_code, "plant_name": pl.name if pl else c.plant_code,
-            "holding_limit_days": c.holding_limit_days, "device": getattr(request.state, "device", None)}
+            "holding_limit_days": c.holding_limit_days, "device": getattr(request.state, "device", None),
+            "device_id": did, "sign_key": services.device_sign_key(did) if did else None, "vehicles": _vehicles(db, c)}
+
+
+def _vehicles(db, c) -> list[str]:
+    """Vehicles that come to this customer: recent AIS dispatches and return slips (newest first), then the plant's
+    transporter vehicles - kept on the customer HHT so a vehicle can be picked without network."""
+    from datetime import timedelta
+    since = utcnow() - timedelta(days=120); out = []
+    def add(v):
+        v = (v or "").upper().replace(" ", "")
+        if v and v not in out:
+            out.append(v)
+    for (v,) in db.query(models.PickList.vehicle_no).filter(models.PickList.customer_code == c.code, models.PickList.plant_code == c.plant_code,
+                                                          models.PickList.vehicle_no.isnot(None), models.PickList.created_at >= since).order_by(models.PickList.created_at.desc()).limit(200):
+        add(v)
+    for (v,) in db.query(models.ReturnSlip.vehicle_no).filter(models.ReturnSlip.customer_code == c.code, models.ReturnSlip.vehicle_no.isnot(None),
+                                                            models.ReturnSlip.created_at >= since).order_by(models.ReturnSlip.created_at.desc()).limit(200):
+        add(v)
+    for t in db.query(models.Transporter).all():
+        if t.plant_codes and c.plant_code not in [x.strip() for x in t.plant_codes.split(";")]:
+            continue
+        for v in (t.vehicles or "").replace(",", ";").split(";"):
+            add(v)
+    return out[:300]
+
+
+@router.get("/vehicles")
+def vehicles(c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
+    return {"vehicles": _vehicles(db, c)}
 
 
 @router.get("/holding")
@@ -97,12 +127,13 @@ def validate(body: ValidateIn, c: models.Customer = Depends(customer_auth), db: 
 class ExtSlipIn(BaseModel):
     pallets: list[str] = Field(min_length=1, max_length=500, description="scanned tag numbers or pallet numbers")
     vehicle_no: str
-    customer_challan_no: str
+    customer_challan_no: str | None = None
     customer_challan_date: datetime | None = None
     driver_name: str | None = None
     driver_mobile: str | None = None
     transporter: str | None = None
     client_ref: str | None = Field(default=None, description="idempotency key from customer system")
+    slip_no: str | None = Field(default=None, description="number printed by a customer HHT without network (RO-<plant>-<device>-<seq>)")
     remarks: str | None = None
 
 
@@ -114,7 +145,13 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
         dup = db.query(models.ReturnSlip).filter_by(customer_code=c.code, plant_code=c.plant_code, remarks=f"ref:{body.client_ref}").first()
         if dup:
             return _slip_out(db, dup) | {"duplicate": True}
-    no = services.doc_number(db, c.plant_code, "RTS")
+    did = getattr(request.state, "device_id", None)
+    off = (body.slip_no or "").strip().upper()
+    if off and not (did and off.startswith(f"RO-{c.plant_code}-{did}-")):
+        raise HTTPException(400, "Offline slip number not issued to this HHT")
+    if off and db.get(models.ReturnSlip, off):          # already opened at the AIS gate from its printed QR: add the details
+        return _merge_offline(db, db.get(models.ReturnSlip, off), body, c, request)
+    no = off or services.doc_number(db, c.plant_code, "RTS")
     sl = models.ReturnSlip(slip_no=no, plant_code=c.plant_code, customer_code=c.code, mode="A", vehicle_no=body.vehicle_no.upper().replace(" ", ""),
                            customer_challan_no=body.customer_challan_no, customer_challan_date=body.customer_challan_date,
                            driver_name=body.driver_name, driver_mobile=body.driver_mobile,
@@ -146,6 +183,31 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
                            new_value=body.model_dump_json(), ip=request.client.host if request.client else None))
     db.commit()
     return _slip_out(db, sl) | {"warnings": warnings}
+
+
+def _merge_offline(db, sl, body, c, request):
+    """Slip printed offline, opened at the AIS gate from its QR before the HHT could send it: keep the gate record and
+    add what the HHT knows (pallets, DC, driver)."""
+    warnings = []
+    have = {l.pallet_no: l for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no).all()}
+    for scv in body.pallets:
+        tag, pal = services.resolve_tag(db, scv)
+        pno = pal.pallet_no if pal else scv
+        if pno in have:
+            have[pno].declared = True
+            continue
+        if pal and pal.customer_code == c.code and pal.status == "AT_CUSTOMER":
+            services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_EXT", user_id=f"EXT:{c.code}", ref=sl.slip_no, customer=c.code)
+        elif not pal:
+            warnings.append(f"{scv}: unknown tag, listed as declared")
+        db.add(models.ReturnSlipLine(slip_no=sl.slip_no, pallet_no=pno, declared=True)); have[pno] = True
+    sl.customer_challan_no = sl.customer_challan_no or body.customer_challan_no; sl.driver_name = sl.driver_name or body.driver_name
+    sl.driver_mobile = sl.driver_mobile or body.driver_mobile; sl.remarks = f"ref:{body.client_ref}" if body.client_ref else sl.remarks
+    sl.declared_qty = max(sl.declared_qty or 0, len(have))
+    db.add(models.AuditLog(user_id=f"EXT:{c.code}", plant_code=c.plant_code, action="RETURN_SLIP_OFFLINE_MERGE", entity="slip", entity_id=sl.slip_no,
+                           new_value=body.model_dump_json(), ip=request.client.host if request.client else None))
+    db.commit()
+    return _slip_out(db, sl) | {"warnings": warnings, "duplicate": True}
 
 
 def _slip_out(db, sl):
@@ -214,19 +276,40 @@ class PairIn(BaseModel):
 
 
 def _lan_addresses() -> list[str]:
-    """Addresses the HHT tries first (inside the AIS network): PUBLIC_NAME / PC name and its IPs."""
+    """Addresses an HHT tries inside the AIS network, best first: PUBLIC_NAME, the full PC name (Android needs the
+    domain name), the PC's main IP, other IPs, then the short PC name. Link-local 169.254.x addresses are left out."""
     import os, socket
     out = []
-    for n in [os.environ.get("PUBLIC_NAME", "").strip(), socket.gethostname()]:
-        if n and n not in out:
-            out.append(n)
+    def add(x):
+        x = (x or "").strip()
+        if x and x not in out and not x.startswith(("127.", "169.254.")):
+            out.append(x)
+    add(os.environ.get("PUBLIC_NAME", ""))
     try:
-        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
-            if not ip.startswith("127.") and ip not in out:
-                out.append(ip)
+        fq = socket.getfqdn()
+        if "." in fq and not fq.endswith((".local", ".localdomain")) and "in-addr" not in fq:
+            add(fq)
     except Exception:
         pass
+    try:                                        # main IP: the one used for outgoing traffic (no packet is sent)
+        s_ = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s_.connect(("10.255.255.255", 1)); add(s_.getsockname()[0]); s_.close()
+    except Exception:
+        pass
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            add(ip)
+    except Exception:
+        pass
+    add(socket.gethostname())
     return out
+
+
+def server_setup_text() -> str:
+    """QR for plant HHTs: Setup > Server > Scan server QR fills the server addresses (no typing)."""
+    import base64, json
+    from .. import config
+    payload = {"v": 1, "a": _lan_addresses(), "ports": list(config.SERVER_PORTS or [80, 8001, 8002, 8003]), "ver": config.APP_VERSION}
+    return "AISSRV1|" + base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
 
 
 @admin.get("/customers/{cid}/devices")
@@ -252,7 +335,7 @@ def pair_device(cid: int, body: PairIn, request: Request, p: Principal = Depends
     key = "aisd_" + secrets.token_urlsafe(30)
     d = models.CustomerDevice(customer_id=c.id, label=body.label.strip(), key_prefix=key[:8], key_hash=hash_pw(key), created_by=p.user_id)
     db.add(d); db.flush()
-    payload = {"v": 1, "p": c.plant_code, "c": c.code, "n": c.name, "k": key, "d": d.label,
+    payload = {"v": 1, "p": c.plant_code, "c": c.code, "n": c.name, "k": key, "d": d.label, "i": d.id, "s": services.device_sign_key(d.id),
                "lan": _lan_addresses(), "ports": [p_ for p_ in (config.SERVER_PORTS or [80, 8001, 8002, 8003])], "wan": config.PUBLIC_API_URL}
     text = "AISCUST1|" + base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
     import segno, io

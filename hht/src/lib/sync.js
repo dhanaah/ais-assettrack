@@ -4,7 +4,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { api, APP_VERSION, hasToken } from './api';
 import { eventResult, pendingEvents, markEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
 
-export const state = { online: false, syncing: false, pending: 0, lastSync: null, lastError: null, serverVersion: null };
+export const state = { online: false, net: false, server: null, syncing: false, pending: 0, lastSync: null, lastError: null, serverVersion: null };
 const listeners = new Set();
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 const emit = () => listeners.forEach(f => f({ ...state }));
@@ -12,7 +12,8 @@ const emit = () => listeners.forEach(f => f({ ...state }));
 let deviceId = 'HHT';
 export const setDeviceId = (id) => { deviceId = id; };
 
-NetInfo.addEventListener(s => { const was = state.online; state.online = !!(s.isConnected && s.isInternetReachable !== false); emit(); if (!was && state.online) syncNow().catch(() => {}); });
+// online = Wi-Fi / network up AND the AssetTrack server answered the last call (not just Wi-Fi)
+NetInfo.addEventListener(s => { const was = state.net; state.net = !!s.isConnected; state.online = state.net && state.server !== false; emit(); if (!was && state.net) syncNow().catch(() => {}); });
 
 export async function refreshPending() { state.pending = await pendingCount(); emit(); }
 
@@ -55,8 +56,9 @@ export async function syncNow({ full = false } = {}) {
     state.serverVersion = data.server_time; state.lastSync = new Date().toISOString();
     await purgeOld(); await purgeActivity();
     await logActivity('SYNC', null, `pushed ok, pending ${state.pending}`);
+    state.server = true; state.online = true;
   } catch (e) {
-    state.lastError = e.message; logActivity('SYNC_ERROR', null, e.message); state.online = !e.offline && state.online;
+    state.lastError = e.message; logActivity('SYNC_ERROR', null, e.message); if (e.offline) { state.server = false; state.online = false; } else { state.server = true; state.online = true; }
     if (e.status === 401) state.lastError = 'LOGIN';
   } finally { state.syncing = false; state.pending = await pendingCount(); emit(); }
 }
@@ -74,6 +76,7 @@ export async function pushAndResult(event_id) {
 }
 
 let timer;
-export function startAutoSync() { stopAutoSync(); timer = setInterval(() => { if (state.online) syncNow().catch(() => {}); }, 30000); }   // every 30 s: Bench trips reach the HHT quickly
+// every 30 s (Bench trips reach the HHT quickly); also retries when the server was not reachable
+export function startAutoSync() { stopAutoSync(); timer = setInterval(() => { if (state.net || state.online) syncNow().catch(() => {}); }, 30000); }
 export function stopAutoSync() { if (timer) clearInterval(timer); timer = null; }
 function cryptoId() { return globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : 'hb-' + Date.now() + '-' + Math.random().toString(16).slice(2); }

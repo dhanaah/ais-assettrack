@@ -1,6 +1,7 @@
 // Gate IN, Gate OUT, Damage/Tag, Lookup, Pending & Sync, Settings. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
 import { Screen, applyTheme, T, useScanMode, setScanMode } from '../ui/kit';
 import { THEMES, THEME_KEYS } from '../ui/theme';
@@ -18,7 +19,7 @@ export function GateIn({ onBack }) {
   const [msg, toast] = useToast(); const [last, setLast] = useState(null);
   const onScan = async (code) => {
     if (!needOnline(toast)) return;
-    const no = code.startsWith('AIS1|RS|') || code.startsWith('RTS|') ? code.split('|')[code.startsWith('AIS1|') ? 2 : 1] : code;
+    const no = code.startsWith('AIS1|RS|') || code.startsWith('AIS1|RO|') || code.startsWith('RTS|') ? code.split('|')[code.startsWith('AIS1|') ? 2 : 1] : code;   // RO = printed by a customer HHT without network
     try { const r = await api(`/slips/${encodeURIComponent(no)}/gate-in`, { method: 'POST', body: { qr: code !== no ? code : null } }); setLast(r); toast(r.kind === 'CHALLAN' ? `Challan ${r.challan_no} from ${r.from_plant}: ${r.declared_qty} pallets - receive at yard` : `${no}: ${r.status} · GCS-IN ${r.gcs_in_no || 'queued'}`); logActivity('GATE_IN', no, r.status); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
@@ -101,13 +102,14 @@ export function Pending({ onBack }) {
   </Page></Screen>);
 }
 
-export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra }) {
+export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra, onSetup }) {
   const [srv, setSrv] = useState(getServer()); const [busy, setBusy] = useState(false); const [msg, toast] = useToast();
   const [sound, setSound] = useState(soundEnabled()); const [scale, setScale] = useState(T.scale || 1); const [idle, setIdle] = useState(30); const [upd, setUpd] = useState(null);
   useEffect(() => { kv.get('idle_min').then(v => setIdle(v ?? 30)); }, []);
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>
     {extra || null}
-    {customer ? null : <View style={S.card}><Text style={S.h2}>Server name</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" autoCorrect={false} placeholder="assettrack" /><Text style={S.mute}>Ports 80 / 8001 / 8002 / 8003 are tried automatically.</Text><Btn title="Save" secondary icon="save-outline" onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId} · app v{APP_VERSION}</Text>
+    {onSetup ? <TouchableOpacity onPress={onSetup} style={[S.card, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}><Ionicons name="construct-outline" size={24} color={C.accent} /><View style={{ flex: 1 }}><Text style={S.h2}>Setup</Text><Text style={S.mute}>{customer ? '2. Printer · 3. Vehicles' : '1. Server · 2. Printer · 3. Vehicles'}</Text></View><Ionicons name="chevron-forward" size={20} color={C.mute} /></TouchableOpacity> : null}
+    {customer ? null : <View style={S.card}><Text style={S.h2}>App</Text><Text style={S.mute}>Server {getServer()} · device {deviceId} · app v{APP_VERSION}</Text>
       <Btn title={upd?.busy ? 'Checking…' : 'Check for app update'} secondary icon="cloud-download-outline" busy={upd?.busy} onPress={async () => { setUpd({ busy: true }); const r = await checkUpdate(); setUpd(r || { none: true }); if (!r) toast('Server has no APK published', 'warn'); else if (r.newer) toast(`v${r.version} available`, 'warn'); else toast('You have the latest version', 'ok'); }} />
       {upd?.newer ? <Btn title={`Download v${upd.version}`} icon="download-outline" onPress={() => openUpdate(upd)} /> : null}</View>}
     <ScanModeCard />
@@ -121,14 +123,13 @@ export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra }) {
       <Text style={S.mute}>After this time without a touch the password is asked again. Scans and the outbox are kept.</Text></View>
     <View style={S.card}><Text style={S.h2}>Theme</Text><Text style={S.mute}>Current: {THEMES[T.key].name}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{THEME_KEYS.map(k => <TouchableOpacity key={k} onPress={async () => { applyTheme(k); await kv.set('theme', k); onTheme && onTheme(k); toast('Theme: ' + THEMES[k].name); }} style={[S.btnS, { flex: 1, minWidth: '45%', marginTop: 0, minHeight: 44, justifyContent: 'center', backgroundColor: T.key === k ? C.accent : undefined }]}><Text style={[S.btnSText, T.key === k ? { color: '#fff' } : null]}>{THEMES[k].name}</Text></TouchableOpacity>)}</View></View>
-    <PrinterCard toast={toast} />
     {customer ? null : <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary icon="refresh-circle-outline" onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done', sync.lastError ? 'err' : 'done'); }} /></View>}
     <Footer />
   </Page><Toast msg={msg} /></Screen>);
 }
 
 /** Any portable printer: connection, language, paper width and image mode are chosen here (not tied to one model). */
-function PrinterCard({ toast }) {
+export function PrinterCard({ toast }) {
   const [cfg, setCfg] = useState(null); const [list, setList] = useState([]); const [sel, setSel] = useState(null); const [selName, setSelName] = useState(null); const [busy, setBusy] = useState(false);
   useEffect(() => { getConfig().then(setCfg); kv.get('printer').then(setSel); kv.get('printer_name').then(setSelName); }, []);
   if (!cfg) return null;
