@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## 1.20.0 (HHT 2.9.0) - 2026-10-11
+- **Option B needs photo proof**: an Option B slip cannot be made without at least one photo of the customer's document.
+  - HHT: the gate cannot create or print the slip until the photo is taken (works offline too; the photo uploads when online).
+  - Server: Option B without a photo is refused.
+  - Pallet yard: an Option B slip cannot be closed until its photo has reached the server (supervisor PIN to override).
+- Process flow A3 updated.
+
 ## 1.19.0 (HHT 2.8.0) - 2026-10-11
 - **Gate inward register**: every inward is registered at the IN gate with one entry number (`<plant>-GE-000123`) and one GCS inward:
   - Option A return slip - registered when its QR is scanned at the gate.

@@ -4,7 +4,7 @@ import html, sys, os
 
 W, H = 1587, 1123          # A3 landscape at 96 dpi
 OUT = os.path.dirname(os.path.abspath(__file__))
-VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.19 · HHT 2.8"
+VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.20 · HHT 2.9"
 
 parts, edges = [], []
 BOX = {}
@@ -112,7 +112,7 @@ parts.append(f'<text class="note" x="702" y="{y2 + ch + 22}">Customer HHT: staff
 # ------------------------------------------------------------------ RETURN
 dia("with", 170, 668, 150, 84, "Vehicle brings?", [])
 box("inA", 330, 640, 176, 58, "step", "Scan return slip QR", ["Option A (or offline RO- slip)"])
-box("inB", 330, 724, 176, 70, "step", "Make slip B at gate", ["count + photo of customer", "document → read & matched"])
+box("inB", 330, 724, 176, 70, "step", "Make slip B at gate", ["count + document photo", "(required) → read & matched"])
 box("inP", 330, 818, 176, 58, "step", "Scan plant challan", ["other AIS plant: challan only"])
 box("gcsin", 540, 718, 168, 82, "app", "Gate inward register", ["IN gate · one entry no.", "for every inward vehicle", "+ GCS inward (ERP)"])
 box("yard", 740, 724, 190, 70, "step", "Pallet yard receiving", ["scan each pallet · slip /", "document list + photo shown"])
@@ -156,7 +156,7 @@ svg = f'''<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" role="im
     (1010, 52, "lgx", "External (Bench/ERP/EBS)"), (1180, 52, "lgu", "Customer HHT step"), (1340, 52, "lgo", "Normal end state"), (1480, 52, "lgw", "Exception")])}
 {"".join(parts)}
 {"".join(edges)}
-<text class="foot" x="40" y="{H - 34}">Rules: every inward (slip A, slip B, plant challan) is registered at the IN gate · a part card not in the GCS is stopped (do PDI) · Option B slips are a count, knocked off at the pallet yard</text>
+<text class="foot" x="40" y="{H - 34}">Rules: every inward (slip A, slip B, plant challan) is registered at the IN gate · a part card not in the GCS is stopped (do PDI) · Option B needs a photo of the customer document and is knocked off at the pallet yard</text>
 <text class="foot" x="40" y="{H - 16}">AIS AssetTrack · process flow A3 · Developed by DT</text>
 </svg>'''
 

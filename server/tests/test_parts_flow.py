@@ -132,7 +132,7 @@ with TestClient(app) as c:
     print("8. missed scans on return")
     r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "A", "pallets": ["CHN-P001", "CHN-P006"]})
     check(r.status_code == 403 and "customer" in r.text, "Option A slip refused for AIS users (customer HHT only)")
-    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "PUN", "mode": "B2", "declared_qty": 3})
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "PUN", "mode": "B2", "declared_qty": 3, "doc_photo_count": 1})
     check(r.status_code == 400 and "challan" in r.text, "other-plant return refused on a return slip (challan only)")
     with SessionLocal() as db:
         from app.security import hash_pw as _h
@@ -625,7 +625,7 @@ with TestClient(app) as c:
     check(rd["ai"] and rd["stated_total"] == 5 and {x["ref"] for x in rd["matched"]} == {"F-05001", "RW-05004", "F-15005"},
           f"AI reading (handwriting) merged and matched: {[x['ref'] for x in rd['matched']]}, total {rd['stated_total']}")
     docp = [x["pallet_no"] for x in m["matched"] + m["probable"]]
-    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 6, "vehicle_no": "TN09AB4321",
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 6, "doc_photo_count": 1, "vehicle_no": "TN09AB4321",
                                                  "doc_pallets": docp, "doc_unread": m["unread"], "doc_text": text, "doc_read_qty": m["read"]}).json()
     bno = r["slip_no"]
     check(r["status"] == "PENDING_VERIFICATION" and r["declared_qty"] == 6 and r["doc_read_qty"] == 6, f"Option B slip keeps the count 6 and the document read ({r['warnings']})")
@@ -634,7 +634,7 @@ with TestClient(app) as c:
     check(up["photos"] == 1 and ph.status_code == 200 and ph.content.startswith(b"\xff\xd8"), "photo of the document kept on the server and viewable")
     for pn in ("AIS-CHN-F-05001-0090000", "AIS-CHN-NF-05003-0090002", "AIS-CHN-F-05002-0090001"):
         ev(c, H, "PALLET_SCAN_YARD", {"slip_no": bno, "scanned": pn})
-    r2 = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 2, "vehicle_no": "TN09AB4322", "doc_text": "1 RW-5004  2 F 15005"}).json()
+    r2 = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 2, "doc_photo_count": 1, "vehicle_no": "TN09AB4322", "doc_text": "1 RW-5004  2 F 15005"}).json()
     with SessionLocal() as db:
         dp2 = db.get(models.ReturnSlip, r2["slip_no"]).doc_pallets
     check("AIS-CHN-RW-05004-0090003" in dp2 and "AIS-CHN-F-15005-0090004" in dp2, "slip made offline with only the photo text: matched on the server at sync")
@@ -647,7 +647,7 @@ with TestClient(app) as c:
           f"document with pallet types only (F - 2, RW : 1 NOS): read by type, total 3: {m['type_counts']}")
     m = c.post("/api/v1/slips/doc-match", headers=H, json={"customer_code": "HMIL", "text": "Empty pallets returned\nNo of pallets - 5\nDC 7791"}).json()
     check(m["doc_kind"] == "total" and m["stated_total"] == 5, f"document with the total only: 5 ({m['doc_kind']})")
-    r3 = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 3, "vehicle_no": "TN09AB4323", "doc_text": "F - 2\nRW : 1 NOS"}).json()
+    r3 = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 3, "doc_photo_count": 1, "vehicle_no": "TN09AB4323", "doc_text": "F - 2\nRW : 1 NOS"}).json()
     ev(c, H, "PALLET_SCAN_YARD", {"slip_no": r3["slip_no"], "scanned": "AIS-CHN-RW-05004-0090003"})
     d3 = c.get(f"/api/v1/slips/{r3['slip_no']}", headers=H).json()["doc"]
     bt = {x["type"]: (x["doc_qty"], x["received"]) for x in d3["by_type"]}
@@ -750,7 +750,16 @@ with TestClient(app) as c:
         ok3 = db.get(models.PickList, "DB-PUN-701") is not None and db.get(models.PickList, "DB-CHN-702") is not None and db.query(models.PickList).filter(models.PickList.ext_ref == "703").count() == 0
     check(ok3 and res["no_plant"] == 1 and res["plants"] == {"PUN": 1, "CHN": 1},
           f"plant-wise Bench: trip 701 -> PUN, 702 (org 3001 mapped) -> CHN, 703 without plant not taken: {res}")
-    print("28. Every inward is registered at the IN gate (slip A scanned, slip B made at gate, other-plant challan scanned)")
+    print("28. Option B needs photo proof")
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 2, "vehicle_no": "TN09AB5555"})
+    check(r.status_code == 400 and "photo proof" in r.text, "Option B without a photo refused")
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 2, "vehicle_no": "TN09AB5555", "doc_photo_count": 1}).json()
+    cl = c.post(f"/api/v1/slips/{r['slip_no']}/close", headers=H, json={})
+    check(cl.status_code == 403 and "photo proof" in cl.text, "yard cannot close Option B until the photo is on the server")
+    c.post(f"/api/v1/slips/{r['slip_no']}/doc-photo", headers=H, files={"file": ("d.jpg", b"\xff\xd8\xff fake", "image/jpeg")})
+    cl = c.post(f"/api/v1/slips/{r['slip_no']}/close", headers=H, json={})
+    check(cl.status_code in (200, 403) and "photo proof" not in cl.text, f"with the photo on the server the photo check passes ({cl.status_code})")
+    print("29. Every inward is registered at the IN gate (slip A scanned, slip B made at gate, other-plant challan scanned)")
     gc = c.get("/api/v1/gate-entries", headers=H).json(); kinds = {g["kind"] for g in gc}
     check({"SLIP_A", "SLIP_B"} <= kinds and all(g["entry_no"].startswith("CHN-GE-") for g in gc), f"CHN gate register: {len(gc)} entries, kinds {sorted(kinds)}")
     check(all(g["gcs_in_no"] for g in gc), "each gate entry has its GCS inward")

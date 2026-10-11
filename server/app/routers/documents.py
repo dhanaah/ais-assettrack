@@ -585,6 +585,7 @@ class SlipIn(BaseModel):
     doc_read_qty: int | None = None
     doc_types: dict[str, int] = {}      # pallets written by type only {F: 4, NF: 2}
     doc_total: int | None = None        # total the customer wrote
+    doc_photo_count: int = 0            # Option B: photos of the customer's document taken at the gate (required, min 1)
 
 
 @router.get("/slips")
@@ -640,6 +641,8 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
     if mode == "B2":
         if not body.declared_qty:
             raise HTTPException(400, "declared_qty required for B2")
+        if (body.doc_photo_count or 0) < 1:
+            raise HTTPException(400, "Option B needs photo proof - take a photo of the customer's document")
         sl.declared_qty = body.declared_qty; sl.status = "PENDING_VERIFICATION"
         if body.doc_text and not body.doc_pallets:   # read offline on the HHT: match now on the server
             from .. import docread
@@ -927,6 +930,8 @@ def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(
             services.move(db, pal, "AT_CUSTOMER", event_type="RETURN_SHORT", user_id=p.user_id, customer=sl.customer_code, ref=no, remarks="not received", force=True)
             pal.dispatch_date = pal.dispatch_date  # keep original aging
     open_exc = short + exc
+    if sl.mode == "B2" and not json.loads(sl.doc_photos or "[]") and not (body.supervisor_pin and verify_supervisor_pin(db, sl.plant_code, body.supervisor_pin)):
+        raise HTTPException(403, "Option B photo proof is not on the server yet - let the gate HHT sync, or supervisor PIN to close without it")
     if open_exc:
         if not body.supervisor_pin or not verify_supervisor_pin(db, sl.plant_code, body.supervisor_pin):
             raise HTTPException(403, f"{len(open_exc)} open exception(s): supervisor PIN required to close")
