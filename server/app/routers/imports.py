@@ -250,3 +250,15 @@ async def import_masters(request: Request, file: UploadFile = File(...), p: Prin
     audit(db, p, "IMPORT_MASTERS", "file", file.filename, None, {"summary": log, "errors": errors[:50]}, request)
     db.commit()
     return {"summary": log, "errors": errors}
+
+
+@router.get("/template.xlsx")
+def import_template(p: Principal = Depends(need("GLOBAL_MASTERS"))):
+    """The full master workbook (all sheets with an EXAMPLE row) for Import masters."""
+    import os
+    from fastapi.responses import FileResponse
+    f = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "Pallet_Tracking_Master_Template.xlsx")
+    if not os.path.exists(f):
+        raise HTTPException(404, "Template file missing on the server")
+    return FileResponse(f, filename="Pallet_Tracking_Master_Template.xlsx",
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

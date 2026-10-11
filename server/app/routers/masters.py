@@ -265,12 +265,29 @@ class TransporterIn(BaseModel):
     active: bool = True; notes: str | None = None
 
 
+def plant_list_merge(old: str | None, new: str | None, own: str | None) -> str | None:
+    """Plant user: keeps the other plants already on the transporter and always includes their own plant."""
+    if not own:
+        return new
+    keep = [x for x in (old or "").split(";") if x and x != own]
+    return ";".join(dict.fromkeys(keep + [own]))
+
+
+def require_transporter_master(p: Principal):
+    if not (p.has("GLOBAL_MASTERS") or p.has("TRANSPORTER_MASTER")):
+        raise HTTPException(403, "Missing permission: TRANSPORTER_MASTER")
+
+
 @router.post("/transporters")
-def upsert_transporter(body: TransporterIn, request: Request, p: Principal = Depends(need("GLOBAL_MASTERS")), db: Session = Depends(get_db)):
+def upsert_transporter(body: TransporterIn, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    require_transporter_master(p)
+    body.code = body.code.strip().upper()
     obj = db.get(models.Transporter, body.code)
     old = row(obj) if obj else None
     if not obj:
         obj = models.Transporter(code=body.code); db.add(obj)
+    own = None if p.has("GLOBAL_MASTERS") else p.plant
+    body.plant_codes = plant_list_merge(old and old.get("plant_codes"), body.plant_codes, own)
     for k, v in body.model_dump(exclude={"code"}).items():
         setattr(obj, k, v)
     audit(db, p, "TRANSPORTER_UPSERT", "transporter", body.code, old, body.model_dump(), request)

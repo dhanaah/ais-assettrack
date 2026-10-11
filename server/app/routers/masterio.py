@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models
 from ..db import get_db
-from ..security import need, Principal, audit
+from ..security import need, current_user, Principal, audit
 
 router = APIRouter(prefix="/api/v1/masters", tags=["masters-io"])
 
@@ -68,6 +68,18 @@ def _spec(kind):
     if not sp:
         raise HTTPException(404, f"Unknown master '{kind}' - use one of {', '.join(SPECS)}")
     return sp
+
+
+def _allow(p: Principal, kind: str):
+    """Masters are central (GLOBAL_MASTERS); transporters may also be kept by plant logistics / plant admin
+    (TRANSPORTER_MASTER) - for their own plant."""
+    if p.has(PERM) or (kind == "transporters" and p.has("TRANSPORTER_MASTER")):
+        return
+    raise HTTPException(403, "Missing permission: " + ("TRANSPORTER_MASTER" if kind == "transporters" else PERM))
+
+
+def _plant_user(p: Principal) -> str | None:
+    return None if p.has(PERM) else p.plant
 
 
 def _conv(v, typ):
@@ -134,14 +146,18 @@ def _send(buf, name, media="application/vnd.openxmlformats-officedocument.spread
 
 
 @router.get("/{kind}/template.xlsx")
-def template(kind: str, p: Principal = Depends(need(PERM))):
+def template(kind: str, p: Principal = Depends(current_user)):
+    _allow(p, kind)
     return _send(_xlsx(kind, [], sample=True), f"AssetTrack_{_spec(kind)['title'].replace(' ', '_')}_Template.xlsx")
 
 
 @router.get("/{kind}/data.xlsx")
-def current(kind: str, p: Principal = Depends(need(PERM)), db: Session = Depends(get_db)):
+def current(kind: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    _allow(p, kind)
     sp = _spec(kind)
     q = db.query(sp["model"])
+    if kind == "transporters" and _plant_user(p):
+        q = q.filter(sp["model"].plant_codes.like(f"%{p.plant}%"))
     if p.plant and hasattr(sp["model"], "plant_code"):
         q = q.filter(sp["model"].plant_code == p.plant)
     rows = []
@@ -164,7 +180,8 @@ def _read(name: str, data: bytes) -> list[dict]:
 
 
 @router.post("/{kind}/upload")
-async def upload(kind: str, request: Request, file: UploadFile = File(...), p: Principal = Depends(need(PERM)), db: Session = Depends(get_db)):
+async def upload(kind: str, request: Request, file: UploadFile = File(...), p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    _allow(p, kind)
     sp = _spec(kind); M = sp["model"]
     rows = _read(file.filename or "", await file.read())
     hmap = {col[0].lower(): col for col in sp["cols"]}
@@ -197,6 +214,9 @@ async def upload(kind: str, request: Request, file: UploadFile = File(...), p: P
                 if rec.get(pk_field) and not db.get(models.Plant, rec[pk_field]):
                     raise ValueError(f"plant {rec[pk_field]} not in the Plant master")
             obj = db.query(M).filter_by(**keyv).first()
+            if kind == "transporters" and _plant_user(p):       # plant user: own plant always on it, other plants kept
+                from .masters import plant_list_merge
+                rec["plant_codes"] = plant_list_merge(obj.plant_codes if obj else None, rec.get("plant_codes"), p.plant)
             new = obj is None
             if new:
                 obj = M(**keyv)
@@ -237,7 +257,8 @@ def _used(db, kind, obj) -> str | None:
 
 
 @router.delete("/{kind}/{key}")
-def delete(kind: str, key: str, request: Request, plant: str | None = None, p: Principal = Depends(need(PERM)), db: Session = Depends(get_db)):
+def delete(kind: str, key: str, request: Request, plant: str | None = None, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    _allow(p, kind)
     sp = _spec(kind); M = sp["model"]
     if kind == "customers":
         obj = db.get(M, int(key)) if key.isdigit() else db.query(M).filter_by(code=key.upper(), plant_code=(plant or p.plant or "").upper()).first()
@@ -247,6 +268,14 @@ def delete(kind: str, key: str, request: Request, plant: str | None = None, p: P
         raise HTTPException(404, "Not found")
     if getattr(obj, "plant_code", None) and p.plant and obj.plant_code != p.plant:
         raise HTTPException(403, "Other plant's record")
+    if kind == "transporters" and _plant_user(p):
+        pls = [x for x in (obj.plant_codes or "").split(";") if x]
+        if p.plant not in pls:
+            raise HTTPException(403, "Transporter not used by your plant")
+        if len(pls) > 1:                                  # shared with other plants: only remove it from this plant
+            obj.plant_codes = ";".join(x for x in pls if x != p.plant)
+            audit(db, p, "MASTER_DELETE", kind, key, None, {"removed_plant": p.plant}, request); db.commit()
+            return {"message": f"Transporter {obj.code} removed from {p.plant} (other plants still use it)"}
     why = _used(db, kind, obj)
     label = getattr(obj, "code", None) or getattr(obj, "pallet_no", key)
     if why:

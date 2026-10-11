@@ -14,7 +14,7 @@ PERMS = [
     "INTEGRATION_CONFIG", "REPORTS_PLANT", "REPORTS_ALL", "AUDIT_LOG",
     "WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT",
     "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN",
-    "CUST_RECEIVE", "CUST_RETURN",
+    "CUST_RECEIVE", "CUST_RETURN", "TRANSPORTER_MASTER",
 ]
 # What a central admin can switch on/off per user (grouped for the screen)
 PERM_GROUPS = {
@@ -23,12 +23,12 @@ PERM_GROUPS = {
     "HHT - internal movement": ["MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "INTERNAL_MOVE", "PLANT_RECEIPT"],
     "HHT - pallet care": ["DAMAGE_MARK", "TAG_REPLACE_REQUEST"],
     "Web - documents": ["PICKLIST_CREATE", "CHALLAN_REQUEST", "LOGISTICS_APPROVE", "WMS_UPLOAD"],
-    "Web - masters & admin": ["GLOBAL_MASTERS", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "PLANT_USERS_ADMIN", "USER_ADMIN", "INTEGRATION_CONFIG"],
+    "Web - masters & admin": ["GLOBAL_MASTERS", "TRANSPORTER_MASTER", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "PLANT_USERS_ADMIN", "USER_ADMIN", "INTEGRATION_CONFIG"],
     "Web - reports": ["REPORTS_PLANT", "REPORTS_ALL", "AUDIT_LOG"],
     "Customer HHT (customer staff)": ["CUST_RECEIVE", "CUST_RETURN"],
 }
 NEW_PERMS = {"WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "PDI_CHECK", "INTERNAL_MOVE", "PLANT_RECEIPT", "CHALLAN_REQUEST",
-             "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN"}   # added to existing roles on upgrade
+             "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN", "TRANSPORTER_MASTER"}   # added to existing roles on upgrade
 ROLE_SEED = {
     "SEC_IN":  ("Security - IN Gate", "PLANT", ["RETURN_SLIP_B", "IN_GATE_SCAN", "REPORTS_PLANT"]),
     "CUST_STAFF": ("Customer Staff (customer HHT: receive loaded pallets, return empty pallets)", "PLANT", ["CUST_RECEIVE", "CUST_RETURN"]),
@@ -38,9 +38,9 @@ ROLE_SEED = {
     "PROD":    ("Production", "PLANT", ["MOVE_TO_FGWH", "MOVE_TO_PACKING", "REPORTS_PLANT"]),
     "PACK":    ("Packing Section", "PLANT", ["MOVE_TO_YARD", "PLANT_RECEIPT", "REPORTS_PLANT"]),
     "QA":      ("QA / PDI", "PLANT", ["PDI_CHECK", "DAMAGE_MARK", "REPORTS_PLANT"]),
-    "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "REPORTS_PLANT"]),
-    "PADMIN":  ("Plant Admin", "PLANT", ["PLANT_USERS_ADMIN", "REPORTS_PLANT", "AUDIT_LOG"]),
-    "MASTER":  ("Master Maintenance (central)", "ALL", ["GLOBAL_MASTERS", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "REPORTS_ALL"]),
+    "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "TRANSPORTER_MASTER", "REPORTS_PLANT"]),
+    "PADMIN":  ("Plant Admin", "PLANT", ["PLANT_USERS_ADMIN", "TRANSPORTER_MASTER", "REPORTS_PLANT", "AUDIT_LOG"]),
+    "MASTER":  ("Master Maintenance (central)", "ALL", ["GLOBAL_MASTERS", "TRANSPORTER_MASTER", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "REPORTS_ALL"]),
     "CADMIN":  ("Central Admin", "ALL", PERMS),
     "MGMT":    ("Management (view only)", "ALL", ["REPORTS_ALL"]),
 }

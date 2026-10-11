@@ -930,8 +930,13 @@ def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(
             services.move(db, pal, "AT_CUSTOMER", event_type="RETURN_SHORT", user_id=p.user_id, customer=sl.customer_code, ref=no, remarks="not received", force=True)
             pal.dispatch_date = pal.dispatch_date  # keep original aging
     open_exc = short + exc
-    if sl.mode == "B2" and not json.loads(sl.doc_photos or "[]") and not (body.supervisor_pin and verify_supervisor_pin(db, sl.plant_code, body.supervisor_pin)):
+    pin_ok = bool(body.supervisor_pin) and verify_supervisor_pin(db, sl.plant_code, body.supervisor_pin)
+    if sl.mode == "B2" and not json.loads(sl.doc_photos or "[]") and not pin_ok:
         raise HTTPException(403, "Option B photo proof is not on the server yet - let the gate HHT sync, or supervisor PIN to close without it")
+    if sl.mode == "B2":                    # Option B: count made at the gate is checked against the pallets scanned at the yard
+        got = sum(1 for l in lines if l.received)
+        if got != (sl.declared_qty or 0) and not pin_ok:
+            raise HTTPException(403, f"Option B count {sl.declared_qty} but {got} pallet(s) scanned at the yard - supervisor PIN to close with the difference")
     if open_exc:
         if not body.supervisor_pin or not verify_supervisor_pin(db, sl.plant_code, body.supervisor_pin):
             raise HTTPException(403, f"{len(open_exc)} open exception(s): supervisor PIN required to close")

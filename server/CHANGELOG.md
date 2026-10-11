@@ -1,4 +1,16 @@
 # Changelog — AIS AssetTrack Server
+## 1.21.0 (HHT 2.11.0) - 2026-10-11
+- **Transporters - template and upload for plant users**: new permission `TRANSPORTER_MASTER`, given to Logistics and Plant Admin (also Master / Central Admin).
+  - Masters › Transporters: "Template with sample", "Current data", "Upload", Edit / Delete now also for these plant users.
+  - A plant user's upload / edit always keeps their own plant on the transporter and never removes other plants; delete of a shared transporter only removes their plant.
+  - Masters › Import: new "Download master template (all sheets)" button.
+- **Pallet yard in-ward recognises Option A / Option B** after the RTS is scanned and guides that process:
+  - Option A (customer slip with pallet list): scan each pallet - ticked against the slip list - reconcile with the slip - close.
+  - Option B (count at the IN gate + document photo): 1 view the customer document photo (scanning starts after it), 2 scan each pallet (matched with the document), 3 check the count - close.
+  - Server: an Option B slip closes only when the yard count equals the gate count, or with the supervisor PIN.
+  - A slip not yet on the HHT is fetched from the server when scanned.
+- Process flow A3 updated.
+
 ## 1.20.1 (HHT 2.10.0) - 2026-10-11
 - **Printers by job**:
   - Dispatch: no Bluetooth printer. GCS + challan print only on the plant's shared / network printer set in Masters › Plants › GCS printer.

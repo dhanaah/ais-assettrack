@@ -4,7 +4,7 @@ import html, sys, os
 
 W, H = 1587, 1123          # A3 landscape at 96 dpi
 OUT = os.path.dirname(os.path.abspath(__file__))
-VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.20 · HHT 2.10"
+VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.21 · HHT 2.11"
 
 parts, edges = [], []
 BOX = {}
@@ -115,7 +115,7 @@ box("inA", 330, 640, 176, 58, "step", "Scan return slip QR", ["Option A (or offl
 box("inB", 330, 724, 176, 70, "step", "Make slip B at gate", ["count + document photo", "(required) · read & matched", "slip on BT printer"])
 box("inP", 330, 818, 176, 58, "step", "Scan plant challan", ["other AIS plant: challan only"])
 box("gcsin", 540, 718, 168, 82, "app", "Gate inward register", ["IN gate · one entry no.", "for every inward vehicle", "+ GCS inward (ERP)"])
-box("yard", 740, 724, 190, 70, "step", "Pallet yard receiving", ["scan each pallet · slip /", "document list + photo shown"])
+box("yard", 740, 724, 190, 70, "step", "Pallet yard receiving", ["scan RTS → A or B known", "A: tick pallets vs slip list", "B: photo → scan → count"])
 dia("rec", 1012, 759, 150, 92, "Reconcile", ["received vs", "slip / document"])
 box("avail", 1130, 642, 172, 54, "ok", "AVAILABLE", ["back in plant stock"])
 box("held", 1130, 732, 172, 54, "warn", "HELD – other plant", ["owner plant alerted"])
