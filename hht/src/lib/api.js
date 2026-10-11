@@ -2,12 +2,14 @@
 import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 
-export const APP_VERSION = '2.6.0';
-let token = null, baseUrl = null, deviceHeader = 'HHT';
+export const APP_VERSION = '2.7.0';
+let token = null, baseUrl = null, deviceHeader = 'HHT', plantSel = null;   // plantSel: plant chosen at sign-in (X-Plant)
+export const setPlant = async (code) => { plantSel = code || null; await kv.set('sel_plant', plantSel); };
+export const getPlant = () => plantSel;
 export const setApiDevice = (id) => { deviceHeader = id; };
 
 export async function loadSession() {
-  token = await SecureStore.getItemAsync('token');
+  token = await SecureStore.getItemAsync('token'); plantSel = (await kv.get('sel_plant')) || null;
   baseUrl = (await kv.get('server_url')) || 'http://assettrack';
   return { token, baseUrl };
 }
@@ -65,7 +67,7 @@ async function apiAt(url, path, { method = 'GET', body, timeout = 15000, auth = 
   try {
     const r = await fetch(url + '/api/v1' + path, {
       method, signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json', 'X-Device': 'HHT', 'X-Device-Id': deviceHeader, 'X-App-Version': APP_VERSION, ...(auth && token ? { Authorization: 'Bearer ' + token } : {}) },
+      headers: { 'Content-Type': 'application/json', 'X-Device': 'HHT', 'X-Device-Id': deviceHeader, 'X-App-Version': APP_VERSION, ...(plantSel ? { 'X-Plant': plantSel } : {}), ...(auth && token ? { Authorization: 'Bearer ' + token } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     const j = await r.json().catch(() => ({}));
@@ -94,11 +96,11 @@ export async function apiUpload(path, fields = {}, file = null, timeout = 60000)
   if (file) fd.append('file', { uri: file.uri, name: file.name || 'photo.jpg', type: file.type || 'image/jpeg' });
   try {
     const r = await fetch(url + '/api/v1' + path, { method: 'POST', body: fd, signal: ctl.signal,
-      headers: { 'X-Device': 'HHT', 'X-Device-Id': deviceHeader, 'X-App-Version': APP_VERSION, ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+      headers: { 'X-Device': 'HHT', 'X-Device-Id': deviceHeader, 'X-App-Version': APP_VERSION, ...(plantSel ? { 'X-Plant': plantSel } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new ApiError(typeof j.detail === 'string' ? j.detail : (r.statusText || 'Server error'), r.status);
     return j;
   } catch (e) { if (e instanceof ApiError) throw e; throw new ApiError('Server unreachable', 0, true); } finally { clearTimeout(t); }
 }
 /** Image source for a server picture (needs the login token). */
-export const serverImage = (path) => ({ uri: getActiveServer() + '/api/v1' + path, headers: { Authorization: 'Bearer ' + token, 'X-Device': 'HHT' } });
+export const serverImage = (path) => ({ uri: getActiveServer() + '/api/v1' + path, headers: { Authorization: 'Bearer ' + token, 'X-Device': 'HHT', ...(plantSel ? { 'X-Plant': plantSel } : {}) } });

@@ -14,6 +14,7 @@ class BenchIn(BaseModel):
     bench_url: str | None = None
     bench_user: str | None = None
     bench_password: str | None = None       # blank = keep current
+    bench_plant_map: str | None = None
     bench_plant: str | None = None
     bench_customer_map: str | None = None
     bench_interval_sec: int | None = 60

@@ -728,5 +728,27 @@ with TestClient(app) as c:
     check(r2["received"] == 1, "scanning the same pallet again is not counted twice")
     r3 = c.post("/api/ext/v1/receive", headers={k: v for k, v in DK2.items() if k != "X-Staff-Token"}, json={"picklist_no": d0["picklist_no"], "scanned": [pal0]})
     check(r3.status_code == 401, "receiving needs the staff sign-in")
+    print("27. One server, many plants: plant chosen on the HHT, Bench trips go to their own plant")
+    r = c.post("/api/v1/users", headers=A, json={"user_id": "multi", "full_name": "Two plants", "plant_code": "CHN", "extra_plants": "PUN;XXX", "roles": ["FGWH"], "password": "Abc@1234"})
+    lg = c.post("/api/v1/auth/login", json={"user_id": "multi", "password": "Abc@1234"}).json()
+    check([x["code"] for x in lg["plants"]] == ["CHN", "PUN"], f"login lists the plants the user may choose: {lg['plants']}")
+    MH = {"Authorization": "Bearer " + lg["token"], "X-Device": "HHT", "X-Device-Id": "HHT-M"}
+    check(c.get("/api/v1/sync/pull", headers=MH | {"X-Plant": "PUN"}).json()["plant"]["code"] == "PUN", "HHT works for the chosen plant (PUN): sync serves PUN data")
+    check(c.get("/api/v1/sync/pull", headers=MH).json()["plant"]["code"] == "CHN", "without a choice: own plant")
+    check(c.get("/api/v1/sync/pull", headers=MH | {"X-Plant": "TLJ"}).status_code == 403, "plant not allowed for the user refused")
+    with SessionLocal() as db:
+        from app import bench as _b2
+        for k, v in (("bench_plant", None), ("bench_plant_map", "3001=CHN")):
+            row_ = db.get(models.Setting, k) or models.Setting(key=k); row_.value = v; db.add(row_)
+        db.commit()
+        fake3 = {"/api/dispatches/recent?limit=300": {"dispatches": [
+                    {"id": 701, "trip_id": 1, "customer_code": "HMIL", "ais_plant": "PUN", "vehicle": "MH12A1", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()},
+                    {"id": 702, "trip_id": 2, "customer_code": "HMIL", "org_code": "3001", "vehicle": "TN01B2", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()},
+                    {"id": 703, "trip_id": 3, "customer_code": "HMIL", "vehicle": "TN01B3", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()}]},
+                 "/api/picks?dispatch_id=701": {"picks": []}, "/api/picks?dispatch_id=702": {"picks": []}, "/api/picks?dispatch_id=703": {"picks": []}}
+        res = _b2.pull(db, fetch=lambda path: fake3[path]); db.commit()
+        ok3 = db.get(models.PickList, "DB-PUN-701") is not None and db.get(models.PickList, "DB-CHN-702") is not None and db.query(models.PickList).filter(models.PickList.ext_ref == "703").count() == 0
+    check(ok3 and res["no_plant"] == 1 and res["plants"] == {"PUN": 1, "CHN": 1},
+          f"plant-wise Bench: trip 701 -> PUN, 702 (org 3001 mapped) -> CHN, 703 without plant not taken: {res}")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

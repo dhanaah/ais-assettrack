@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## 1.18.0 (2026-10-11) — one server, plant-wise: plant chosen on the HHT, Bench trips served to their own plant (HHT app 2.7.0)
+- Users can work for more than one plant: central users (no plant) - any plant; plant users - own plant + "Also works for plants" (web Users, e.g. PUN;TLJ). Login returns the plants allowed
+- HHT: after sign-in, a user with more than one plant selects the plant (last used marked); every call carries the plant (X-Plant) and the server checks it is allowed - pick lists, GCS, pallets, slips and scans are those of that plant only; switching plant is refused while scans of the previous plant are not synced; unlock keeps the plant
+- Dispatch Bench link plant-wise: each Bench trip goes to its own AIS plant (DB-<plant>-<trip>) from the plant field of the trip (ais_plant / plant_code / from_plant / org_code / warehouse ...), translated by the new "Bench plant -> AIS plant" map (e.g. 3001=CHN;TALOJA=TLJ); the default plant is used only for trips without a plant; trips with no known plant are not taken and are counted in the link status
+- GCS inbox was already per plant (FTP folder per plant)
 ## 1.17.0 (2026-10-11) — Customer Staff role: receive deliveries and return empty pallets on the customer HHT; server address hidden on the HHT (HHT app 2.6.0)
 - New role CUST_STAFF "Customer Staff" (web Users: role + customer code; rights CUST_RECEIVE, CUST_RETURN). They sign in with their own user on the paired customer HHT (30 days; again without network if they signed in online on that HHT before); they cannot sign in on an AIS HHT
 - Customer HHT > Receive delivery: AIS loads dispatched to the customer (last 20 days, kept on the HHT); scan the gate pass QR or pick the vehicle, scan each pallet while unloading - received / still to scan / extra (not on this delivery); sent to AIS (queued when offline); pallets not received are listed for AIS

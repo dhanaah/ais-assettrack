@@ -59,7 +59,11 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     perms = load_perms(db, u)
     audit(db, Principal(u, perms), "LOGIN", "user", u.user_id, request=request)
     db.commit()
+    from ..security import allowed_plants
+    pls = allowed_plants(db, u)
+    names = {x.code: x.name for x in db.query(models.Plant).filter(models.Plant.code.in_(pls)).all()} if pls else {}
     return {"token": make_token(u), "user_id": u.user_id, "name": u.full_name, "plant": u.plant_code,
+            "plants": [{"code": x, "name": names.get(x, x)} for x in pls],
             "roles": u.role_codes, "perms": sorted(perms), "supervisor": u.supervisor_allowed,
             "must_change_pw": u.must_change_pw, "server_version": config.APP_VERSION, "min_client": config.API_MIN_CLIENT,
             "picklist_source": config.PICKLIST_SOURCE}

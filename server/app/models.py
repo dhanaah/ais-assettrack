@@ -75,6 +75,7 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(100))
     plant_code: Mapped[str | None] = mapped_column(ForeignKey("plants.code"), index=True)  # None => all plants
     customer_code: Mapped[str | None] = mapped_column(String(20), index=True)   # Customer Staff: the customer (site) they work for
+    extra_plants: Mapped[str | None] = mapped_column(String(200))               # ; separated - plants this user may also select on the HHT
     password_hash: Mapped[str] = mapped_column(String(100))
     email: Mapped[str | None] = mapped_column(String(120))
     mobile: Mapped[str | None] = mapped_column(String(20))

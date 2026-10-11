@@ -120,7 +120,23 @@ def current_user(request: Request, creds: HTTPAuthorizationCredentials = Depends
     user = db.get(models.User, data.get("uid"))
     if not user or not user.active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
-    return Principal(user, load_perms(db, user))
+    p = Principal(user, load_perms(db, user))
+    want = (request.headers.get("x-plant") or "").strip().upper()
+    if want and want != (user.plant_code or ""):        # plant selected on the HHT (one server, many plants)
+        if want not in allowed_plants(db, user):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, f"User {user.user_id} is not allowed for plant {want}")
+        p.plant = want
+    return p
+
+
+def allowed_plants(db: Session, user) -> list[str]:
+    """Plants a user may work for: central users (no plant) - every active plant; plant users - own plant + extra plants."""
+    if user.customer_code:
+        return [user.plant_code] if user.plant_code else []
+    if not user.plant_code:
+        return [x.code for x in db.query(models.Plant).order_by(models.Plant.code).all() if getattr(x, "active", True) is not False]
+    extra = [x.strip().upper() for x in (user.extra_plants or "").replace(",", ";").split(";") if x.strip()]
+    return [user.plant_code] + [x for x in extra if x != user.plant_code and db.get(models.Plant, x)]
 
 
 def _ver(v: str) -> tuple:

@@ -12,7 +12,7 @@ from . import models
 from .models import utcnow
 
 log = logging.getLogger("bench")
-KEYS = ["bench_enabled", "bench_url", "bench_user", "bench_password", "bench_plant", "bench_customer_map", "bench_interval_sec", "bench_days"]
+KEYS = ["bench_enabled", "bench_url", "bench_user", "bench_password", "bench_plant", "bench_plant_map", "bench_customer_map", "bench_interval_sec", "bench_days"]
 _token = {"v": None}
 _state = {"last_run": None, "last_ok": None, "last_error": None, "created": 0, "updated": 0, "lpns": 0}
 
@@ -80,6 +80,28 @@ def customer_for(cfg, bench_code: str) -> str:
     return m.get((bench_code or "").upper(), bench_code or "?")
 
 
+PLANT_KEYS = ("ais_plant", "aisplant", "plant_code", "from_plant", "source_plant", "dispatch_plant", "ship_from", "org_code", "organization", "warehouse")
+
+
+def plant_for(db: Session, cfg: dict, d: dict) -> str | None:
+    """AIS plant of a Bench dispatch (plant-wise planning on one Bench): a plant field of the dispatch, translated by
+    bench_plant_map ('3001=CHN;CHENNAI=CHN;TALOJA=TLJ') or taken as it is when it is an AssetTrack plant code; otherwise
+    the default plant of the link (bench_plant). None = cannot tell -> the dispatch is not taken."""
+    m = {}
+    for part in (cfg.get("bench_plant_map") or "").replace(",", ";").split(";"):
+        if "=" in part:
+            a, b = part.split("=", 1); m[a.strip().upper()] = b.strip().upper()
+    for k in PLANT_KEYS:
+        v = str(d.get(k) or "").strip().upper()
+        if not v:
+            continue
+        code = m.get(v, v)
+        if db.get(models.Plant, code):
+            return code
+    dflt = (cfg.get("bench_plant") or "").upper()
+    return dflt if dflt and db.get(models.Plant, dflt) else None
+
+
 def pull(db: Session, fetch=None) -> dict:
     """fetch(path) -> json; injectable for tests."""
     cfg = get_settings(db)
@@ -88,10 +110,7 @@ def pull(db: Session, fetch=None) -> dict:
         if not cfg["bench_url"] or not cfg["bench_user"]:
             raise RuntimeError("Dispatch Bench link not configured (URL / user)")
         fetch = lambda path: _get(cfg, path)
-    plant = (cfg["bench_plant"] or "").upper()
-    if not db.get(models.Plant, plant):
-        raise RuntimeError(f"Set the AIS plant for the Bench link (now '{plant or '-'}')")
-    created = updated = n_lpn = 0
+    created = updated = n_lpn = no_plant = 0; per_plant = {}
     disp = fetch("/api/dispatches/recent?limit=300").get("dispatches", [])
     for d in disp:
         did = str(d.get("id") or d.get("dispatch_id"))
@@ -104,6 +123,11 @@ def pull(db: Session, fetch=None) -> dict:
                 continue
         except Exception:
             pass
+        plant = plant_for(db, cfg, d)                 # plant-wise planning: each trip goes to its own plant
+        if not plant:
+            no_plant += 1
+            continue
+        per_plant[plant] = per_plant.get(plant, 0) + 1
         pk = (db.query(models.PickList).filter(models.PickList.plant_code == plant, models.PickList.ext_ref == did,
                                                models.PickList.source.in_(["DISPATCH_BENCH", "HMIL_BENCH"])).first())
         no = pk.picklist_no if pk else f"DB-{plant}-{did}"
@@ -147,8 +171,9 @@ def pull(db: Session, fetch=None) -> dict:
         pk.part_qty = max(total, bound)
         pk.qty = max(pk.qty or 0, db.query(models.PickListLine).filter_by(picklist_no=no).count(), 1)
     db.commit()
-    _state.update(last_ok=utcnow(), last_error=None, created=created, updated=updated, lpns=n_lpn)
-    return {"dispatches": len(disp), "created": created, "updated": updated, "lpns": n_lpn}
+    err = (f"{no_plant} dispatch(es) without a known AIS plant - set the plant map or default plant" if no_plant else None)
+    _state.update(last_ok=utcnow(), last_error=err, created=created, updated=updated, lpns=n_lpn, plants=per_plant, no_plant=no_plant)
+    return {"dispatches": len(disp), "created": created, "updated": updated, "lpns": n_lpn, "plants": per_plant, "no_plant": no_plant}
 
 
 def status() -> dict:

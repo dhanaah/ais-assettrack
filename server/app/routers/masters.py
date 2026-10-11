@@ -134,6 +134,7 @@ class UserIn(BaseModel):
     full_name: str
     plant_code: str | None = None
     customer_code: str | None = None     # Customer Staff: their customer
+    extra_plants: str | None = None      # "PUN;TLJ" - plants this user may also select on the HHT
     roles: list[str]
     password: str | None = None          # required on create
     email: str | None = None
@@ -178,6 +179,7 @@ def upsert_user(body: UserIn, request: Request, p: Principal = Depends(current_u
     u.full_name = body.full_name; u.plant_code = None if all_scope and not plant else plant
     u.email = body.email; u.mobile = body.mobile; u.supervisor_allowed = body.supervisor_allowed
     u.device_id = body.device_id; u.active = body.active; u.notes = body.notes
+    u.extra_plants = ";".join(x.strip().upper() for x in (body.extra_plants or "").replace(",", ";").split(";") if x.strip() and db.get(models.Plant, x.strip().upper()))[:200] or None
     if "CUST_STAFF" in roles:              # customer staff: one customer of this plant, no AIS roles beside it
         cc = (body.customer_code or "").strip().upper()
         if not cc or not db.query(models.Customer).filter_by(code=cc, plant_code=plant).first():
