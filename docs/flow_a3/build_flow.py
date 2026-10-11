@@ -4,7 +4,7 @@ import html, sys, os
 
 W, H = 1587, 1123          # A3 landscape at 96 dpi
 OUT = os.path.dirname(os.path.abspath(__file__))
-VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.20 · HHT 2.9"
+VER = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else "server 1.20 · HHT 2.10"
 
 parts, edges = [], []
 BOX = {}
@@ -65,7 +65,7 @@ mx = [("PLANTS & USERS", ["One server · plant chosen at sign-in", "Roles · ext
       ("PALLETS & TYPES", ["QR AIS-plant-type-serial-global", "Type: value · HSN · L×W×H · weight"]),
       ("CUSTOMERS & TRANSPORTERS", ["Auto-created from the GCS file", "Holding days · e-mails · vehicles"]),
       ("CUSTOMER HHT", ["Paired by QR from the web", "Staff sign-in · works offline"]),
-      ("HHT SETUP", ["Scan server QR · Online / Offline", "Any BT printer · scanner or camera"]),
+      ("HHT SETUP", ["Scan server QR · Online / Offline", "BT printer: return slips only"]),
       ("INTEGRATIONS", ["Bench trips (plant-wise) · GCS FTP", "per plant · EBS challan / GCS-IN"])]
 bw = (W - 140 - 5 * 12) / 6
 for i, (h, ls) in enumerate(mx):
@@ -81,7 +81,7 @@ box("inbox", 464, y1, 168, bh, "app", "GCS inbox → load sheet", ["per plant ·
 box("load", 656, y1, 160, bh, "step", "HHT · Vehicle loading", ["scan part card + pallet", "(scanner or camera)"])
 dia("pdi", 912, y1 + bh / 2, 150, 96, "Card in GCS?", ["PDI passed for", "this vehicle"])
 dia("fin", 1098, y1 + bh / 2, 160, 96, "Finish loading", ["qty vs invoice", "missing / extra"])
-box("gp", 1206, y1, 158, bh, "app", "Gate pass + Challan", ["auto PDF · signed GCS QR", "GCS slip on BT printer"])
+box("gp", 1206, y1, 158, bh, "app", "Gate pass + Challan", ["auto PDF · signed GCS QR", "plant network printer"])
 box("out", 1392, y1, 150, bh, "step", "AIS OUT gate", ["scan GCS QR", "vehicle released"])
 box("stop", 838, 346, 148, 52, "warn", "STOP – do PDI", ["wrong vehicle refused"])
 box("ebs", 1206, 346, 158, 52, "ext", "Oracle EBS", ["challan · e-way bill"])
@@ -102,7 +102,7 @@ box("recv", 1392, y2, 150, ch, "cust", "Receive delivery", ["staff scan each pal
 box("recvres", 1196, y2, 168, ch, "app", "Received/missing/extra", ["visible to AIS"])
 box("hold", 990, y2, 178, ch, "app", "Holding days · reminders", ["mail before / after limit", "escalation"])
 box("retA", 702, y2, 190, ch, "cust", "Return empty pallets · A", ["scan pallets · pick vehicle", "customer DC if any"])
-box("slip", 490, y2, 184, ch, "cust", "Return slip printed", ["no. auto · signed QR", "offline: RO- slip from HHT"])
+box("slip", 490, y2, 184, ch, "cust", "Return slip printed", ["BT printer · no. auto", "signed QR (offline: RO-)"])
 box("veh", 290, y2, 172, ch, "step", "Vehicle to AIS", ["with slip, document", "or nothing"])
 edge([P("atc", "b"), P("recv", "t")]); edge([P("recv", "l"), P("recvres", "r")])
 edge([P("retA", "l"), P("slip", "r")]); edge([P("slip", "l"), P("veh", "r")])
@@ -112,7 +112,7 @@ parts.append(f'<text class="note" x="702" y="{y2 + ch + 22}">Customer HHT: staff
 # ------------------------------------------------------------------ RETURN
 dia("with", 170, 668, 150, 84, "Vehicle brings?", [])
 box("inA", 330, 640, 176, 58, "step", "Scan return slip QR", ["Option A (or offline RO- slip)"])
-box("inB", 330, 724, 176, 70, "step", "Make slip B at gate", ["count + document photo", "(required) → read & matched"])
+box("inB", 330, 724, 176, 70, "step", "Make slip B at gate", ["count + document photo", "(required) · read & matched", "slip on BT printer"])
 box("inP", 330, 818, 176, 58, "step", "Scan plant challan", ["other AIS plant: challan only"])
 box("gcsin", 540, 718, 168, 82, "app", "Gate inward register", ["IN gate · one entry no.", "for every inward vehicle", "+ GCS inward (ERP)"])
 box("yard", 740, 724, 190, 70, "step", "Pallet yard receiving", ["scan each pallet · slip /", "document list + photo shown"])

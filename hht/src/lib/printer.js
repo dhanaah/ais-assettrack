@@ -1,3 +1,4 @@
+// Return slips only (Option A customer / Option B IN gate) - GCS + challan print on the plant network printer (server).
 // Printing on whatever portable printer is at hand - not tied to one model. Settings > Printer chooses:
 //   connection : Bluetooth (classic, paired in Android)  |  Bluetooth LE (scan)  |  Android print (printer's own app/plugin)
 //   language   : ESC/POS (most receipt printers: SEZNIK, Xprinter, Rongta, Epson, MTP...) | CPCL (Zebra/Honeywell mobile)
@@ -204,18 +205,6 @@ export async function printChallan(k, plant, lines, copies = 2) {
 }
 
 /** GCS (gate pass) slip with the signed QR the OUT gate scans - handed to the driver with the challan. */
-export async function printGcs(k, plant, qr, copies = 1) {
-  if (!(await canPrint())) return { printed: false };
-  const dots = await paperDots();
-  const one = () => new Doc(dots).align('center').logo().line().bold(true).size(1, 2).line('GATE PASS (GCS)').size(1, 1).bold(false).line(plant?.name || plant?.code || '').line()
-    .qr(qr, { scale: dots >= 576 ? 7 : 6 }).line().bold(true).size(2, 2).line(String(k.gcs_no || '')).size(1, 1).bold(false).line().align('left').rule()
-    .line(`Vehicle : ${k.vehicle_no || ''}`).line(`Customer: ${k.customer_code || ''}`).line(`Invoice : ${k.invoice_no || ''}`).line(`Challan : ${k.challan_no || ''}`).line(`Pallets : ${k.scanned ?? k.qty ?? ''}`).rule()
-    .line('Show this QR at the OUT gate.').line().line('Loaded by: ____________').line().line('Driver   : ____________').feed(4).cut();
-  await send(Array.from({ length: copies }, one));
-  return { printed: true };
-}
-
-/** Settings > Printer > Test print: text + logo + QR in the chosen language / connection. */
 export async function testPrint(plant) {
   const c = await getConfig();
   if (!connAvailable(c.conn)) throw new Error('This connection is not available in this build');

@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## 1.20.1 (HHT 2.10.0) - 2026-10-11
+- **Printers by job**:
+  - Dispatch: no Bluetooth printer. GCS + challan print only on the plant's shared / network printer set in Masters › Plants › GCS printer.
+  - The HHT "Print GCS slip (portable printer)" button is removed. "Print GCS + challan again (plant printer)" is always shown after loading.
+  - Bluetooth printer is used only for return slips: Option A at the customer, Option B at the IN gate. Setup › Printer says so.
+- Process flow A3 updated (Gate pass box: plant network printer; return slips: BT printer).
+
 ## 1.20.0 (HHT 2.9.0) - 2026-10-11
 - **Option B needs photo proof**: an Option B slip cannot be made without at least one photo of the customer's document.
   - HHT: the gate cannot create or print the slip until the photo is taken (works offline too; the photo uploads when online).

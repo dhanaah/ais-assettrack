@@ -7,7 +7,6 @@ import { S, C, Btn, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Scree
 import { listPicklists, getPicklist, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity, kv } from '../lib/db';
 import { validateDockScan2 } from '../lib/rules';
 import { api } from '../lib/api';
-import { printGcs } from '../lib/printer';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
 import { fTimeS } from '../lib/when';
 
@@ -93,9 +92,8 @@ export default function Dock({ onBack, yard = false }) {
       {result.gcs_check.extra_lpns.length ? <Text style={S.body}>Scanned but not in GCS ({result.gcs_check.extra_lpns.length}): {result.gcs_check.extra_lpns.slice(0, 8).join(', ')}</Text> : null}
       <Text style={S.mute}>Recorded in the audit log.</Text></View> : null}
     <View style={S.card}><Text style={S.h2}>Challan {result.challan_no}</Text><Text style={S.mute}>Customer {result.customer_code} · invoice {result.invoice_no || '—'} · status {result.status}</Text>
-      <Text style={[S.body, { marginTop: 8, color: result.gcs_print && result.gcs_print !== 'off' && !/fail/i.test(result.gcs_print) ? C.ok : C.amber }]}>{result.gcs_print && result.gcs_print !== 'off' ? `GCS PDF ${result.gcs_print} - collect it from the plant printer and hand it to the driver with the challan.` : 'Automatic printing is off for this plant - print the GCS PDF from the web (Pick Lists) or on the portable printer.'}</Text></View>
-    {result.gcs_print && result.gcs_print !== 'off' ? <Btn title="Print again on plant printer" secondary icon="print-outline" onPress={async () => { try { const r = await api(`/picklists/${result.picklist_no}/gcs-print`, { method: 'POST' }); toast('GCS ' + r.print, 'ok'); } catch (e) { toast(e.message, 'err'); } }} /> : null}
-    <Btn title="Print GCS slip (portable printer)" icon="print-outline" onPress={async () => { try { const plant = await kv.get('plant'); const r = await printGcs(result, plant, result.gcs_qr); toast(r.printed ? 'Printed' : 'No printer - print from the web', r.printed ? 'done' : 'warn'); } catch (e) { toast('Print failed: ' + e.message, 'err'); } }} />
+      <Text style={[S.body, { marginTop: 8, color: result.gcs_print && result.gcs_print !== 'off' && !/fail/i.test(result.gcs_print) ? C.ok : C.amber }]}>{result.gcs_print && result.gcs_print !== 'off' ? `GCS + challan ${result.gcs_print} - collect them from the plant printer and hand them to the driver.` : 'No plant printer set for this plant - set it in Masters › Plants › GCS printer, or print the GCS + challan PDF from the web (Pick Lists).'}</Text></View>
+    <Btn title="Print GCS + challan again (plant printer)" secondary icon="print-outline" onPress={async () => { try { const r = await api(`/picklists/${result.picklist_no}/gcs-print`, { method: 'POST' }); toast(r.print === 'off' ? 'No plant printer set - Masters › Plants › GCS printer' : 'GCS + challan ' + r.print, r.print === 'off' ? 'warn' : 'ok'); } catch (e) { toast(e.message, 'err'); } }} />
     <Btn title="Done" secondary icon="checkmark-outline" onPress={() => { setResult(null); setPk(null); }} />
   </Page><Toast msg={msg} /></Screen>);
 

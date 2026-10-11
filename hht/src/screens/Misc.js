@@ -136,7 +136,8 @@ export function PrinterCard({ toast }) {
   const put = async (part) => { await setConfig(part); setCfg({ ...cfg, ...part }); };
   const run = async (fn) => { setBusy(true); try { await fn(); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
   const sys = cfg.conn === 'system'; const ble = cfg.conn === 'ble';
-  return (<View style={S.card}><Text style={S.h2}>Printer (any portable printer)</Text>
+  return (<View style={S.card}><Text style={S.h2}>Printer (return slips only)</Text>
+    <Text style={[S.mute, { marginBottom: 8 }]}>Portable Bluetooth printer for return slips - Option A at the customer, Option B at the IN gate. GCS and challan print on the plant's network printer (Plant Master), not here.</Text>
     <Text style={S.mute}>Connection</Text>
     <Segmented options={CONNS} value={cfg.conn} onChange={(v) => { put({ conn: v }); setList([]); }} />
     {!connAvailable(cfg.conn) ? <Text style={[S.mute, { color: C.amber }]}>Not available in this build</Text> : null}
