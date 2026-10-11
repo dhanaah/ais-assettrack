@@ -7,6 +7,7 @@
 - Photos kept on the server with the slip (up to 10 pages; queued and resent when the network is back); offline slips: text matched on the server at sync
 - Yard receiving (HHT): for Option B the pallets read from the document are the expected list - received / on document not yet / not on document - and the document photos can be opened (1x-3x zoom) while unloading
 - Web slip detail: document vs received comparison and the photos
+- HHT 2.4.1: APK built for ARM devices only (all HHTs / phones) - smaller download; on-device text reading uses the Latin model only
 ## 1.13.1 (2026-10-11) — loading: part card not in the GCS is stopped ("do PDI first"); invoice qty vs loaded qty (HHT app 2.3.1)
 - A part card that is not in the GCS file (not PDI passed / invoiced for this vehicle) is refused at loading - on the HHT at once (also offline) and on the server - with "STOP: do PDI first, keep it off the vehicle"; no override. A card of another GCS still shows "wrong vehicle"
 - Finish loading compares quantity: invoice (GCS) qty vs qty on the part cards loaded, per item and in total; the HHT shows it before finishing and in the result
