@@ -1,4 +1,5 @@
 # Changelog — AIS AssetTrack Server
+## 1.11.1 (2026-10-11) — fix: daily reminder run could not write its integration log entry (empty reference)
 ## 1.11.0 (2026-10-11) — masters from Excel, delete, auto customers / transporters, clock, auto refresh, dd-mmm-yy, FTP per plant, Excel / PDF everywhere (HHT 2.1.5)
 - Customers and transporters: add / edit forms on the web; created automatically from the GCS file when new (customer code = short name in REMARKS when it is part of the name, else from the name; transporter with its vehicles and plant); marked "from GCS"
 - Masters from Excel (plants, customers, transporters, pallet types, pallets): template with 2 sample rows + "How to fill" sheet, current data download, upload (adds / updates by code, row errors listed, samples skipped)

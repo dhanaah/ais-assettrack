@@ -50,7 +50,7 @@ class RetryQueue(Base):
 
 
 def _log(db, system, op, ref, ok, message, req=None, resp=None):
-    db.add(IntegrationLog(system=system, op=op, ref=ref, ok=1 if ok else 0, message=(message or "")[:500],
+    db.add(IntegrationLog(system=system, op=op, ref=ref or "-", ok=1 if ok else 0, message=(message or "")[:500],
                           request=json.dumps(req, default=str) if req else None, response=json.dumps(resp, default=str) if resp else None))
 
 
