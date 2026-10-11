@@ -16,5 +16,5 @@ for /f "delims=" %%P in ('python -c "import sys,os;print(os.path.join(os.path.di
 if not exist "%PYW%" set "PYW=pythonw"
 start "" "%PYW%" "%AT%server\tray_app.py"
 echo started >> "%LOG%"
-echo AssetTrack Server started - look for the AIS icon near the clock. This window closes now.
+echo AssetTrack Server started - look for the blue AT icon near the clock. This window closes now.
 timeout /t 3 >nul

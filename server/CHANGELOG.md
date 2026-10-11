@@ -1,4 +1,6 @@
 # Changelog — AIS AssetTrack Server
+## 1.14.2 (2026-10-11) — new AssetTrack "AT" icon for the server
+- Tray icon near the clock and the server program (AssetTrack_Server.exe) use the new blue AT icon with the location pin; messages now say "look for the blue AT icon"
 ## 1.14.1 (2026-10-11) — customer document written by pallet type only, or total only (HHT app 2.4.2)
 - Pallet type with quantity read from the document: "F - 4", "NF : 2 NOS", "RW x 3", "4 Nos F pallets", and type names from the pallet type master ("Flat pallet 6", "Non flat 2"); shown per type against what AIS shows at the customer (warning when the document has more)
 - Total only: "Total 9", "No of pallets - 5", "6 pallets", "14 Nos", "Qty 7" - offered as the count; warning when the count entered differs

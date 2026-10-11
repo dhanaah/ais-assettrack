@@ -168,7 +168,7 @@ def backup_db(keep_days: int = 14):
 
 def make_icon():
     from PIL import Image
-    for p in (os.path.join(getattr(sys, "_MEIPASS", BASE_DIR), "app", "static", "icon-192.png"), os.path.join(BASE_DIR, "app", "static", "icon-192.png")):
+    for p in [os.path.join(root, "app", "static", n) for n in ("tray-icon.png", "icon-192.png") for root in (getattr(sys, "_MEIPASS", BASE_DIR), BASE_DIR)]:
         if os.path.exists(p):
             return Image.open(p).convert("RGBA").resize((64, 64))
     return Image.new("RGBA", (64, 64), (30, 58, 138, 255))
@@ -250,7 +250,7 @@ def main():
     import pystray
     if already_running():
         log("second start refused - server already running")
-        show_and_wait("AIS AssetTrack Server is already running.\n\nLook for the AIS icon near the clock (click ^ if hidden).\nThe web page opens now.")
+        show_and_wait("AIS AssetTrack Server is already running.\n\nLook for the blue AT icon near the clock (click ^ if hidden).\nThe web page opens now.")
         p = live_port()
         if p:
             webbrowser.open(_u("localhost", p))
@@ -263,7 +263,7 @@ def main():
     threading.Thread(target=retry_job, daemon=True).start()
     time.sleep(2)
     if not LIVE:
-        info_box(f"AssetTrack Server could not open any port {PORTS}.\nIt is probably already running - look for the AIS icon near the clock.")
+        info_box(f"AssetTrack Server could not open any port {PORTS}.\nIt is probably already running - look for the blue AT icon near the clock.")
         return
 
     def on_open(icon, item):
