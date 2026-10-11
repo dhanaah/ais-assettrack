@@ -72,7 +72,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
     <View style={S.card}><Text style={S.h2}>Option B · number of pallets only</Text><Text style={S.mute}>No pallet scanning at the gate. The pallets are scanned and this slip is knocked off at pallet-yard receiving.</Text></View>
     <View style={S.card}>
       <VehiclePicker value={veh} onChange={setVeh} />
-      <TextInput style={S.input} placeholder="Customer challan / DC number" value={dc} onChangeText={setDc} autoCapitalize="characters" />
+      <TextInput style={S.input} placeholder="Customer challan / DC number (if any)" value={dc} onChangeText={setDc} autoCapitalize="characters" />
       <TextInput style={S.input} placeholder="Driver name / mobile" value={drv} onChangeText={setDrv} />
       <TextInput style={[S.input, { fontSize: 22, fontWeight: '700' }]} placeholder="Number of pallets *" value={qty} onChangeText={setQty} keyboardType="number-pad" />
       {!!res && !!(res.stated_total || res.matched.length + res.probable.length) && String(res.stated_total || res.matched.length + res.probable.length) !== qty ? <Btn title={`Use ${res.stated_total || res.matched.length + res.probable.length} from the document`} secondary icon="checkmark-done-outline" onPress={() => setQty(String(res.stated_total || res.matched.length + res.probable.length))} /> : null}
@@ -89,6 +89,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
     </View>
     <DocCamera visible={camOn} onClose={() => setCamOn(false)} onShot={addPage} />
     <Btn title="Create slip & print" icon="print-outline" onPress={create} color={C.violet} />
+    <Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Return slip number is generated automatically.</Text>
     {!sync.online ? <Text style={[S.mute, { textAlign: 'center', marginTop: 6, color: C.amber }]}>Offline: slip gets a device number and syncs later</Text> : null}
   </Page><Toast msg={msg} /></Screen>);
 }

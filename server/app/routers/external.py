@@ -127,7 +127,7 @@ def validate(body: ValidateIn, c: models.Customer = Depends(customer_auth), db: 
 class ExtSlipIn(BaseModel):
     pallets: list[str] = Field(min_length=1, max_length=500, description="scanned tag numbers or pallet numbers")
     vehicle_no: str
-    customer_challan_no: str = Field(min_length=1, description="customer's delivery challan number (mandatory)")
+    customer_challan_no: str | None = Field(default=None, description="customer's delivery challan number, if the customer has one (optional)")
     customer_challan_date: datetime | None = None
     driver_name: str | None = None
     driver_mobile: str | None = None

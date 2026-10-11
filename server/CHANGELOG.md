@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## 1.15.2 (2026-10-11) — return slip number always automatic; customer DC optional (HHT app 2.5.3)
+- Return slip number is generated automatically everywhere (RTS-... by AIS, RO-<plant>-<device>-<seq> when printed without network); the screens say so
+- Customer DC number: optional - the customer may or may not have one (customer HHT, customer API and IN-gate Option B)
 ## 1.15.1 (2026-10-11) — customer DC number mandatory on Option A slips (HHT app 2.5.1)
 - Customer HHT / customer API: the customer's delivery challan (DC) number is required again (also for slips printed without network)
 - HHT 2.5.2: "Test printer" on the login screen (before sign-in) - prints the test page on the selected Bluetooth printer, or opens Setup › 2. Printer when none is chosen
