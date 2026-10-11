@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## 1.14.0 (2026-10-11) — Option B: photo of the customer's manual document, read and matched; yard sees it (HHT app 2.4.0)
+- IN gate (Option B): security photographs the customer's DC / challan / pallet list (any layout, several pages). The HHT reads the text itself (Google ML Kit, offline) and the server finds the pallet numbers and matches them with the pallets the ledger shows at that customer
+- Matching for any customer format: full QR number, type + serial (F-2948, F.2948, NF7944, RW 1392), number only (when unique at the customer); reading slips fixed (O/0, I/1, S/5, B/8, Z/2, G/6); one wrong digit -> "probable"; DC no / invoice / date / vehicle / phone ignored; the customer's written total is picked up ("Total 6 pallets") and offered as the count
+- Result on the HHT: matched at the customer, probable (check at yard), AIS pallet that the ledger shows elsewhere, not recognised; warning when the count differs from the document
+- Optional AI reading of the photo for handwriting / unusual layouts (server setting PALLET_AI_API_KEY; off by default - the photo then goes to the AI service); merged with the HHT text
+- Photos kept on the server with the slip (up to 10 pages; queued and resent when the network is back); offline slips: text matched on the server at sync
+- Yard receiving (HHT): for Option B the pallets read from the document are the expected list - received / on document not yet / not on document - and the document photos can be opened (1x-3x zoom) while unloading
+- Web slip detail: document vs received comparison and the photos
 ## 1.13.1 (2026-10-11) — loading: part card not in the GCS is stopped ("do PDI first"); invoice qty vs loaded qty (HHT app 2.3.1)
 - A part card that is not in the GCS file (not PDI passed / invoiced for this vehicle) is refused at loading - on the HHT at once (also offline) and on the server - with "STOP: do PDI first, keep it off the vehicle"; no override. A card of another GCS still shows "wrong vehicle"
 - Finish loading compares quantity: invoice (GCS) qty vs qty on the part cards loaded, per item and in total; the HHT shows it before finishing and in the result

@@ -1,4 +1,5 @@
-// Yard in-ward: scan slip → scan each pallet (accept other-plant checkbox, damaged) → close. Developed by DT
+// Yard in-ward: scan slip → scan each pallet (accept other-plant checkbox, damaged) → close. Option B slips: the
+// pallets read from the customer's document are the expected list, and the document photo can be viewed here. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Switch, TextInput } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen } from '../ui/kit';
@@ -7,11 +8,14 @@ import { validateYardScan } from '../lib/rules';
 import { logActivity } from '../lib/db';
 import { api } from '../lib/api';
 import { state as sync, syncNow } from '../lib/sync';
+import { DocPhotos } from '../ui/docs';
 
 export default function Yard({ onBack }) {
   const [slips, setSlips] = useState([]); const [slip, setSlip] = useState(null); const [scans, setScans] = useState([]); const [accept, setAccept] = useState(false); const [damaged, setDamaged] = useState(false); const [pin, setPin] = useState(''); const [msg, toast] = useToast();
   useEffect(() => { listSlips().then(setSlips); kv.get('plant').then(p => setAccept(!!p?.accept_other_plant_default)); }, []);
-  const open = async (s) => { setSlip(s); setScans(await localScans(s.slip_no)); };
+  const [docs, setDocs] = useState({}); const [showDoc, setShowDoc] = useState(false);
+  useEffect(() => { kv.get('slip_docs').then(d => setDocs(d || {})); }, [slips]);
+  const open = async (s) => { setSlip(s); setScans(await localScans(s.slip_no)); setDocs((await kv.get('slip_docs')) || {}); };
   const onSlipScan = async (code) => { const no = code.startsWith('AIS1|RS|') ? code.split('|')[2] : code.startsWith('RTS|') ? code.split('|')[1] : code; const s = await getSlip(no); if (!s) return toast('Slip not in cache: ' + no, 'err'); open(s); };
   const onScan = async (code) => {
     const v = await validateYardScan(slip, code, accept);
@@ -23,9 +27,11 @@ export default function Yard({ onBack }) {
     setScans(await localScans(slip.slip_no)); toast(v.msg + (damaged ? ' (DAMAGED)' : ''), v.exception ? 'warn' : undefined); setDamaged(false);
     if (sync.online) syncNow().catch(() => {});
   };
-  const declared = slip ? JSON.parse(slip.pallets || '[]') : [];
+  const doc = slip ? docs[slip.slip_no] : null; const qtyOnly = slip && slip.mode !== 'A' && slip.mode !== 'B1';
+  const declared = slip ? (qtyOnly ? (doc?.doc || []) : JSON.parse(slip.pallets || '[]')) : [];
   const received = new Set(scans.map(s => s.pallet_no));
-  const short = declared.filter(p => !received.has(p)); const extra = scans.filter(s => !declared.includes(s.pallet_no));
+  const short = declared.filter(p => !received.has(p)); const extra = qtyOnly && !declared.length ? [] : scans.filter(s => !declared.includes(s.pallet_no));
+  const sref = (p) => { const m = /^AIS-[A-Z0-9]+-([A-Z0-9]+)-(\d+)-\d+$/.exec(p || ''); return m ? `${m[1]}-${m[2]}` : p; };
   const close = async () => {
     if (!sync.online) return toast('Closing needs the server; scans are saved and will sync.', 'warn');
     try { await syncNow(); const r = await api(`/slips/${slip.slip_no}/close`, { method: 'POST', body: { supervisor_pin: pin || null } }); toast(`Closed: received ${r.received}, short ${r.short.length}`); logActivity('SLIP_CLOSE', slip.slip_no, `received ${r.received}, short ${r.short.length}`); setSlip(null); await syncNow(); setSlips(await listSlips()); }
@@ -40,18 +46,20 @@ export default function Yard({ onBack }) {
   return (<Screen><Header title={slip.slip_no} sub={`Customer ${slip.customer} · mode ${slip.mode} · declared ${slip.qty}`} onBack={() => setSlip(null)} />
     <View style={[S.pad, { paddingBottom: 0 }]}>
       <Glass><View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-        <Ring value={scans.length} label="received" color={C.ok} size={76} />
-        <Ring value={short.length} label="short" color={short.length ? C.warn : C.ok} size={76} />
-        <Ring value={extra.length} label="excess/other" color={extra.length ? C.amber : C.accent} size={76} />
+        <Ring value={qtyOnly ? `${scans.length}/${slip.qty}` : scans.length} label={qtyOnly ? 'received / count' : 'received'} color={qtyOnly && scans.length !== slip.qty ? C.amber : C.ok} size={76} />
+        <Ring value={short.length} label={qtyOnly ? 'on doc, not yet' : 'short'} color={short.length ? C.warn : C.ok} size={76} />
+        <Ring value={extra.length} label={qtyOnly ? 'not on doc' : 'excess/other'} color={extra.length ? C.amber : C.accent} size={76} />
       </View></Glass>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
         {[['accept', accept, setAccept, 'Accept other-plant', C.accent], ['dmg', damaged, setDamaged, 'Next scan = DAMAGED', C.warn]].map(([k, v, set, l, c]) => <TouchableOpacity key={k} onPress={() => set(!v)} activeOpacity={0.8} style={[S.btnS, { flex: 1, marginTop: 0, minHeight: 44, justifyContent: 'center', backgroundColor: v ? c : undefined, borderColor: v ? c : C.accent }]}><Text style={[S.btnSText, v ? { color: '#fff' } : null]}>{v ? '✓ ' : ''}{l}</Text></TouchableOpacity>)}
       </View>
+      {doc ? <TouchableOpacity onPress={() => doc.photos ? setShowDoc(true) : null} style={[S.btnS, { marginTop: 0, marginBottom: 6, flexDirection: 'row', justifyContent: 'center', gap: 6 }]}><Text style={S.btnSText}>📄 Customer document · {doc.read ?? doc.doc.length} read, {doc.doc.length} matched{doc.photos ? ` · view ${doc.photos} photo(s)` : ' · photo not uploaded yet'}</Text></TouchableOpacity> : qtyOnly ? <Text style={[S.mute, { marginBottom: 6 }]}>Option B count only, no customer document photo - scan every pallet.</Text> : null}
       <ScanInput onScan={onScan} placeholder="Scan pallet tag" />
     </View>
     <FlatList style={{ flex: 1, paddingHorizontal: 14, marginTop: 8 }} data={[...scans].reverse()} keyExtractor={x => String(x.id)} renderItem={({ item }) => (
-      <View style={[S.card, { paddingVertical: 8, marginBottom: 6, flexDirection: 'row' }]}><Text style={{ flex: 1, fontWeight: '600' }}>{item.pallet_no}</Text>{!declared.includes(item.pallet_no) ? <Pill s="EXCEPTION" /> : null}</View>)}
-      ListFooterComponent={short.length ? <View style={[S.card, { borderLeftWidth: 4, borderLeftColor: C.warn }]}><Text style={S.h2}>Not yet received</Text><Text style={S.mute}>{short.join('  ·  ')}</Text></View> : null} />
+      <View style={[S.card, { paddingVertical: 8, marginBottom: 6, flexDirection: 'row' }]}><Text style={{ flex: 1, fontWeight: '600' }}>{item.pallet_no}</Text>{declared.includes(item.pallet_no) ? (qtyOnly ? <Text style={{ color: C.ok, fontWeight: '700' }}>✓ on doc</Text> : null) : (qtyOnly && !declared.length ? null : <Pill s="EXCEPTION" />)}</View>)}
+      ListFooterComponent={short.length ? <View style={[S.card, { borderLeftWidth: 4, borderLeftColor: C.warn }]}><Text style={S.h2}>{qtyOnly ? 'On customer document, not yet received' : 'Not yet received'}</Text><Text style={S.mute}>{short.map(sref).join('  ·  ')}</Text></View> : null} />
     <View style={S.pad}><View style={S.row}><TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={pin} onChangeText={setPin} placeholder="Supervisor PIN (if exceptions)" secureTextEntry keyboardType="number-pad" /><Btn title="Reconcile & close" icon="git-compare-outline" onPress={close} color={short.length || extra.length ? C.amber : C.ok} /></View></View>
+    <DocPhotos visible={showDoc} slipNo={slip.slip_no} count={doc?.photos || 0} onClose={() => setShowDoc(false)} />
     <Toast msg={msg} /></Screen>);
 }

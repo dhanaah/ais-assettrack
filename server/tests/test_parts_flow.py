@@ -591,5 +591,41 @@ with TestClient(app) as c:
     c.delete(f"/api/v1/customers/{hm_id}/devices/{devs[0]['id']}", headers=M)
     r = c.get("/api/ext/v1/me", headers=DK)
     check(r.status_code == 401 and "not paired" in r.json()["detail"], "removed HHT is refused at once")
+    print("23. Option B: photo of the customer's manual document -> pallets read and matched, photo kept, yard compares")
+    with SessionLocal() as db:
+        for i, (t, n) in enumerate([("F", 5001), ("F", 5002), ("NF", 5003), ("RW", 5004), ("F", 15005)]):
+            db.add(models.Pallet(pallet_no=f"AIS-CHN-{t}-{n:05d}-009{i:04d}", home_plant="CHN", status="AT_CUSTOMER", customer_code="HMIL", load_state="EMPTY"))
+        db.commit()
+    text = ("HYUNDAI MOTOR INDIA - RETURNABLE DC No 7781  Date 11-10-2026\nVehicle TN09AB4321\n1  F-5001\n2  F.5OO2\n3  NF 5003\n"
+            "4  RW-5O04\n5  F 15006\n6  X-99881\nTotal 6 pallets")
+    m = c.post("/api/v1/slips/doc-match", headers=H, json={"customer_code": "HMIL", "text": text}).json()
+    mt = {x["ref"]: x["how"] for x in m["matched"]}; pb = {x["ref"]: x["how"] for x in m["probable"]}
+    check(set(mt) == {"F-05001", "F-05002", "NF-05003", "RW-05004"} and pb.get("F-15005") == "one digit differs" and "X-99881" in " ".join(m["unread"]),
+          f"document read: 4 matched (O->0 fixed), F 15006 -> probable F-15005, X-99881 unread; DC no / date ignored: {mt} {pb} {m['unread']}")
+    rd = c.post("/api/v1/slips/doc-read", headers=H, data={"customer_code": "HMIL", "device_text": text}, files={"file": ("p.jpg", b"\xff\xd8x", "image/jpeg")}).json()
+    check(rd["stated_total"] == 6 and len(rd["matched"]) == 4 and rd["ai"] is False, f"photo page read on the server: stated total {rd['stated_total']}, AI off -> HHT text used")
+    import app.docread as _dr
+    _old = _dr.ai_text; _dr.ai_text = lambda img, mt="image/jpeg": "F-5001\nRW 5004\nF-15005\nTOTAL=5"
+    rd = c.post("/api/v1/slips/doc-read", headers=H, data={"customer_code": "HMIL", "device_text": "illegible scrawl"}, files={"file": ("p.jpg", b"\xff\xd8x", "image/jpeg")}).json()
+    _dr.ai_text = _old
+    check(rd["ai"] and rd["stated_total"] == 5 and {x["ref"] for x in rd["matched"]} == {"F-05001", "RW-05004", "F-15005"},
+          f"AI reading (handwriting) merged and matched: {[x['ref'] for x in rd['matched']]}, total {rd['stated_total']}")
+    docp = [x["pallet_no"] for x in m["matched"] + m["probable"]]
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 6, "vehicle_no": "TN09AB4321",
+                                                 "doc_pallets": docp, "doc_unread": m["unread"], "doc_text": text, "doc_read_qty": m["read"]}).json()
+    bno = r["slip_no"]
+    check(r["status"] == "PENDING_VERIFICATION" and r["declared_qty"] == 6 and r["doc_read_qty"] == 6, f"Option B slip keeps the count 6 and the document read ({r['warnings']})")
+    up = c.post(f"/api/v1/slips/{bno}/doc-photo", headers=H, files={"file": ("doc.jpg", b"\xff\xd8\xff fake jpeg", "image/jpeg")}).json()
+    ph = c.get(f"/api/v1/slips/{bno}/doc-photo/1", headers=P if False else H)
+    check(up["photos"] == 1 and ph.status_code == 200 and ph.content.startswith(b"\xff\xd8"), "photo of the document kept on the server and viewable")
+    for pn in ("AIS-CHN-F-05001-0090000", "AIS-CHN-NF-05003-0090002", "AIS-CHN-F-05002-0090001"):
+        ev(c, H, "PALLET_SCAN_YARD", {"slip_no": bno, "scanned": pn})
+    r2 = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 2, "vehicle_no": "TN09AB4322", "doc_text": "1 RW-5004  2 F 15005"}).json()
+    with SessionLocal() as db:
+        dp2 = db.get(models.ReturnSlip, r2["slip_no"]).doc_pallets
+    check("AIS-CHN-RW-05004-0090003" in dp2 and "AIS-CHN-F-15005-0090004" in dp2, "slip made offline with only the photo text: matched on the server at sync")
+    d = c.get(f"/api/v1/slips/{bno}", headers=H).json()["doc"]
+    check(d["received"] == 3 and sorted(d["on_doc_not_received"]) == ["F-15005", "RW-05004"] and d["received_not_on_doc"] == [],
+          f"yard receiving compared with the document: {d}")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

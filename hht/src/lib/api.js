@@ -2,7 +2,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 
-export const APP_VERSION = '2.3.1';
+export const APP_VERSION = '2.4.0';
 let token = null, baseUrl = null, deviceHeader = 'HHT';
 export const setApiDevice = (id) => { deviceHeader = id; };
 
@@ -85,3 +85,20 @@ export async function login(user_id, password, device_id) {
   return r;
 }
 export const me = async () => kv.get('me');
+
+/** Multipart upload (photos): fields + one file {uri, name, type}. Tries the active server address only. */
+export async function apiUpload(path, fields = {}, file = null, timeout = 60000) {
+  const url = getActiveServer(); const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
+  const fd = new FormData();
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, v == null ? '' : String(v)));
+  if (file) fd.append('file', { uri: file.uri, name: file.name || 'photo.jpg', type: file.type || 'image/jpeg' });
+  try {
+    const r = await fetch(url + '/api/v1' + path, { method: 'POST', body: fd, signal: ctl.signal,
+      headers: { 'X-Device': 'HHT', 'X-Device-Id': deviceHeader, 'X-App-Version': APP_VERSION, ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new ApiError(typeof j.detail === 'string' ? j.detail : (r.statusText || 'Server error'), r.status);
+    return j;
+  } catch (e) { if (e instanceof ApiError) throw e; throw new ApiError('Server unreachable', 0, true); } finally { clearTimeout(t); }
+}
+/** Image source for a server picture (needs the login token). */
+export const serverImage = (path) => ({ uri: getActiveServer() + '/api/v1' + path, headers: { Authorization: 'Bearer ' + token, 'X-Device': 'HHT' } });

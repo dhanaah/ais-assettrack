@@ -31,6 +31,8 @@ export async function syncNow({ full = false } = {}) {
         await markDoc(d.doc_no, e.status === 400 && /exists/i.test(e.message) ? 'DONE' : 'FAILED', e.message);
       }
     }
+    // 1b photos of customer documents waiting for their slip (Option B)
+    try { await require('./docscan').sendPhotos(); } catch (e) { }
     // 2 push events in batches of 100
     let batch;
     while ((batch = await pendingEvents(100)).length) {

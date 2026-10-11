@@ -370,6 +370,12 @@ class ReturnSlip(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
     remarks: Mapped[str | None] = mapped_column(String(250))
+    # Option B: photo of the customer's manual document, read on the HHT and matched to the ledger
+    doc_pallets: Mapped[str | None] = mapped_column(Text)        # JSON [pallet_no] matched / probable
+    doc_unread: Mapped[str | None] = mapped_column(Text)         # JSON [text] pallet-like numbers not matched
+    doc_text: Mapped[str | None] = mapped_column(Text)           # text read from the photo(s)
+    doc_read_qty: Mapped[int | None] = mapped_column(Integer)    # pallet numbers found on the document
+    doc_photos: Mapped[str | None] = mapped_column(Text)         # JSON [file name]
 
 
 class ReturnSlipLine(Base):

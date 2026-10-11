@@ -1,7 +1,10 @@
 """Pick lists (dispatch) and return slips (return) - document level operations.
 EBS SO posting and GCS calls are stubs behind integration.py; they queue for retry."""
 import os
-from fastapi import APIRouter, Depends, HTTPException, Request
+import re
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import FileResponse
+import json
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, services, integration, lpn as lpnsvc
@@ -573,6 +576,10 @@ class SlipIn(BaseModel):
     driver_name: str | None = None
     driver_mobile: str | None = None
     remarks: str | None = None
+    doc_pallets: list[str] = []         # Option B: pallets read from the photo of the customer's document
+    doc_unread: list[str] = []
+    doc_text: str | None = None
+    doc_read_qty: int | None = None
 
 
 @router.get("/slips")
@@ -593,7 +600,7 @@ def get_slip(no: str, p: Principal = Depends(current_user), db: Session = Depend
         raise HTTPException(404, "Not found")
     p.require_plant(sl.plant_code)
     lines = db.query(models.ReturnSlipLine).filter_by(slip_no=no).all()
-    return {"slip": row(sl), "lines": [row(l) for l in lines]}
+    return {"slip": row(sl), "lines": [row(l) for l in lines], "doc": doc_compare(db, sl)}
 
 
 @router.post("/slips")
@@ -629,6 +636,17 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
         if not body.declared_qty:
             raise HTTPException(400, "declared_qty required for B2")
         sl.declared_qty = body.declared_qty; sl.status = "PENDING_VERIFICATION"
+        if body.doc_text and not body.doc_pallets:   # read offline on the HHT: match now on the server
+            from .. import docread
+            dm = docread.match(db, p.plant, cust.code, body.doc_text)
+            body.doc_pallets = [x["pallet_no"] for x in dm["matched"] + dm["probable"]]; body.doc_unread = dm["unread"]
+            body.doc_read_qty = body.doc_read_qty or dm["read"]
+        if body.doc_pallets or body.doc_text:
+            pals = [x for x in dict.fromkeys(body.doc_pallets) if db.get(models.Pallet, x)][:500]
+            sl.doc_pallets = json.dumps(pals); sl.doc_unread = json.dumps(body.doc_unread[:60])
+            sl.doc_text = (body.doc_text or "")[:20000]; sl.doc_read_qty = body.doc_read_qty if body.doc_read_qty is not None else len(pals)
+            if sl.doc_read_qty and sl.doc_read_qty != body.declared_qty:
+                warnings.append(f"Document shows {sl.doc_read_qty} pallet number(s), count entered {body.declared_qty}")
     else:
         if not body.pallets:
             raise HTTPException(400, "pallet list required")
@@ -658,6 +676,78 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
     audit(db, p, "RETURN_SLIP_CREATE", "slip", no, None, body.model_dump(), request)
     db.commit()
     return row(sl) | {"warnings": warnings}
+
+
+class DocMatchIn(BaseModel):
+    customer_code: str
+    text: str
+
+
+@router.post("/slips/doc-match")
+def slip_doc_match(body: DocMatchIn, p: Principal = Depends(hht("RETURN_SLIP_B")), db: Session = Depends(get_db)):
+    """Text read from the photo of the customer's manual document -> pallet numbers matched to the ledger."""
+    from .. import docread
+    return docread.match(db, p.plant, body.customer_code, body.text)
+
+
+@router.post("/slips/doc-read")
+async def slip_doc_read(request: Request, customer_code: str = Form(...), device_text: str = Form(""), file: UploadFile | None = File(None),
+                        p: Principal = Depends(hht("RETURN_SLIP_B")), db: Session = Depends(get_db)):
+    """Photo page of the customer's document: the HHT's text (+ AI reading when enabled) -> pallets matched to the ledger."""
+    from .. import docread
+    img = await file.read() if file is not None else None
+    return docread.read(db, p.plant, customer_code, device_text, img if img and len(img) < 8_000_000 else None)
+
+
+def _doc_dir():
+    from ..gcsprint import docs_dir
+    d = os.path.join(os.path.dirname(docs_dir()), "slip_docs"); os.makedirs(d, exist_ok=True); return d
+
+
+@router.post("/slips/{no}/doc-photo")
+async def slip_doc_photo(no: str, request: Request, file: UploadFile = File(...), p: Principal = Depends(hht("RETURN_SLIP_B")), db: Session = Depends(get_db)):
+    """Photo of the customer's document kept with the slip (evidence)."""
+    sl = db.get(models.ReturnSlip, no)
+    if not sl:
+        raise HTTPException(404, "Slip not found")
+    p.require_plant(sl.plant_code)
+    data = await file.read()
+    if len(data) > 8_000_000:
+        raise HTTPException(400, "Photo too large")
+    photos = json.loads(sl.doc_photos or "[]")
+    if len(photos) >= 10:
+        raise HTTPException(400, "10 photos already kept for this slip")
+    name = f"{re.sub(r'[^A-Za-z0-9]+', '_', no)}_{len(photos) + 1}.jpg"
+    with open(os.path.join(_doc_dir(), name), "wb") as f:
+        f.write(data)
+    photos.append(name); sl.doc_photos = json.dumps(photos)
+    audit(db, p, "SLIP_DOC_PHOTO", "slip", no, None, {"file": name, "bytes": len(data)}, request)
+    db.commit()
+    return {"ok": True, "photos": len(photos)}
+
+
+@router.get("/slips/{no}/doc-photo/{i}")
+def slip_doc_photo_get(no: str, i: int, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    sl = db.get(models.ReturnSlip, no)
+    if not sl:
+        raise HTTPException(404, "Not found")
+    p.require_plant(sl.plant_code)
+    photos = json.loads(sl.doc_photos or "[]")
+    if not 1 <= i <= len(photos):
+        raise HTTPException(404, "No such photo")
+    return FileResponse(os.path.join(_doc_dir(), photos[i - 1]), media_type="image/jpeg")
+
+
+def doc_compare(db, sl) -> dict | None:
+    """Pallets read from the customer's document vs pallets received at the yard (Option B knock-off)."""
+    if not sl.doc_pallets:
+        return None
+    doc = json.loads(sl.doc_pallets or "[]")
+    got = [l.pallet_no for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no, received=True).all()]
+    return {"doc_qty": sl.doc_read_qty, "declared_qty": sl.declared_qty, "received": len(got),
+            "on_doc_not_received": [services.short_ref(x) for x in doc if x not in got],
+            "received_not_on_doc": [services.short_ref(x) for x in got if x not in doc],
+            "unread": json.loads(sl.doc_unread or "[]")}
 
 
 class GateInIn(BaseModel):
@@ -760,7 +850,7 @@ def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(
         integration.close_gcs_inward(db, sl, received)
     audit(db, p, "RETURN_SLIP_CLOSE", "slip", no, None, {"received": received, "short": len(short), "exceptions": len(exc), "remarks": body.remarks}, request)
     db.commit()
-    return row(sl) | {"received": received, "short": [l.pallet_no for l in short], "exceptions": [(l.pallet_no, l.exception) for l in exc]}
+    return row(sl) | {"received": received, "short": [l.pallet_no for l in short], "exceptions": [(l.pallet_no, l.exception) for l in exc], "doc": doc_compare(db, sl)}
 
 
 @router.post("/slips/{no}/resolve/{pallet_no}")

@@ -256,7 +256,9 @@ def pull(request: Request, since: datetime | None = None, p: Principal = Depends
                  for k in db.query(models.PickList).filter(models.PickList.plant_code == p.plant,
                                                            models.PickList.status.in_(["OPEN", "SO_PENDING", "READY", "PDI_PENDING", "PDI_TXN_PENDING"])).all()]
     slips = [{"slip_no": sl.slip_no, "customer": sl.customer_code, "mode": sl.mode, "qty": sl.declared_qty, "status": sl.status,
-              "pallets": [l.pallet_no for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no, declared=True).all()]}
+              "pallets": [l.pallet_no for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no, declared=True).all()],
+              "doc": __import__("json").loads(sl.doc_pallets or "[]"), "doc_read": sl.doc_read_qty,
+              "doc_photos": len(__import__("json").loads(sl.doc_photos or "[]"))}
              for sl in db.query(models.ReturnSlip).filter(models.ReturnSlip.plant_code == p.plant, models.ReturnSlip.status != "CLOSED").all()]
     customers = [{"code": c.code, "name": c.name, "return_mode": c.return_mode} for c in db.query(models.Customer).filter_by(plant_code=p.plant, active=True).all()]
     plant = db.get(models.Plant, p.plant)
