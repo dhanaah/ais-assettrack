@@ -1,0 +1,11 @@
+// TEMP (screenshots): web shims
+const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
+const config = getDefaultConfig(__dirname);
+const map = { 'expo-sqlite': 'sqlite.js', 'expo-secure-store': 'securestore.js', 'react-native-ble-plx': 'empty.js', 'react-native-bluetooth-classic': 'empty.js', '@react-native-ml-kit/text-recognition': 'ocr.js', 'expo-application': 'application.js', 'expo-keep-awake': 'keepawake.js' };
+const orig = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (ctx, name, platform) => {
+  if (platform === 'web' && map[name]) return { type: 'sourceFile', filePath: path.join(__dirname, '.webshim', map[name]) };
+  return (orig || ctx.resolveRequest)(ctx, name, platform);
+};
+module.exports = config;
