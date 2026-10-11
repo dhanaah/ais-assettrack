@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## 1.13.1 (2026-10-11) — loading: part card not in the GCS is stopped ("do PDI first"); invoice qty vs loaded qty (HHT app 2.3.1)
+- A part card that is not in the GCS file (not PDI passed / invoiced for this vehicle) is refused at loading - on the HHT at once (also offline) and on the server - with "STOP: do PDI first, keep it off the vehicle"; no override. A card of another GCS still shows "wrong vehicle"
+- Finish loading compares quantity: invoice (GCS) qty vs qty on the part cards loaded, per item and in total; the HHT shows it before finishing and in the result
 ## 1.13.0 (2026-10-11) — return slip rules, other-plant returns on challan, any portable printer, scanner / camera switch (HHT app 2.3.0)
 - Return slips only by: customer staff on the customer HHT (Option A, pallets scanned) and IN-gate security (Option B, number of pallets only - the pallets are scanned and the slip knocked off at pallet-yard receiving). AIS users can no longer make Option A slips; older HHTs sending B1 lists are kept as a count
 - Pallets from another AIS plant: only on that plant's challan - a return slip naming a plant is refused; the IN gate scans the challan QR (or challan number), checks it is addressed to this plant and gated out at the sender, and records the inward; pallets are received at the yard

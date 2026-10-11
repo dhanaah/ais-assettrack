@@ -311,6 +311,15 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
                  "missing_lpns": sorted(exp - got) if exp else [], "extra_lpns": sorted(got - exp) if exp else [],
                  "missing_pallets": sorted(services.short_ref(x) for x in exp_pal - got_pal),
                  "extra_pallets": sorted(services.short_ref(x) for x in got_pal - exp_pal) if exp_pal else []}
+        # quantity: invoice (GCS) qty vs qty on the part cards loaded, per item and in total
+        inv, ld = {}, {}
+        for it in db.query(models.PickListItem).filter_by(picklist_no=no).all():
+            key = (it.part_no or "").upper(); inv[key] = inv.get(key, 0) + (it.qty or 0)
+        for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all():
+            key = (r.part_no or "").upper(); ld[key] = ld.get(key, 0) + (r.qty or 0)
+        check["invoice_qty"] = sum(inv.values()); check["loaded_qty"] = sum(ld.values())
+        check["qty_diff"] = [{"part_no": key or "?", "invoice_qty": inv.get(key, 0), "loaded_qty": ld.get(key, 0), "diff": ld.get(key, 0) - inv.get(key, 0)}
+                             for key in sorted(set(inv) | set(ld)) if inv.get(key, 0) != ld.get(key, 0)] if inv else []
         k.qty = scanned; k.part_qty = lpnsvc.picked_qty(db, no) or k.part_qty
         plant = db.get(models.Plant, k.plant_code)
         cust = db.query(models.Customer).filter_by(code=k.customer_code, plant_code=k.plant_code).first()

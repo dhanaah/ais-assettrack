@@ -46,7 +46,7 @@ export default function Dock({ onBack, yard = false }) {
     const v = await validateDockScan2(pk.picklist_no, first, second);
     if (!v.ok) {
       if (v.needPallet) { setWaitLpn(v.lpn); return toast(v.msg, 'warn'); }
-      setWaitLpn(null); toast(v.msg, v.dup ? 'warn' : 'err'); logActivity('SCAN_REJECTED_LOCAL', pk.picklist_no, v.msg, { scanned: code }); return;
+      setWaitLpn(null); if (v.stop) setAlert(v.msg); toast(v.msg, v.dup ? 'warn' : 'err'); logActivity('SCAN_REJECTED_LOCAL', pk.picklist_no, v.msg, { scanned: code }); return;
     }
     setWaitLpn(null);
     if (!(await localScans(pk.picklist_no)).some(x => x.pallet_no === v.pallet.pallet_no)) await addLocalScan(pk.picklist_no, v.pallet.pallet_no);
@@ -72,7 +72,7 @@ export default function Dock({ onBack, yard = false }) {
     if (!complete) return toast(isPart(pk) ? `Pick List Control: part ${picked} vs ${pk.part_qty}` : `Pick List Control: ${scans.length} scanned vs qty ${pk.qty}`, 'err');
     if (!sync.online) return toast('Confirm needs the server (offline). Scans are saved; confirm when online.', 'warn');
     if (isYard(pk) && !(await new Promise(res => Alert.alert('Finish loading', `${scans.length} empty pallets → ${pk.to_plant}. Make the challan now?`, [{ text: 'Cancel', onPress: () => res(false) }, { text: 'Finish & challan', onPress: () => res(true) }])))) return;
-    if (isGcs(pk) && !(await new Promise(res => Alert.alert('Finish loading', `${scans.length} pallet(s) loaded on ${pk.vehicle_no || 'the vehicle'} for GCS ${pk.gcs_no}. Make the challan and the gate QR now?`, [{ text: 'Not yet', onPress: () => res(false) }, { text: 'Finish loading', onPress: () => res(true) }])))) return;
+    if (isGcs(pk) && !(await new Promise(res => Alert.alert('Finish loading', `${scans.length} pallet(s) loaded on ${pk.vehicle_no || 'the vehicle'} for GCS ${pk.gcs_no}.${items && items.length ? `\nQty: invoice ${items.reduce((a, i) => a + (i.qty || 0), 0)} · loaded ${lpns.reduce((a, l) => a + (l.qty || 0), 0)}${items.reduce((a, i) => a + (i.qty || 0), 0) !== lpns.reduce((a, l) => a + (l.qty || 0), 0) ? '  ⚠ NOT MATCHING' : '  ✓'}` : ''}\nMake the challan and the gate QR now?`, [{ text: 'Not yet', onPress: () => res(false) }, { text: 'Finish loading', onPress: () => res(true) }])))) return;
     try { await syncNow(); const r = await api(`/picklists/${pk.picklist_no}/confirm`, { method: 'POST' });
       if (isGcs(pk)) { setResult({ ...r, pk }); logActivity('GCS_LOADED', pk.picklist_no, r.challan_no); }
       else if (isYard(pk)) { if (r.challan_no) Alert.alert('Challan ready', `Challan ${r.challan_no}\nE-way bill ${r.ewaybill_no || '-'}\n${r.qty} pallets → ${pk.to_plant}\n\nPrint it from the web Pick Lists page; logistics approval and OUT gate as usual.`); else Alert.alert('Loading finished', r.challan_message || 'Challan pending'); }
@@ -82,8 +82,10 @@ export default function Dock({ onBack, yard = false }) {
 
   if (result) return (<Screen><Header title="Loading complete" sub={`GCS ${result.gcs_no} · ${result.vehicle_no || ''}`} onBack={() => { setResult(null); setPk(null); }} /><Page>
     <Glass style={{ alignItems: 'center' }}><Ring value={String(result.scanned ?? result.qty)} label="pallets loaded" color={C.ok} size={92} /></Glass>
-    {result.gcs_check && (result.gcs_check.missing_lpns.length || result.gcs_check.extra_lpns.length || (result.gcs_check.missing_pallets || []).length || (result.gcs_check.expected_pallets && result.gcs_check.expected_pallets !== result.gcs_check.loaded_pallets)) ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.warn }]}>
+    {result.gcs_check && (result.gcs_check.missing_lpns.length || result.gcs_check.extra_lpns.length || (result.gcs_check.missing_pallets || []).length || (result.gcs_check.qty_diff || []).length || (result.gcs_check.expected_pallets && result.gcs_check.expected_pallets !== result.gcs_check.loaded_pallets)) ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.warn }]}>
       <Text style={[S.h2, { color: C.warn }]}>Check with the GCS</Text>
+      {(result.gcs_check.qty_diff || []).length ? <><Text style={[S.body, { fontWeight: '700' }]}>Qty: invoice {result.gcs_check.invoice_qty}, loaded {result.gcs_check.loaded_qty}</Text>
+        {result.gcs_check.qty_diff.slice(0, 10).map(d => <Text key={d.part_no} style={S.body}>{d.part_no}: invoice {d.invoice_qty} · loaded {d.loaded_qty} ({d.diff > 0 ? '+' : ''}{d.diff})</Text>)}</> : null}
       {result.gcs_check.expected_pallets && result.gcs_check.expected_pallets !== result.gcs_check.loaded_pallets ? <Text style={S.body}>Pallets: GCS {result.gcs_check.expected_pallets}, loaded {result.gcs_check.loaded_pallets}</Text> : null}
       {(result.gcs_check.missing_pallets || []).length ? <Text style={S.body}>Pallets in GCS not loaded ({result.gcs_check.missing_pallets.length}): {result.gcs_check.missing_pallets.slice(0, 8).join(', ')}{result.gcs_check.missing_pallets.length > 8 ? ' …' : ''}</Text> : null}
       {(result.gcs_check.extra_pallets || []).length ? <Text style={S.body}>Pallets loaded but not in GCS ({result.gcs_check.extra_pallets.length}): {result.gcs_check.extra_pallets.slice(0, 8).join(', ')}</Text> : null}

@@ -540,7 +540,12 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
     if kind == "LPN" and is_gcs(pk):           # check against the part cards listed in the GCS file
         exp = db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no)
         if exp.count() and not exp.filter(models.GcsLpn.lpn_no == l.lpn_no).count():
-            alerts.append(f"LPN {l.lpn_no} is NOT in GCS {pk.gcs_no} - check the invoice / part card")
+            other = (db.query(models.GcsLpn, models.PickList).join(models.PickList, models.PickList.picklist_no == models.GcsLpn.picklist_no)
+                     .filter(models.GcsLpn.lpn_no == l.lpn_no, models.PickList.status == "OPEN").first())
+            if other:
+                raise RuleError(f"Part card {l.lpn_no} belongs to GCS {other[1].gcs_no} - wrong vehicle")
+            # not on this GCS = not PDI-passed / invoiced for this vehicle: stop, no override
+            raise RuleError(f"Part card {l.lpn_no} is NOT in GCS {pk.gcs_no} - not PDI passed for this vehicle. STOP: do PDI first, keep it off the vehicle")
     if is_gcs(pk) and kind in ("PALLET", "LPN"):  # pallet checks: GCS file names the pallets by type + serial
         p_chk = pal
         if pallet_scan:

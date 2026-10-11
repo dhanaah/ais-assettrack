@@ -1,5 +1,5 @@
 // Offline validation - same rules as the server, applied to the local cache. Developed by DT
-import { resolveTag, getPicklist, localScans, localScanExists, kv, getLpn, lpnsOnPallet, lpnScans, parsePalletQr } from './db';
+import { resolveTag, getPicklist, localScans, localScanExists, kv, getLpn, lpnsOnPallet, lpnScans, parsePalletQr, gcsCardCount } from './db';
 
 const PART_TYPES = ['CUSTOMER', 'STOCK_TRANSFER'];
 const DISPATCH_ZONES = ['FGWH', 'PACKING'];
@@ -39,6 +39,13 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
     return { ok: true, pallet, lpns: [], warn };
   }
   if (pk.source === 'GCS') {
+    // part cards must be on this GCS (= PDI passed and invoiced for this vehicle) - otherwise stop: do PDI first
+    if (!lpn && !pallet && scanned.includes('.')) lpn = await getLpn(scanned.trim().split('.').pop());
+    const cardNo = lpn ? lpn.lpn : (!pallet ? scanned.trim().split('.').pop().toUpperCase() : null);
+    if (cardNo && await gcsCardCount(picklist_no) && !(lpn && (lpn.reserved_for === picklist_no || lpn.picklist === picklist_no))) {
+      if (lpn && lpn.reserved_for && String(lpn.reserved_for).startsWith('GCS-')) return { ok: false, stop: true, msg: `Part card ${cardNo} belongs to another GCS - wrong vehicle` };
+      return { ok: false, stop: true, msg: `Part card ${cardNo} is NOT in GCS ${pk.gcs_no || ''} - not PDI passed for this vehicle.\nSTOP: do PDI first, keep it off the vehicle.` };
+    }
     if (lpn && !pallet) { if (lpn.pallet) pallet = (await resolveTag(lpn.pallet)).pallet; if (!pallet) return { ok: false, needPallet: true, lpn, msg: `Part card ${lpn.lpn} - now scan the pallet it is on` }; }
     if (!lpn && !pallet) { if (palletScan) return { ok: false, msg: `Unknown pallet ${palletScan}` }; return { ok: false, needPallet: true, lpn: { lpn: scanned, qty: 0, part: pk.part_no }, msg: `Part card ${scanned} - now scan the pallet it is on` }; }
     if (pallet.home !== plant) return { ok: false, msg: `Foreign pallet ${pallet.pallet_no} (${pallet.home})` };

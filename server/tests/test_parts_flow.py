@@ -488,12 +488,14 @@ with TestClient(app) as c:
     check(e["status"] == "REJECTED" and "wrong vehicle" in e["result"] and "NF-07944" in e["result"], f"pallet of GCS 12823 refused on 12814: {e['result'][:70]}")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "P99999999", "pallet": "CHN-P043"})
     msg = (e.get("result") or "") + str(e.get("alerts") or "")
-    check(e["status"] in ("APPLIED", "EXCEPTION") and "NOT in GCS" in msg, f"part card + pallet not in the GCS file -> warning: {msg[:110]}")
+    check(e["status"] == "REJECTED" and "NOT in GCS" in msg and "do PDI" in msg, f"part card not in the GCS file -> stopped, do PDI: {msg[:120]}")
     r = c.post(f"/api/v1/picklists/{no20}/confirm", headers=H).json()
     gc = r.get("gcs_check") or {}
-    check(r["status"] == "APPROVED" and len(gc.get("missing_lpns", [])) == 4 and gc.get("extra_lpns") == ["P99999999"] and gc.get("expected_pallets") == 6
-          and gc.get("missing_pallets") == [] and gc.get("extra_pallets") == ["CHN-P043"],
-          f"finish loading reports the gap: 4 part cards not scanned, 1 extra card, extra pallet CHN-P043: {gc}")
+    check(r["status"] == "APPROVED" and len(gc.get("missing_lpns", [])) == 4 and gc.get("extra_lpns") == [] and gc.get("expected_pallets") == 6
+          and gc.get("missing_pallets") == [] and gc.get("extra_pallets") == [],
+          f"finish loading reports the gap: 4 part cards not scanned, nothing extra (non-PDI card was stopped): {gc}")
+    check(gc.get("invoice_qty") == 720 and gc.get("loaded_qty") == 240 and any(d["diff"] == -480 for d in gc.get("qty_diff", [])),
+          f"finish loading compares quantity: invoice 720, loaded 240 (short 480): {gc.get('qty_diff')}")
     rd = PdfReader(_io.BytesIO(c.get(f"/api/v1/picklists/{no20}/gcs.pdf", headers=W).content)); gt = rd.pages[0].extract_text()
     check(all(x in gt for x in ("FGCHN2627/12814", "WEBASTO ROOFSYSTEMS", "LCV23", "5711605A", "720.00", "1,105,304.16")), "gate pass PDF from the real file")
     hdr, *rows = real[0][1].decode().splitlines()

@@ -70,6 +70,7 @@ export async function resolveTag(scanned) {
   if (!p) { const t = await d.getFirstAsync('SELECT * FROM tags WHERE tag=?', s); if (t && t.pallet) p = await d.getFirstAsync('SELECT * FROM pallets WHERE pallet_no=?', t.pallet); if (!p && t) return { tag: t, pallet: null }; }
   return { tag: null, pallet: p || null };
 }
+export const gcsCardCount = async (ref) => ((await (await openDb()).getFirstAsync('SELECT COUNT(*) c FROM lpns WHERE reserved_for=? OR picklist=?', ref, ref))?.c || 0);
 export const getLpn = async (s) => (await openDb()).getFirstAsync('SELECT * FROM lpns WHERE lpn=?', String(s).trim());
 export const lpnsOnPallet = async (pallet) => (await openDb()).getAllAsync("SELECT * FROM lpns WHERE pallet=? AND status IN ('AVAILABLE','RESERVED','PICKED','PDI_OK')", pallet);
 export const setLpnLocal = async (lpn, fields) => {
