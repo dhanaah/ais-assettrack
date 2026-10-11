@@ -101,14 +101,15 @@ export function Pending({ onBack }) {
   </Page></Screen>);
 }
 
-export function Settings({ onBack, deviceId, onTheme, onUi }) {
+export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra }) {
   const [srv, setSrv] = useState(getServer()); const [printers, setPrinters] = useState([]); const [sel, setSel] = useState(null); const [selName, setSelName] = useState(null); const [paper, setPaper] = useState('58'); const [busy, setBusy] = useState(false); const [msg, toast] = useToast();
   const [sound, setSound] = useState(soundEnabled()); const [scale, setScale] = useState(T.scale || 1); const [idle, setIdle] = useState(30); const [upd, setUpd] = useState(null);
   useEffect(() => { kv.get('printer').then(setSel); kv.get('printer_name').then(setSelName); kv.get('printer_width').then(w => setPaper(w || '58')); kv.get('idle_min').then(v => setIdle(v ?? 30)); }, []);
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>
-    <View style={S.card}><Text style={S.h2}>Server name</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" autoCorrect={false} placeholder="assettrack" /><Text style={S.mute}>Ports 80 / 8001 / 8002 / 8003 are tried automatically.</Text><Btn title="Save" secondary icon="save-outline" onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId} · app v{APP_VERSION}</Text>
+    {extra || null}
+    {customer ? null : <View style={S.card}><Text style={S.h2}>Server name</Text><TextInput style={S.input} value={srv} onChangeText={setSrv} autoCapitalize="none" autoCorrect={false} placeholder="assettrack" /><Text style={S.mute}>Ports 80 / 8001 / 8002 / 8003 are tried automatically.</Text><Btn title="Save" secondary icon="save-outline" onPress={async () => { await setServer(srv); toast('Saved'); }} /><Text style={[S.mute, { marginTop: 6 }]}>Device ID: {deviceId} · app v{APP_VERSION}</Text>
       <Btn title={upd?.busy ? 'Checking…' : 'Check for app update'} secondary icon="cloud-download-outline" busy={upd?.busy} onPress={async () => { setUpd({ busy: true }); const r = await checkUpdate(); setUpd(r || { none: true }); if (!r) toast('Server has no APK published', 'warn'); else if (r.newer) toast(`v${r.version} available`, 'warn'); else toast('You have the latest version', 'ok'); }} />
-      {upd?.newer ? <Btn title={`Download v${upd.version}`} icon="download-outline" onPress={() => openUpdate(upd)} /> : null}</View>
+      {upd?.newer ? <Btn title={`Download v${upd.version}`} icon="download-outline" onPress={() => openUpdate(upd)} /> : null}</View>}
     <View style={S.card}><Text style={S.h2}>Operator feedback</Text>
       <SwitchRow label="Scan sounds" hint="High beep = OK · two beeps = warning · low buzz = rejected (vibration always on)" value={sound} onChange={async (v) => { setSound(v); await setSoundEnabled(v); if (v) feedback('ok'); }} />
       <View style={S.row}>{[['ok', 'Test OK'], ['warn', 'Warn'], ['err', 'Error']].map(([k, l]) => <TouchableOpacity key={k} onPress={() => feedback(k)} style={[S.btnS, { flex: 1, marginTop: 0 }]}><Text style={S.btnSText}>{l}</Text></TouchableOpacity>)}</View>
@@ -127,7 +128,7 @@ export function Settings({ onBack, deviceId, onTheme, onUi }) {
       {printers.map(p => <TouchableOpacity key={p.address} onPress={async () => { setBusy(true); try { await connect(p.address); await kv.set('printer_name', p.name); setSel(p.address); setSelName(p.name); toast('Connected ' + p.name); } catch (e) { toast('Cannot connect: ' + e.message, 'err'); } finally { setBusy(false); } }} style={[S.btnS, { alignItems: 'flex-start', backgroundColor: sel === p.address ? C.ok : undefined }]}><Text style={[S.btnSText, sel === p.address ? { color: '#fff' } : null]}>{p.name}  {p.address}</Text></TouchableOpacity>)}
       {sel ? <Btn title="Test print" icon="print-outline" busy={busy} onPress={async () => { setBusy(true); try { await testPrint(await kv.get('plant')); toast('Test sent - check the printer'); logActivity('PRINT_TEST', sel, 'ok'); } catch (e) { toast('Test print failed: ' + e.message, 'err'); logActivity('PRINT_TEST', sel, e.message); } finally { setBusy(false); } }} /> : null}
       <Text style={[S.mute, { marginTop: 6 }]}>Blank paper after a test = the printer does not use ESC/POS; tell DT the printer model.</Text></View>
-    <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary icon="refresh-circle-outline" onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done', sync.lastError ? 'err' : 'done'); }} /></View>
+    {customer ? null : <View style={S.card}><Text style={S.h2}>Data</Text><Btn title="Full resync of reference data" secondary icon="refresh-circle-outline" onPress={async () => { await syncNow({ full: true }); toast(sync.lastError || 'Resync done', sync.lastError ? 'err' : 'done'); }} /></View>}
     <Footer />
   </Page><Toast msg={msg} /></Screen>);
 }

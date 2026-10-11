@@ -17,6 +17,8 @@ import Yard from './src/screens/Yard';
 import ReturnSlip from './src/screens/ReturnSlip';
 import { GateIn, GateOut, Damage, Lookup, Pending, Settings } from './src/screens/Misc';
 import { Move, Receipt, Pdi, Misses } from './src/screens/Movement';
+import CustomerApp, { PairDevice } from './src/screens/Customer';
+import { loadPairing, setCustDevice } from './src/lib/custapi';
 
 /** Crash guard: a screen error shows a recovery page instead of a frozen white screen; details can be copied for DT. */
 class Guard extends React.Component {
@@ -37,6 +39,7 @@ class Guard extends React.Component {
 export default function App() {
   useKeepAwake();
   const [ready, setReady] = useState(false); const [me, setMe] = useState(null); const [screen, setScreen] = useState('home'); const [sync, setSync] = useState({ ...syncState });
+  const [cust, setCust] = useState(null); const [pairing, setPairing] = useState(false);
   const [deviceId, setDev] = useState('HHT'); const [themeKey, setThemeKey] = useState('glass'); const [uiKey, setUiKey] = useState(0); const [locked, setLocked] = useState(false); const [lookupCode, setLookupCode] = useState(null);
   const lastTouch = useRef(Date.now()); const idleMin = useRef(30);
 
@@ -46,7 +49,8 @@ export default function App() {
       const tk = (await kv.get('theme')) || 'glass'; const scale = (await kv.get('ui_scale')) || 1; applyTheme(tk, scale); setThemeKey(tk);
       idleMin.current = (await kv.get('idle_min')) ?? 30;
       const id = (await kv.get('device_id')) || ('HHT-' + (Application.getAndroidId?.() || Math.random().toString(36).slice(2, 8)).toUpperCase().slice(-8));
-      await kv.set('device_id', id); setDev(id); setDeviceId(id); setApiDevice(id);
+      await kv.set('device_id', id); setDev(id); setDeviceId(id); setApiDevice(id); setCustDevice(id);
+      setCust(await loadPairing());
       initFeedback().catch(() => { });
       const m = await getMe(); if (m && hasToken()) { setMe(m); startAutoSync(); syncNow().catch(() => { }); }
       await refreshPending(); setReady(true);
@@ -64,8 +68,12 @@ export default function App() {
   }, [me]);
 
   if (!ready) return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#eef2ff' }}><AisLogo size={80} /><Text style={{ marginTop: 12, color: '#475569' }}>AssetTrack is starting…</Text></View>;
+  // customer device (paired by QR): its own app - Option A return slips, no AIS user login
+  if (cust) return <React.Fragment key={themeKey + ':' + uiKey}><StatusBar style="light" /><Guard screen="customer" onHome={() => setUiKey(k => k + 1)}>
+    <CustomerApp deviceId={deviceId} onUnpaired={() => setCust(null)} onTheme={(k) => { setThemeKey(k); setUiKey(x => x + 1); }} onUi={() => setUiKey(x => x + 1)} /></Guard></React.Fragment>;
+  if (pairing && !me) return <PairDevice onBack={() => setPairing(false)} onPaired={async () => { setPairing(false); setCust(await loadPairing()); }} />;
   const onLogin = (r) => { logActivity('LOGIN', r.user_id, r.plant); setMe(r); setLocked(false); lastTouch.current = Date.now(); setScreen('home'); startAutoSync(); syncNow({ full: true }).catch(() => { }); };
-  if (!me || locked) return <React.Fragment key={themeKey + uiKey}><StatusBar style={T.dark ? 'light' : 'dark'} /><Login deviceId={deviceId} locked={locked && !!me} user={me?.user_id} onDone={onLogin} /></React.Fragment>;
+  if (!me || locked) return <React.Fragment key={themeKey + uiKey}><StatusBar style={T.dark ? 'light' : 'dark'} /><Login deviceId={deviceId} locked={locked && !!me} user={me?.user_id} onDone={onLogin} onCustomer={() => setPairing(true)} /></React.Fragment>;
 
   const go = (sc) => { if (sc !== 'home') logActivity('SCREEN_OPEN', sc); setScreen(sc); };
   const back = () => { setLookupCode(null); setScreen('home'); };

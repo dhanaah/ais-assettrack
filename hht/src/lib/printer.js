@@ -95,11 +95,11 @@ export function slipText(slip, plant, cols = 32) {
 const yymmddhhmm = (d = new Date()) => d.toISOString().replace(/[-T:]/g, '').slice(2, 12);
 export const slipQr = (slip, plant) => `AIS1|RS|${slip.slip_no}|${plant?.code || ''}|${slip.customer_code}|${slip.vehicle_no || ''}|${slip.declared_qty}|${yymmddhhmm()}|-`;
 
-function slipDoc(slip, plant, dots) {
+function slipDoc(slip, plant, dots, qr) {
   const p = new EscPos(dots);
   p.init().align('center').logo().line().bold(true).size(1, 2).line('PALLET RETURN SLIP').size(1, 1).bold(false)
     .line(plant?.name || plant?.code || '').line()
-    .qr(slipQr(slip, plant), { scale: dots >= 576 ? 7 : 6 }).line().bold(true).line(slip.slip_no).bold(false).line()
+    .qr(qr || slipQr(slip, plant), { scale: dots >= 576 ? 7 : 6 }).line().bold(true).line(slip.slip_no).bold(false).line()
     .align('left').rule()
     .line(`Mode    : ${slip.mode}   ${slip.date || ''}`.slice(0, p.cols))
     .line(`Customer: ${slip.customer_code}`).line(`          ${(slip.customer_name || '').slice(0, p.cols - 10)}`)
@@ -115,10 +115,11 @@ function slipDoc(slip, plant, dots) {
   return p;
 }
 
-export async function printSlip(slip, plant, copies = 2) {
-  if (!RNBC) return { printed: false, text: slipText(slip, plant), qr: slipQr(slip, plant) };
+/** qr: the server's signed QR (Option A slips from the customer HHT); without it the HHT B-slip QR is used. */
+export async function printSlip(slip, plant, copies = 2, qr = null) {
+  if (!RNBC) return { printed: false, text: slipText(slip, plant), qr: qr || slipQr(slip, plant) };
   const dots = await paperDots();
-  for (let c = 0; c < copies; c++) await send(slipDoc(slip, plant, dots));
+  for (let c = 0; c < copies; c++) await send(slipDoc(slip, plant, dots, qr));
   return { printed: true };
 }
 

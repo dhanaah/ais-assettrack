@@ -128,6 +128,22 @@ class Customer(Base):
     __table_args__ = (UniqueConstraint("code", "plant_code", name="uq_customer_plant"),)
 
 
+class CustomerDevice(Base):
+    """HHT / POS device at a customer site, paired by QR: its own key (revocable one by one), used on the customer API."""
+    __tablename__ = "customer_devices"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), index=True)
+    label: Mapped[str] = mapped_column(String(60))
+    key_prefix: Mapped[str] = mapped_column(String(12), index=True)
+    key_hash: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(40))
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime)
+    last_route: Mapped[str | None] = mapped_column(String(10))           # LAN (AIS network) | WAN (internet)
+    app_version: Mapped[str | None] = mapped_column(String(15))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class Transporter(Base):
     __tablename__ = "transporters"
     code: Mapped[str] = mapped_column(String(20), primary_key=True)

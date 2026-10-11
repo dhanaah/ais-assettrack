@@ -28,14 +28,41 @@ router = APIRouter(prefix="/api/ext/v1", tags=["external-customer"])
 admin = APIRouter(prefix="/api/v1", tags=["masters"])
 
 
-def customer_auth(x_api_key: str = Header(default=None), db: Session = Depends(get_db)) -> models.Customer:
+def customer_auth(request: Request, x_api_key: str = Header(default=None), x_route: str = Header(default=None),
+                  x_app_version: str = Header(default=None), db: Session = Depends(get_db)) -> models.Customer:
+    """Customer system key (Customer.api_key) or a paired customer HHT key (CustomerDevice)."""
     if not x_api_key or len(x_api_key) < 12:
         raise HTTPException(401, "X-API-Key header required")
     prefix = x_api_key[:8]
+    if x_api_key.startswith("aisd_"):
+        for d in db.query(models.CustomerDevice).filter(models.CustomerDevice.key_prefix == prefix, models.CustomerDevice.revoked_at.is_(None)).all():
+            if check_pw(x_api_key, d.key_hash):
+                c = db.get(models.Customer, d.customer_id)
+                if not c or not c.active:
+                    break
+                d.last_seen = utcnow(); d.last_route = (x_route or "")[:10] or None; d.app_version = (x_app_version or "")[:15] or None
+                db.commit()
+                request.state.device = d.label
+                return c
+        raise HTTPException(401, "This HHT is not paired (or was removed) - pair it again from AIS")
     for c in db.query(models.Customer).filter(models.Customer.api_key_prefix == prefix, models.Customer.active == True).all():
         if c.api_key_hash and check_pw(x_api_key, c.api_key_hash):
             return c
     raise HTTPException(401, "Invalid API key")
+
+
+@router.get("/ping")
+def ping():
+    """No key needed: the customer HHT uses it to see which address answers (AIS network or internet)."""
+    from .. import config
+    return {"app": config.APP_NAME, "version": config.APP_VERSION, "ok": True}
+
+
+@router.get("/me")
+def me(request: Request, c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
+    pl = db.get(models.Plant, c.plant_code)
+    return {"customer": c.code, "name": c.name, "plant": c.plant_code, "plant_name": pl.name if pl else c.plant_code,
+            "holding_limit_days": c.holding_limit_days, "device": getattr(request.state, "device", None)}
 
 
 @router.get("/holding")
@@ -88,8 +115,9 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
     no = services.doc_number(db, c.plant_code, "RTS")
     sl = models.ReturnSlip(slip_no=no, plant_code=c.plant_code, customer_code=c.code, mode="A", vehicle_no=body.vehicle_no.upper().replace(" ", ""),
                            customer_challan_no=body.customer_challan_no, customer_challan_date=body.customer_challan_date,
-                           driver_name=body.driver_name, driver_mobile=body.driver_mobile, source="EXT_API",
-                           created_by=f"EXT:{c.code}", remarks=(f"ref:{body.client_ref}" if body.client_ref else None) or body.remarks)
+                           driver_name=body.driver_name, driver_mobile=body.driver_mobile,
+                           source="CUST_HHT" if getattr(request.state, "device", None) else "EXT_API",
+                           created_by=(f"HHT:{c.code}:{request.state.device}"[:40] if getattr(request.state, "device", None) else f"EXT:{c.code}"), remarks=(f"ref:{body.client_ref}" if body.client_ref else None) or body.remarks)
     warnings = []; seen = set()
     for scv in body.pallets:
         tag, pal = services.resolve_tag(db, scv)
@@ -168,5 +196,72 @@ def revoke_key(plant: str, code: str, request: Request, p: Principal = Depends(n
         raise HTTPException(404, "Customer not found")
     c.api_key_hash = None; c.api_key_prefix = None
     audit(db, p, "CUSTOMER_API_KEY_REVOKE", "customer", f"{code}@{plant}", request=request)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- customer HHT pairing (internal)
+class PairIn(BaseModel):
+    label: str = Field(min_length=1, max_length=60)
+
+
+def _lan_addresses() -> list[str]:
+    """Addresses the HHT tries first (inside the AIS network): PUBLIC_NAME / PC name and its IPs."""
+    import os, socket
+    out = []
+    for n in [os.environ.get("PUBLIC_NAME", "").strip(), socket.gethostname()]:
+        if n and n not in out:
+            out.append(n)
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if not ip.startswith("127.") and ip not in out:
+                out.append(ip)
+    except Exception:
+        pass
+    return out
+
+
+@admin.get("/customers/{cid}/devices")
+def list_devices(cid: int, p: Principal = Depends(need("GLOBAL_MASTERS")), db: Session = Depends(get_db)):
+    c = db.get(models.Customer, cid)
+    if not c:
+        raise HTTPException(404, "Customer not found")
+    p.require_plant(c.plant_code)
+    return [{"id": d.id, "label": d.label, "created_at": d.created_at, "created_by": d.created_by, "last_seen": d.last_seen, "last_route": d.last_route,
+             "app_version": d.app_version, "revoked": d.revoked_at is not None}
+            for d in db.query(models.CustomerDevice).filter_by(customer_id=cid).order_by(models.CustomerDevice.id.desc()).all()]
+
+
+@admin.post("/customers/{cid}/devices")
+def pair_device(cid: int, body: PairIn, request: Request, p: Principal = Depends(need("GLOBAL_MASTERS")), db: Session = Depends(get_db)):
+    """New customer HHT: a key of its own and a pairing QR (shown once) with the AIS-network and internet addresses."""
+    import base64, json
+    from .. import config
+    c = db.get(models.Customer, cid)
+    if not c:
+        raise HTTPException(404, "Customer not found")
+    p.require_plant(c.plant_code)
+    key = "aisd_" + secrets.token_urlsafe(30)
+    d = models.CustomerDevice(customer_id=c.id, label=body.label.strip(), key_prefix=key[:8], key_hash=hash_pw(key), created_by=p.user_id)
+    db.add(d); db.flush()
+    payload = {"v": 1, "p": c.plant_code, "c": c.code, "n": c.name, "k": key, "d": d.label,
+               "lan": _lan_addresses(), "ports": [p_ for p_ in (config.SERVER_PORTS or [80, 8001, 8002, 8003])], "wan": config.PUBLIC_API_URL}
+    text = "AISCUST1|" + base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
+    import segno, io
+    buf = io.BytesIO(); segno.make(text, error="l").save(buf, kind="svg", scale=4, border=2, dark="#0f172a")
+    audit(db, p, "CUSTOMER_HHT_PAIR", "customer", f"{c.code}@{c.plant_code}", None, {"device": d.label}, request)
+    db.commit()
+    return {"id": d.id, "label": d.label, "pairing": text, "qr_svg": buf.getvalue().decode(), "lan": payload["lan"], "wan": payload["wan"],
+            "note": "Scan this QR on the customer's HHT (Login screen > Customer device). Shown once."}
+
+
+@admin.delete("/customers/{cid}/devices/{did}")
+def revoke_device(cid: int, did: int, request: Request, p: Principal = Depends(need("GLOBAL_MASTERS")), db: Session = Depends(get_db)):
+    d = db.get(models.CustomerDevice, did)
+    if not d or d.customer_id != cid:
+        raise HTTPException(404, "Device not found")
+    c = db.get(models.Customer, cid); p.require_plant(c.plant_code)
+    d.revoked_at = utcnow()
+    audit(db, p, "CUSTOMER_HHT_REMOVE", "customer", f"{c.code}@{c.plant_code}", None, {"device": d.label}, request)
     db.commit()
     return {"ok": True}

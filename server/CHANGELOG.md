@@ -1,4 +1,10 @@
 # Changelog — AIS AssetTrack Server
+## 1.12.0 (2026-10-11) — customer HHT for Option A return slips (HHT app 2.2.0)
+- Customer HHT paired by QR (web: Masters › Customers › 📱 HHT): own device key per HHT (new table customer_devices), removable one by one; list shows last seen, route (AIS network / internet) and app version
+- HHT customer mode: new Option A return slip (scan pallets - each checked against the customer's AIS ledger - vehicle, customer DC, driver) -> slip with AIS-signed QR, printed on the portable printer and shown on screen; pallets held at the site (days, overdue); the customer's slips with status and reprint
+- Route chosen per call: AIS network addresses first (direct to the AIS server), else the internet address of the customer API (PALLET_PUBLIC_API_URL); no network -> slip kept on the HHT and sent later, never doubled (client reference)
+- Customer API: /ping (route test, no key), /me; slips from a customer HHT recorded as source CUST_HHT with the device name
+- docs/CUSTOMER_HHT_ACCESS.md: recommended outside access for IT (publish only /api/ext/ through the HTTPS reverse proxy)
 ## 1.11.1 (2026-10-11) — fix: daily reminder run could not write its integration log entry (empty reference)
 ## 1.11.0 (2026-10-11) — masters from Excel, delete, auto customers / transporters, clock, auto refresh, dd-mmm-yy, FTP per plant, Excel / PDF everywhere (HHT 2.1.5)
 - Customers and transporters: add / edit forms on the web; created automatically from the GCS file when new (customer code = short name in REMARKS when it is part of the name, else from the name; transporter with its vehicles and plant); marked "from GCS"

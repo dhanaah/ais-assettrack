@@ -551,5 +551,32 @@ with TestClient(app) as c:
         res = gcssvc.pull(db, fetch=lambda: [("pun.csv", pun_csv)])
         k = db.query(models.PickList).filter_by(gcs_no="FGPUN2627/00001").first()
     check(res["plants"]["PUN"]["created"] == 1 and k and k.plant_code == "PUN", f"automatic read goes plant by plant: the PUN folder's file opens a PUN loading sheet: {res['plants']}")
+    print("22. Customer HHT (Option A at the customer): pairing QR, device key, AIS network / internet route, revoke")
+    import base64 as _b64, json as _json
+    with SessionLocal() as db:
+        hm = db.query(models.Customer).filter_by(code="HMIL", plant_code="CHN").first(); hm_id = hm.id
+        held = [x.pallet_no for x in db.query(models.Pallet).filter_by(customer_code="HMIL", status="AT_CUSTOMER").all()]
+    check(c.get("/api/ext/v1/ping").json()["ok"], "customer API answers /ping without a key (route test)")
+    pr = c.post(f"/api/v1/customers/{hm_id}/devices", headers=M, json={"label": "HMIL gate HHT 1"}).json()
+    raw = pr["pairing"].split("|", 1)[1]; pl_ = _json.loads(_b64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+    check(pr["pairing"].startswith("AISCUST1|") and pl_["c"] == "HMIL" and pl_["p"] == "CHN" and pl_["k"].startswith("aisd_") and isinstance(pl_["lan"], list)
+          and "<svg" in pr["qr_svg"], f"pairing QR: customer, plant, device key, AIS-network addresses {pl_['lan']}, internet address '{pl_['wan']}'")
+    DK = {"X-API-Key": pl_["k"], "X-Route": "WAN", "X-App-Version": "2.2.0"}
+    me_ = c.get("/api/ext/v1/me", headers=DK).json()
+    check(me_["customer"] == "HMIL" and me_["device"] == "HMIL gate HHT 1", "device key works on the customer API (/me)")
+    v = c.post("/api/ext/v1/validate", headers=DK, json={"tags": held[:2] + ["NOPE-1"]}).json()
+    check(v["ok_count"] == min(2, len(held)) and not v["results"][-1]["ok"], f"pallet check at the customer: {v['ok_count']} ok, unknown refused")
+    sl = c.post("/api/ext/v1/return-slip", headers=DK, json={"pallets": held[:2], "vehicle_no": "tn 09 zz 1111", "customer_challan_no": "HM/DC/778", "client_ref": "dev-uuid-1"}).json()
+    sl2 = c.post("/api/ext/v1/return-slip", headers=DK, json={"pallets": held[:2], "vehicle_no": "tn 09 zz 1111", "customer_challan_no": "HM/DC/778", "client_ref": "dev-uuid-1"}).json()
+    with SessionLocal() as db:
+        rs = db.get(models.ReturnSlip, sl["slip_no"]); dv = db.query(models.CustomerDevice).filter_by(customer_id=hm_id).first()
+        src, by, route = rs.source, rs.created_by, dv.last_route
+    check(sl["qr_payload"].startswith("AIS1|RS|") and sl2.get("duplicate") and src == "CUST_HHT" and "HMIL gate HHT 1" in by and route == "WAN",
+          f"Option A slip from the customer HHT: signed QR, resend not doubled, source CUST_HHT, route recorded ({route})")
+    devs = c.get(f"/api/v1/customers/{hm_id}/devices", headers=M).json()
+    check(len(devs) == 1 and devs[0]["last_route"] == "WAN" and devs[0]["app_version"] == "2.2.0", "paired devices listed with last route and app version")
+    c.delete(f"/api/v1/customers/{hm_id}/devices/{devs[0]['id']}", headers=M)
+    r = c.get("/api/ext/v1/me", headers=DK)
+    check(r.status_code == 401 and "not paired" in r.json()["detail"], "removed HHT is refused at once")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

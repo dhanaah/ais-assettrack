@@ -6,7 +6,7 @@ import { S, C, Btn, Page, useToast, Toast, Footer, Screen } from '../ui/kit';
 import { login, setServer, getServer, APP_VERSION, api, getActiveServer } from '../lib/api';
 import { kv } from '../lib/db';
 
-export default function Login({ onDone, deviceId, locked, user }) {
+export default function Login({ onDone, deviceId, locked, user, onCustomer }) {
   const [u, setU] = useState(user || ''); const [p, setP] = useState(''); const [srv, setSrv] = useState(getServer() || ''); const [busy, setBusy] = useState(false); const [test, setTest] = useState(null); const [showPw, setShowPw] = useState(false); const [msg, toast] = useToast();
   useEffect(() => { if (!user) kv.get('last_user').then(x => x && setU(x)); }, []);
   const go = async () => {
@@ -33,6 +33,9 @@ export default function Login({ onDone, deviceId, locked, user }) {
       <View style={S.row}><TextInput style={[S.input, { flex: 1 }]} value={p} onChangeText={setP} secureTextEntry={!showPw} onSubmitEditing={go} returnKeyType="go" autoFocus={!!locked} /><TouchableOpacity onPress={() => setShowPw(s => !s)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginBottom: 8 }}><Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={22} color={C.mute} /></TouchableOpacity></View>
       <Btn title={locked ? 'Unlock' : 'Sign in'} icon={locked ? 'lock-open-outline' : 'log-in-outline'} onPress={go} busy={busy} />
     </View>
+    {!locked && onCustomer ? <TouchableOpacity onPress={onCustomer} style={[S.card, { flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
+      <Ionicons name="storefront-outline" size={22} color={C.accent} /><View style={{ flex: 1 }}><Text style={{ fontWeight: '700', color: C.fg }}>Customer device</Text>
+      <Text style={S.mute}>HHT at a customer site for Option A return slips - pair with the QR from AIS</Text></View><Ionicons name="chevron-forward" size={18} color={C.mute} /></TouchableOpacity> : null}
     <Footer />
   </Page><Toast msg={msg} /></Screen>);
 }
