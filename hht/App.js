@@ -6,7 +6,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import * as Application from 'expo-application';
 import * as Clipboard from 'expo-clipboard';
 import { openDb, kv, logActivity, pendingCount } from './src/lib/db';
-import { applyTheme, T, S, C, Btn, Screen, Page, Header, AisLogo, loadScanMode, setNet } from './src/ui/kit';
+import { applyTheme, T, S, C, Btn, Screen, Page, Header, AisLogo, loadScanMode, setNet, FOOT } from './src/ui/kit';
 import { loadSession, setToken, me as getMe, hasToken, setApiDevice, APP_VERSION } from './src/lib/api';
 import { state as syncState, subscribe, syncNow, startAutoSync, stopAutoSync, setDeviceId, refreshPending } from './src/lib/sync';
 import { initFeedback } from './src/lib/feedback';
@@ -46,7 +46,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      await openDb(); await loadSession();
+      FOOT.v = APP_VERSION; await openDb(); await loadSession();
       const tk = (await kv.get('theme')) || 'glass'; const scale = (await kv.get('ui_scale')) || 1; applyTheme(tk, scale); setThemeKey(tk); await loadScanMode();
       idleMin.current = (await kv.get('idle_min')) ?? 30;
       const id = (await kv.get('device_id')) || ('HHT-' + (Application.getAndroidId?.() || Math.random().toString(36).slice(2, 8)).toUpperCase().slice(-8));

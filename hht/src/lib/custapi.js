@@ -9,13 +9,14 @@ import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 import { APP_VERSION } from './api';
 import { setNet } from '../ui/kit';
-import { hmacSha256Hex } from './hmac';
+import { hmacSha256Hex, sha256Hex } from './hmac';
 import { setServerVehicles, usedVehicle, cleanVeh } from './vehicles';
 import { parsePalletQr } from './db';
 
 let pair = null;                 // { v, p, c, n, d, lan: [], ports: [], wan, k }
 let route = null;                // { base, kind: 'LAN' | 'WAN', at }
 let deviceId = 'HHT';
+let staff = null;                // { user_id, name, perms, tok } - Customer Staff signed in on this HHT
 const ROUTE_TTL = 3 * 60000;
 export const setCustDevice = (id) => { deviceId = id; };
 
@@ -106,7 +107,7 @@ export async function ext(path, { method = 'GET', body, timeout = 15000 } = {}, 
   try {
     const r = await fetch(r0.base + '/api/ext/v1' + path, {
       method, signal: ctl.signal, body: body ? JSON.stringify(body) : undefined,
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': pair.k, 'X-Route': r0.kind, 'X-App-Version': APP_VERSION, 'X-Device-Id': deviceId },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': pair.k, 'X-Route': r0.kind, 'X-App-Version': APP_VERSION, 'X-Device-Id': deviceId, ...(staff?.tok ? { 'X-Staff-Token': staff.tok } : {}) },
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { const e = new Error(typeof j.detail === 'string' ? j.detail : (r.statusText || 'Server error')); e.status = r.status; throw e; }
@@ -176,3 +177,50 @@ export async function sendPending() {
   return sent;
 }
 export async function refreshSlip(no) { const s = await ext('/return-slip/' + encodeURIComponent(no)); await remember(s); return s; }
+
+// ---------------------------------------------------------------- customer staff sign-in (role Customer Staff)
+// Online: checked by AIS, gives a token valid 30 days. Offline: the same user can sign in again with the password
+// checked against a hash kept on this HHT (only users who signed in here online before).
+const keyOf = (u) => 'cust_tok_' + String(u).replace(/[^A-Za-z0-9._-]/g, '_');
+export const getStaff = () => staff;
+export const staffCan = (perm) => !!(staff && (staff.perms || []).includes(perm));
+export async function loadStaff() { const s = await kv.get('cust_staff_now'); if (!s) return null; const tok = await SecureStore.getItemAsync(keyOf(s.user_id)); staff = tok ? { ...s, tok } : null; return staff; }
+export async function staffLogin(user, pw) {
+  user = String(user || '').trim().toLowerCase(); const h = sha256Hex(user + '|' + pw + '|' + (pair?.c || ''));
+  try {
+    const r = await ext('/staff-login', { method: 'POST', body: { user_id: user, password: pw } });
+    await SecureStore.setItemAsync(keyOf(r.user_id), r.token);
+    const known = (await kv.get('cust_staff_known')) || {}; known[r.user_id] = { name: r.name, perms: r.perms, h, until: Date.now() + r.days * 86400000 }; await kv.set('cust_staff_known', known);
+    staff = { user_id: r.user_id, name: r.name, perms: r.perms, tok: r.token }; await kv.set('cust_staff_now', { user_id: r.user_id, name: r.name, perms: r.perms });
+    return staff;
+  } catch (e) {
+    if (!e.offline) throw e;
+    const k = ((await kv.get('cust_staff_known')) || {})[user]; const tok = await SecureStore.getItemAsync(keyOf(user));
+    if (!k || !tok || k.h !== h) throw new Error('No network - sign in once online on this HHT first (or wrong password)');
+    staff = { user_id: user, name: k.name, perms: k.perms, tok, offline: true }; await kv.set('cust_staff_now', { user_id: user, name: k.name, perms: k.perms });
+    return staff;
+  }
+}
+export async function staffLogout() { staff = null; await kv.set('cust_staff_now', null); }
+
+// ---------------------------------------------------------------- receiving AIS deliveries (unloading at the customer)
+export async function incoming(refresh = true) {
+  if (refresh) { try { const r = await ext('/incoming'); await kv.set('cust_incoming', r.deliveries || []); } catch (e) { if (!e.offline) throw e; } }
+  return (await kv.get('cust_incoming')) || [];
+}
+/** Send the pallets scanned while unloading; without network they wait and are sent automatically. */
+export async function receive(picklist_no, scanned) {
+  const item = { picklist_no, scanned, client_ref: uid(), at: new Date().toISOString() };
+  try { const r = await ext('/receive', { method: 'POST', body: item }); incoming(true).catch(() => {}); return { sent: true, result: r }; }
+  catch (e) {
+    if (!e.offline) throw e;
+    const q = (await kv.get('cust_recv_outbox')) || []; q.push(item); await kv.set('cust_recv_outbox', q);
+    return { sent: false };
+  }
+}
+export async function sendReceipts() {
+  const q = (await kv.get('cust_recv_outbox')) || []; if (!q.length) return 0;
+  const left = []; let n = 0;
+  for (const it of q) { try { await ext('/receive', { method: 'POST', body: it }); n++; } catch (e) { left.push(it); if (e.offline) { left.push(...q.slice(q.indexOf(it) + 1)); break; } } }
+  await kv.set('cust_recv_outbox', left); return n;
+}

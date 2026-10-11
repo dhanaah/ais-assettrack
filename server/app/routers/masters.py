@@ -133,6 +133,7 @@ class UserIn(BaseModel):
     user_id: str
     full_name: str
     plant_code: str | None = None
+    customer_code: str | None = None     # Customer Staff: their customer
     roles: list[str]
     password: str | None = None          # required on create
     email: str | None = None
@@ -177,6 +178,15 @@ def upsert_user(body: UserIn, request: Request, p: Principal = Depends(current_u
     u.full_name = body.full_name; u.plant_code = None if all_scope and not plant else plant
     u.email = body.email; u.mobile = body.mobile; u.supervisor_allowed = body.supervisor_allowed
     u.device_id = body.device_id; u.active = body.active; u.notes = body.notes
+    if "CUST_STAFF" in roles:              # customer staff: one customer of this plant, no AIS roles beside it
+        cc = (body.customer_code or "").strip().upper()
+        if not cc or not db.query(models.Customer).filter_by(code=cc, plant_code=plant).first():
+            raise HTTPException(400, "Customer Staff needs the plant and a customer of that plant")
+        if len(roles) > 1:
+            raise HTTPException(400, "Customer Staff cannot have AIS roles as well")
+        u.customer_code = cc
+    else:
+        u.customer_code = None
     u.roles = [models.UserRole(role_code=r) for r in roles]
     if body.perms is not None:
         from ..security import PERMS

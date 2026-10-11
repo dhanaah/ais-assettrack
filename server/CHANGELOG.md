@@ -1,4 +1,10 @@
 # Changelog — AIS AssetTrack Server
+## 1.17.0 (2026-10-11) — Customer Staff role: receive deliveries and return empty pallets on the customer HHT; server address hidden on the HHT (HHT app 2.6.0)
+- New role CUST_STAFF "Customer Staff" (web Users: role + customer code; rights CUST_RECEIVE, CUST_RETURN). They sign in with their own user on the paired customer HHT (30 days; again without network if they signed in online on that HHT before); they cannot sign in on an AIS HHT
+- Customer HHT > Receive delivery: AIS loads dispatched to the customer (last 20 days, kept on the HHT); scan the gate pass QR or pick the vehicle, scan each pallet while unloading - received / still to scan / extra (not on this delivery); sent to AIS (queued when offline); pallets not received are listed for AIS
+- Customer HHT > Return empty pallets (Option A): now done by the signed-in staff (recorded as the slip maker); customer API calls from an HHT need the staff sign-in (system API keys unchanged)
+- HHT: the server address / IP is no longer shown anywhere - only Online (green) / Offline (red); server can still be typed once under Setup > "Enter manually"; app version and device ID shown very faint
+- Web: Tag batches card explained (pallet tag rolls: first / last tag number, tags count, in stock / on pallets / retired)
 ## 1.16.0 (2026-10-11) — Dispatch Bench trip and its GCS joined into one record
 - When a GCS file arrives, AssetTrack finds the Dispatch Bench trip of the same vehicle by the part cards they share (fallback: vehicle + customer, when exactly one open trip of the last 3 days fits) and joins them
 - Trip not loaded yet: loading is done on the GCS sheet; the trip is closed as LINKED, its reserved part cards and the PDI / supervisor names move to the GCS sheet

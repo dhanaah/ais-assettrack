@@ -34,6 +34,8 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         require_client_version(body.app_version)
     if u.locked_until and u.locked_until > datetime.utcnow():
         raise HTTPException(423, f"Account locked until {u.locked_until:%H:%M} UTC")
+    if u.customer_code and body.device_id:
+        raise HTTPException(403, "Customer staff sign in on the customer HHT (paired by AIS), not on an AIS HHT")
     if not check_pw(body.password, u.password_hash):
         u.failed_logins += 1
         if u.failed_logins >= config.MAX_FAILED_LOGINS:

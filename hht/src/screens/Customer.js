@@ -1,5 +1,6 @@
-// Customer mode: the HHT at the customer's site makes Option A return slips (scan pallets -> slip with AIS-signed QR ->
-// portable printer). Talks to AIS directly on the AIS network, through the internet address otherwise (see custapi).
+// Customer mode (HHT at the customer's site, used by Customer Staff who sign in with their own user):
+//  * Receive delivery - scan each pallet while unloading an AIS vehicle (works offline, sent later)
+//  * Return slip (Option A) - scan the empty pallets -> slip with AIS-signed QR -> portable printer. Talks to AIS directly on the AIS network, through the internet address otherwise (see custapi).
 // Developed by DT
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
@@ -7,11 +8,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import qrcode from 'qrcode-generator';
 import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer } from '../ui/kit';
-import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline } from '../lib/custapi';
+import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline, loadStaff, staffLogin, staffLogout, getStaff, staffCan, incoming, receive, sendReceipts } from '../lib/custapi';
 import { VehiclePicker } from '../ui/vehicle';
 import Setup from './Setup';
 import { parsePalletQr } from '../lib/db';
-import { printSlip } from '../lib/printer';
+import { printSlip, canPrint, testPrint } from '../lib/printer';
 import { feedback } from '../lib/feedback';
 import { fDT, fDate } from '../lib/when';
 import { Settings } from './Misc';
@@ -30,8 +31,8 @@ export function QrView({ text, size = 220 }) {
   return <View style={{ width: size, height: size, backgroundColor: '#fff', padding: cell * 2, alignSelf: 'center', borderRadius: 8 }}>{rows}</View>;
 }
 
-const routeText = (r) => !r ? 'Offline' : r.kind === 'LAN' ? 'AIS network (direct)' : 'Internet (customer API)';
-const routeColor = (r) => !r ? C.warn : r.kind === 'LAN' ? C.ok : C.accent;
+const routeText = (r) => !r ? 'Offline' : 'Online';
+const routeColor = (r) => !r ? '#dc2626' : '#16a34a';
 
 // ---------------------------------------------------------------- pairing (from the Login screen)
 export function PairDevice({ onBack, onPaired }) {
@@ -65,13 +66,20 @@ export function PairDevice({ onBack, onPaired }) {
 
 // ---------------------------------------------------------------- customer app
 export default function CustomerApp({ deviceId, onUnpaired, onTheme, onUi }) {
-  const [screen, setScreen] = useState('home'); const pair = getPairing();
+  const [screen, setScreen] = useState('home'); const pair = getPairing(); const [staff, setStaff] = useState(undefined);
+  useEffect(() => { loadStaff().then((x) => setStaff(x || null)); }, []);
   const back = () => setScreen('home');
+  if (staff === undefined) return null;
+  if (!staff) {
+    if (screen === 'setup') return <Setup customer onBack={() => setScreen('home')} />;
+    return <StaffLogin onDone={(x) => { setStaff(x); setScreen('home'); }} onSetup={() => setScreen('setup')} />;
+  }
+  if (screen === 'receive') return <Receive onBack={back} />;
   if (screen === 'new') return <NewSlip onBack={back} onDone={() => setScreen('slips')} />;
   if (screen === 'holding') return <Holding onBack={back} />;
   if (screen === 'slips') return <Slips onBack={back} />;
   if (screen === 'setup') return <Setup customer onBack={() => setScreen('settings')} />;
-  if (screen === 'settings') return <CustSettings onBack={back} onSetup={() => setScreen('setup')} deviceId={deviceId} onUnpaired={onUnpaired} onTheme={onTheme} onUi={onUi} />;
+  if (screen === 'settings') return <CustSettings onBack={back} onSetup={() => setScreen('setup')} onLogout={async () => { await staffLogout(); setStaff(null); setScreen('home'); }} deviceId={deviceId} onUnpaired={onUnpaired} onTheme={onTheme} onUi={onUi} />;
   return <CustHome pair={pair} nav={setScreen} />;
 }
 
@@ -80,16 +88,18 @@ function CustHome({ pair, nav }) {
   const refresh = useCallback(async (force) => {
     try { const r = await findRoute(force); setRoute(r); } catch (e) { setRoute(null); }
     const sent = await sendPending().catch(() => []); if (sent.length) toast(`${sent.length} waiting slip(s) sent`, 'done');
+    const rc = await sendReceipts().catch(() => 0); if (rc) toast(`${rc} waiting receipt(s) sent`, 'done');
     setPend((await outbox()).length);
     try { setMe(await refreshMe()); const h = await ext('/holding'); setHeld(h); } catch (e) { if (e.status === 401) toast(e.message, 'err'); }
   }, []);
   useEffect(() => { refresh(true); const t = setInterval(() => refresh(false), 60000); return () => clearInterval(t); }, []);
   const overdue = held ? held.pallets.filter((p) => p.overdue).length : 0;
-  const tiles = [['new', 'New return slip', 'Option A · scan pallets, print slip', ['#a855f7', '#7e22ce'], 'document-text-outline'],
+  const tiles = [...(staffCan('CUST_RECEIVE') ? [['receive', 'Receive delivery', 'Scan each pallet while unloading', ['#f59e0b', '#c2410c'], 'download-outline']] : []),
+    ...(staffCan('CUST_RETURN') ? [['new', 'Return empty pallets', 'Scan pallets, print return slip', ['#a855f7', '#7e22ce'], 'document-text-outline']] : []),
     ['holding', 'Pallets with us', held ? `${held.count} pallet(s)${overdue ? ` · ${overdue} overdue` : ''}` : 'AIS pallets at this site', ['#0ea5e9', '#2563eb'], 'cube-outline'],
     ['slips', 'Our return slips', pend ? `${pend} waiting to send` : 'Status, reprint', ['#22c55e', '#15803d'], 'list-outline'],
-    ['settings', 'Settings', 'Setup: printer, vehicles · pairing', ['#64748b', '#334155'], 'settings-outline']];
-  return (<Screen><Header logo sub={`${me?.name || pair?.n || ''} · AIS ${pair?.p || ''}`} />
+    ['settings', 'Settings', 'Printer, vehicles · sign out', ['#64748b', '#334155'], 'settings-outline']];
+  return (<Screen><Header logo sub={`${getStaff()?.name || ''} · ${me?.name || pair?.n || ''}`} />
     <TouchableOpacity onPress={() => refresh(true)} style={{ backgroundColor: routeColor(route), paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}>
       <Ionicons name={route ? (route.kind === 'LAN' ? 'business-outline' : 'globe-outline') : 'cloud-offline-outline'} size={14} color="#fff" />
       <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }}>{routeText(route)}{pend ? ` · ${pend} waiting` : ''} · tap to recheck</Text></TouchableOpacity>
@@ -102,7 +112,7 @@ function CustHome({ pair, nav }) {
         <TouchableOpacity key={t[0]} onPress={() => nav(t[0])} activeOpacity={0.8} style={[S.card, { width: '47.5%', marginBottom: 0, minHeight: Math.round(118 * T.scale) }]}>
           <LinearGradient colors={t[3]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}><Ionicons name={t[4]} size={22} color="#fff" /></LinearGradient>
           <Text style={{ fontWeight: '700', fontSize: Math.round(14 * T.scale), color: C.fg }}>{t[1]}</Text><Text style={[S.mute, { marginTop: 3, fontSize: Math.round(11.5 * T.scale) }]}>{t[2]}</Text></TouchableOpacity>))}</View>
-      <Text style={[S.mute, { textAlign: 'center', marginTop: 14 }]}>Device "{pair?.d}" · customer {pair?.c}</Text>
+      <Text style={{ color: C.mute, opacity: 0.35, fontSize: 10, textAlign: 'center', marginTop: 14 }}>Device "{pair?.d}" · customer {pair?.c}</Text>
       <Footer /></Page><Toast msg={msg} /></Screen>);
 }
 
@@ -199,16 +209,80 @@ function Slips({ onBack }) {
   </Page><Toast msg={msg} /></Screen>);
 }
 
-function CustSettings({ onBack, onSetup, deviceId, onUnpaired, onTheme, onUi }) {
-  const pair = getPairing(); const [wan, setWan] = useState(pair?.wan || ''); const [msg, toast] = useToast();
+function CustSettings({ onBack, onSetup, onLogout, deviceId, onUnpaired, onTheme, onUi }) {
+  const pair = getPairing(); const [wan, setWan] = useState(''); const [msg, toast] = useToast();
   return (<View style={{ flex: 1 }}>
     <Settings onBack={onBack} onSetup={onSetup} deviceId={deviceId} onTheme={onTheme} onUi={onUi} customer
-      extra={<View style={S.card}><Text style={S.h2}>AIS connection</Text>
+      extra={<View style={S.card}><Btn title={`Sign out (${getStaff()?.name || ''})`} secondary icon="log-out-outline" onPress={onLogout} /><Text style={[S.h2, { marginTop: 12 }]}>AIS connection</Text>
         <Text style={S.mute}>Customer {pair?.c} · AIS plant {pair?.p} · device "{pair?.d}"</Text>
-        <Text style={[S.mute, { marginTop: 4 }]}>AIS network: {(pair?.lan || []).join(', ')}</Text>
         <Text style={[S.mute, { marginTop: 8 }]}>Internet address (from AIS IT)</Text>
-        <TextInput style={S.input} value={wan} onChangeText={setWan} autoCapitalize="none" autoCorrect={false} placeholder="https://assettrack.aisglass.com" />
-        <Btn title="Save address" secondary icon="save-outline" onPress={async () => { await setInternetAddress(wan); try { const r = await findRoute(true); toast('Connected: ' + routeText(r), 'done'); } catch (e) { toast(e.message, 'warn'); } }} />
+        <TextInput style={S.input} value={wan} onChangeText={setWan} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder={pair?.wan ? 'set ✓ - type to change' : 'from AIS IT'} />
+        <Btn title="Save address" secondary icon="save-outline" onPress={async () => { await setInternetAddress(wan); try { await findRoute(true); toast('Online', 'done'); } catch (e) { toast(e.message, 'warn'); } }} />
         <Btn title="Remove pairing" secondary icon="unlink-outline" onPress={() => Alert.alert('Remove pairing', 'This HHT will stop working for return slips until AIS pairs it again. Waiting slips stay on the HHT.', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { await unpair(); onUnpaired(); } }])} /></View>} />
     <Toast msg={msg} /></View>);
+}
+
+// ---------------------------------------------------------------- customer staff sign-in
+function StaffLogin({ onDone, onSetup }) {
+  const pair = getPairing(); const [u, setU] = useState(''); const [p, setP] = useState(''); const [busy, setBusy] = useState(false); const [route, setRoute] = useState(null); const [msg, toast] = useToast();
+  useEffect(() => { findRoute(true).then(setRoute).catch(() => setRoute(false)); }, []);
+  const go = async () => { if (!u.trim() || !p) return toast('Enter user ID and password', 'warn'); setBusy(true);
+    try { const r = await staffLogin(u, p); toast(r.offline ? 'Signed in (no network)' : 'Signed in', 'done'); onDone(r); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
+  return (<Screen><Header logo sub={`${pair?.n || pair?.c || ''} · customer HHT`} /><Page>
+    <View style={[S.row, { alignSelf: 'flex-start', marginBottom: 10, backgroundColor: route ? '#dcfce7' : route === false ? '#fee2e2' : C.input, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }]}>
+      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: route ? '#16a34a' : route === false ? '#dc2626' : '#94a3b8' }} /><Text style={{ fontWeight: '700', color: '#0f172a' }}>{route ? 'Online' : route === false ? 'Offline' : 'Checking…'}</Text></View>
+    <View style={S.card}><Text style={S.h2}>Customer staff sign-in</Text>
+      <Text style={S.mute}>User ID (given by AIS)</Text><TextInput style={S.input} value={u} onChangeText={setU} autoCapitalize="none" autoCorrect={false} />
+      <Text style={S.mute}>Password</Text><TextInput style={S.input} value={p} onChangeText={setP} secureTextEntry onSubmitEditing={go} />
+      <Btn title="Sign in" icon="log-in-outline" busy={busy} onPress={go} /></View>
+    <Btn title="Setup · Printer · Vehicles" secondary icon="construct-outline" onPress={onSetup} />
+    <Btn title="Test printer" secondary icon="print-outline" onPress={async () => { if (!(await canPrint())) { toast('Choose the printer in Setup first', 'warn'); return onSetup(); } try { await testPrint({ code: pair?.p }); toast('Test page sent', 'done'); } catch (e) { toast('Printer not working: ' + e.message, 'err'); } }} />
+    <Footer /></Page><Toast msg={msg} /></Screen>);
+}
+
+// ---------------------------------------------------------------- receive an AIS delivery (unloading)
+function Receive({ onBack }) {
+  const [list, setList] = useState([]); const [sel, setSel] = useState(null); const [scans, setScans] = useState([]); const [busy, setBusy] = useState(false); const [done, setDone] = useState(null); const [msg, toast] = useToast();
+  const load = async (refresh = true) => { try { setList(await incoming(refresh)); } catch (e) { toast(e.message, 'err'); } };
+  useEffect(() => { load(false).then(() => load(true)); }, []);
+  const pick = (d) => { setSel(d); setScans([]); setDone(null); };
+  const onGcs = (code) => { const q = String(code).split('|'); const no = code.startsWith('AIS1|GCS|') ? q[2] : code.trim().toUpperCase();
+    const d = list.find((x) => x.gcs_no === no || x.challan_no === no); if (!d) return toast(`No AIS delivery ${no} for you (pull down to refresh)`, 'warn'); pick(d); };
+  const expected = sel ? sel.pallets.map((x) => x.pallet_no) : [];
+  const onScan = (code) => {
+    const pn = parsePalletQr(code)?.pallet_no || String(code).trim().toUpperCase();
+    if (scans.some((x) => x.pn === pn)) { feedback('warn'); return toast('Already scanned', 'warn'); }
+    const on = expected.includes(pn); feedback(on ? 'ok' : 'warn'); if (!on) toast(`${pn} is not on this delivery - kept as extra`, 'warn');
+    setScans((s) => [{ code, pn, on }, ...s]);
+  };
+  const finish = async () => {
+    if (!scans.length) return toast('Scan the pallets first', 'err');
+    setBusy(true);
+    try { const r = await receive(sel.picklist_no, scans.map((x) => x.code));
+      if (r.sent) { setDone(r.result); feedback('done'); } else { setDone({ queued: true }); feedback('warn'); } }
+    catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
+  };
+  if (sel) {
+    const got = new Set(scans.filter((x) => x.on).map((x) => x.pn)); const prev = new Set(sel.pallets.filter((x) => x.received).map((x) => x.pallet_no));
+    const missing = sel.pallets.filter((x) => !got.has(x.pallet_no) && !prev.has(x.pallet_no));
+    if (done) return (<Screen><Header title="Delivery received" sub={`${sel.vehicle_no || ''} · GCS ${sel.gcs_no || '-'}`} onBack={() => { setSel(null); load(true); }} /><Page>
+      <Glass style={{ alignItems: 'center' }}><Ring value={done.queued ? String(got.size) : `${done.received}/${done.expected}`} label={done.queued ? 'saved - sent when online' : 'pallets received'} color={C.ok} size={96} /></Glass>
+      {!done.queued && done.received < done.expected ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.warn }]}><Text style={[S.h2, { color: C.warn }]}>Not received ({done.expected - done.received})</Text><Text style={S.mute}>{done.pallets.filter((x) => !x.received).map((x) => x.ref).join('  ·  ')}</Text><Text style={[S.mute, { marginTop: 4 }]}>AIS sees this list - tell the driver / AIS if pallets are missing.</Text></View> : null}
+      {!done.queued && done.extra?.length ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.amber }]}><Text style={S.h2}>Extra pallets (not on this delivery)</Text><Text style={S.mute}>{done.extra.join('  ·  ')}</Text></View> : null}
+      <Btn title="Done" icon="checkmark-outline" onPress={() => { setSel(null); load(true); }} /></Page><Toast msg={msg} /></Screen>);
+    return (<Screen><Header title={`Unload ${sel.vehicle_no || ''}`} sub={`GCS ${sel.gcs_no || '-'} · ${got.size + prev.size}/${sel.expected} scanned`} onBack={() => setSel(null)} /><Page>
+      <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan pallet QR / tag" /></View>
+      <Glass style={{ flexDirection: 'row', justifyContent: 'space-around' }}><Ring value={String(got.size + prev.size)} label="received" color={C.ok} size={80} /><Ring value={String(missing.length)} label="still to scan" color={missing.length ? C.amber : C.ok} size={80} /><Ring value={String(scans.filter((x) => !x.on).length)} label="extra" color={scans.some((x) => !x.on) ? C.warn : C.accent} size={80} /></Glass>
+      <View style={S.card}>{sel.pallets.map((x) => <View key={x.pallet_no} style={[S.row, { paddingVertical: 4 }]}><Text style={{ flex: 1, fontWeight: '700', color: C.fg }}>{x.ref}</Text><Text style={{ color: got.has(x.pallet_no) || prev.has(x.pallet_no) ? C.ok : C.mute, fontWeight: '700' }}>{got.has(x.pallet_no) || prev.has(x.pallet_no) ? '✓ received' : 'to scan'}</Text></View>)}
+        {scans.filter((x) => !x.on).map((x) => <View key={x.pn} style={[S.row, { paddingVertical: 4 }]}><Text style={{ flex: 1, fontWeight: '700', color: C.warn }}>{x.pn}</Text><Text style={{ color: C.warn }}>⚠ not on delivery</Text></View>)}</View>
+      <Btn title={`Finish unloading · ${scans.length} scanned`} icon="checkmark-done-outline" busy={busy} onPress={finish} color={missing.length ? C.amber : C.ok} />
+    </Page><Toast msg={msg} /></Screen>);
+  }
+  return (<Screen><Header title="Receive delivery" sub="Scan the gate pass QR or pick the vehicle" onBack={onBack} /><Page onRefresh={() => load(true)}>
+    <View style={S.card}><ScanInput onScan={onGcs} placeholder="Scan GCS / gate pass QR" /></View>
+    {list.length ? list.map((d) => <TouchableOpacity key={d.picklist_no} style={S.card} onPress={() => pick(d)}>
+      <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{d.vehicle_no || '-'}</Text><Text style={{ fontWeight: '700', color: d.received >= d.expected ? C.ok : C.amber }}>{d.received}/{d.expected}</Text></View>
+      <Text style={S.mute}>GCS {d.gcs_no || '-'} · invoice {d.invoice_no || '-'} · {fDT(d.dispatched)}</Text></TouchableOpacity>)
+      : <Empty icon="cube-outline" text="No AIS deliveries for you right now (pull down to refresh)" />}
+  </Page><Toast msg={msg} /></Screen>);
 }

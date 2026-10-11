@@ -43,12 +43,134 @@ def customer_auth(request: Request, x_api_key: str = Header(default=None), x_rou
                 d.last_seen = utcnow(); d.last_route = (x_route or "")[:10] or None; d.app_version = (x_app_version or "")[:15] or None
                 db.commit()
                 request.state.device = d.label; request.state.device_id = d.id
+                request.state.staff = _staff_from_token(request.headers.get("x-staff-token"), c)
                 return c
         raise HTTPException(401, "This HHT is not paired (or was removed) - pair it again from AIS")
     for c in db.query(models.Customer).filter(models.Customer.api_key_prefix == prefix, models.Customer.active == True).all():
         if c.api_key_hash and check_pw(x_api_key, c.api_key_hash):
             return c
     raise HTTPException(401, "Invalid API key")
+
+
+STAFF_DAYS = 30          # customer staff stay signed in on their HHT this long (offline work in between)
+
+
+def _staff_from_token(tok, c):
+    import jwt
+    from .. import config
+    if not tok:
+        return None
+    try:
+        d = jwt.decode(tok, config.JWT_SECRET, algorithms=[config.JWT_ALGO])
+        return d["sub"] if d.get("typ") == "cust" and d.get("cust") == f"{c.plant_code}/{c.code}" else None
+    except Exception:
+        return None
+
+
+def need_staff(request: Request, perm: str, db) -> str | None:
+    """Customer HHT actions are done by a signed-in Customer Staff user (role CUST_STAFF). System keys (EXT_API) are not."""
+    if not getattr(request.state, "device", None):
+        return None
+    sid = getattr(request.state, "staff", None)
+    if not sid:
+        raise HTTPException(401, "Customer staff sign-in required (user ID + password on the HHT)")
+    u = db.query(models.User).filter(models.User.user_id == sid, models.User.active == True).first()
+    from ..security import load_perms
+    if not u or perm not in load_perms(db, u):
+        raise HTTPException(403, f"User {sid} may not do this ({perm})")
+    return sid
+
+
+class StaffLoginIn(BaseModel):
+    user_id: str
+    password: str
+
+
+@router.post("/staff-login")
+def staff_login(body: StaffLoginIn, request: Request, c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
+    """Customer staff sign in on a paired customer HHT: their own user (role Customer Staff) for this customer."""
+    import jwt
+    from datetime import timedelta
+    from .. import config
+    if not getattr(request.state, "device", None):
+        raise HTTPException(400, "Only on a paired customer HHT")
+    u = db.query(models.User).filter(models.User.user_id == body.user_id.strip().lower()).first()
+    if not u or not u.active or "CUST_STAFF" not in u.role_codes:
+        raise HTTPException(401, "Invalid user or password")
+    if u.locked_until and u.locked_until > utcnow():
+        raise HTTPException(423, "Account locked - try later")
+    if not check_pw(body.password, u.password_hash):
+        u.failed_logins = (u.failed_logins or 0) + 1
+        if u.failed_logins >= config.MAX_FAILED_LOGINS:
+            u.locked_until = utcnow() + timedelta(minutes=config.LOCK_MINUTES); u.failed_logins = 0
+        db.commit()
+        raise HTTPException(401, "Invalid user or password")
+    if u.customer_code != c.code or u.plant_code != c.plant_code:
+        raise HTTPException(403, f"User {u.user_id} is not staff of {c.code}")
+    u.failed_logins = 0; u.last_login = utcnow()
+    tok = jwt.encode({"sub": u.user_id, "typ": "cust", "cust": f"{c.plant_code}/{c.code}", "exp": utcnow() + timedelta(days=STAFF_DAYS)},
+                     config.JWT_SECRET, algorithm=config.JWT_ALGO)
+    db.add(models.AuditLog(user_id=u.user_id, plant_code=c.plant_code, action="CUST_STAFF_LOGIN", entity="device", entity_id=str(request.state.device)[:40],
+                           ip=request.client.host if request.client else None))
+    db.commit()
+    from ..security import load_perms
+    return {"token": tok, "user_id": u.user_id, "name": u.full_name, "perms": sorted(load_perms(db, u) & {"CUST_RECEIVE", "CUST_RETURN"}), "days": STAFF_DAYS}
+
+
+# ---------------------------------------------------------------- receiving AIS deliveries at the customer
+def _incoming_q(db, c):
+    from datetime import timedelta
+    return db.query(models.PickList).filter(models.PickList.customer_code == c.code, models.PickList.plant_code == c.plant_code,
+                                            models.PickList.status.in_(["DISPATCHED", "CLOSED"]),
+                                            models.PickList.updated_at >= utcnow() - timedelta(days=20)).order_by(models.PickList.updated_at.desc())
+
+
+def _delivery(db, k):
+    pals = [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()]
+    got = {r.pallet_no: r for r in db.query(models.CustomerReceipt).filter_by(picklist_no=k.picklist_no).all()}
+    return {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "challan_no": k.challan_no, "invoice_no": k.invoice_no, "vehicle_no": k.vehicle_no,
+            "dispatched": k.updated_at, "pallets": [{"pallet_no": x, "ref": services.short_ref(x), "received": x in got} for x in pals],
+            "expected": len(pals), "received": sum(1 for x in pals if x in got), "extra": [services.short_ref(x) for x, r in got.items() if not r.on_load]}
+
+
+@router.get("/incoming")
+def incoming(request: Request, c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
+    """AIS loads dispatched to this customer (last 20 days) with their pallets - kept on the HHT for unloading offline."""
+    out = [_delivery(db, k) for k in _incoming_q(db, c).limit(60).all()]
+    return {"deliveries": [d for d in out if d["received"] < d["expected"] or d["extra"]][:40] + [d for d in out if d["received"] >= d["expected"] and not d["extra"]][:10]}
+
+
+class ReceiveIn(BaseModel):
+    picklist_no: str | None = None
+    gcs: str | None = None                    # GCS number or the gate-pass QR (AIS1|GCS|...)
+    scanned: list[str] = Field(min_length=1, max_length=500)
+    client_ref: str | None = None
+
+
+@router.post("/receive")
+def receive(body: ReceiveIn, request: Request, c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
+    """Customer staff scan each pallet while unloading: on this delivery = received; anything else is recorded as an exception."""
+    from .. import gcs as gcssvc
+    staff = need_staff(request, "CUST_RECEIVE", db)
+    k = db.get(models.PickList, body.picklist_no) if body.picklist_no else None
+    if not k and body.gcs:
+        q = gcssvc.parse_gcs_qr(body.gcs); g = (q or {}).get("gcs_no") or body.gcs.strip().upper()
+        k = _incoming_q(db, c).filter((models.PickList.gcs_no == g) | (models.PickList.challan_no == g)).first()
+    if not k or k.customer_code != c.code or k.plant_code != c.plant_code:
+        raise HTTPException(404, "Delivery not found for this customer")
+    on = {l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()}
+    who = staff or f"EXT:{c.code}"; res = []
+    for scv in body.scanned:
+        tag, pal = services.resolve_tag(db, scv)
+        pno = pal.pallet_no if pal else scv.strip()[:40]
+        if not db.query(models.CustomerReceipt).filter_by(picklist_no=k.picklist_no, pallet_no=pno).first():
+            db.add(models.CustomerReceipt(picklist_no=k.picklist_no, plant_code=k.plant_code, customer_code=c.code, pallet_no=pno, on_load=pno in on,
+                                          received_by=who, device=getattr(request.state, "device", None)))
+        res.append({"scanned": scv, "pallet_no": pno, "ref": services.short_ref(pno), "on_load": pno in on})
+    db.add(models.AuditLog(user_id=who, plant_code=c.plant_code, action="CUST_RECEIVE", entity="picklist", entity_id=k.picklist_no,
+                           new_value=body.model_dump_json()[:4000], ip=request.client.host if request.client else None))
+    db.commit()
+    return _delivery(db, k) | {"results": res}
 
 
 @router.get("/ping")
@@ -139,6 +261,7 @@ class ExtSlipIn(BaseModel):
 
 @router.post("/return-slip")
 def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
+    staff = need_staff(request, "CUST_RETURN", db)
     if db.get(models.Plant, c.code):
         raise HTTPException(400, "Other AIS plants return pallets with a challan only - not a return slip")
     if body.client_ref:
@@ -156,7 +279,7 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
                            customer_challan_no=body.customer_challan_no, customer_challan_date=body.customer_challan_date,
                            driver_name=body.driver_name, driver_mobile=body.driver_mobile,
                            source="CUST_HHT" if getattr(request.state, "device", None) else "EXT_API",
-                           created_by=(f"HHT:{c.code}:{request.state.device}"[:40] if getattr(request.state, "device", None) else f"EXT:{c.code}"), remarks=(f"ref:{body.client_ref}" if body.client_ref else None) or body.remarks)
+                           created_by=((staff or f"HHT:{c.code}:{request.state.device}")[:40] if getattr(request.state, "device", None) else f"EXT:{c.code}"), remarks=(f"ref:{body.client_ref}" if body.client_ref else None) or body.remarks)
     warnings = []; seen = set()
     for scv in body.pallets:
         tag, pal = services.resolve_tag(db, scv)

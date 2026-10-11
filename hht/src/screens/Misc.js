@@ -109,7 +109,7 @@ export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra, onS
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>
     {extra || null}
     {onSetup ? <TouchableOpacity onPress={onSetup} style={[S.card, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}><Ionicons name="construct-outline" size={24} color={C.accent} /><View style={{ flex: 1 }}><Text style={S.h2}>Setup</Text><Text style={S.mute}>{customer ? '2. Printer · 3. Vehicles' : '1. Server · 2. Printer · 3. Vehicles'}</Text></View><Ionicons name="chevron-forward" size={20} color={C.mute} /></TouchableOpacity> : null}
-    {customer ? null : <View style={S.card}><Text style={S.h2}>App</Text><Text style={S.mute}>Server {getServer()} · device {deviceId} · app v{APP_VERSION}</Text>
+    {customer ? null : <View style={S.card}><Text style={S.h2}>App</Text><Text style={{ color: C.mute, opacity: 0.35, fontSize: 10 }}>device {deviceId} · v{APP_VERSION}</Text>
       <Btn title={upd?.busy ? 'Checking…' : 'Check for app update'} secondary icon="cloud-download-outline" busy={upd?.busy} onPress={async () => { setUpd({ busy: true }); const r = await checkUpdate(); setUpd(r || { none: true }); if (!r) toast('Server has no APK published', 'warn'); else if (r.newer) toast(`v${r.version} available`, 'warn'); else toast('You have the latest version', 'ok'); }} />
       {upd?.newer ? <Btn title={`Download v${upd.version}`} icon="download-outline" onPress={() => openUpdate(upd)} /> : null}</View>}
     <ScanModeCard />

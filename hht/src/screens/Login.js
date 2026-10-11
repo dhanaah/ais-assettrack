@@ -19,7 +19,7 @@ export default function Login({ onDone, deviceId, locked, user, onCustomer, onSe
     if (!u.trim() || !p) return toast('Enter user ID and password', 'warn');
     setBusy(true);
     try { const r = await login(u.trim().toLowerCase(), p, deviceId); await kv.set('last_user', r.user_id); if (!r.plant) throw new Error('HHT login needs a plant user'); toast('Signed in', 'done'); onDone(r); }
-    catch (e) { toast(e.status === 426 ? e.message : e.offline ? `Cannot reach the server "${getServer() || '-'}" - open Setup › 1. Server (scan the server QR)` : e.message, 'err'); } finally { setBusy(false); }
+    catch (e) { toast(e.status === 426 ? e.message : e.offline ? 'Offline - cannot reach the server. Check Wi-Fi or open Setup › 1. Server' : e.message, 'err'); } finally { setBusy(false); }
   };
   return (<Screen><Page>
     <View style={{ alignItems: 'center', marginTop: locked ? 30 : 50, marginBottom: 16 }}><Image source={require('../../assets/icon.png')} style={{ width: 100, height: 100, resizeMode: 'contain' }} /><Image source={require('../../assets/wordmark.png')} style={{ width: 250, height: 76, resizeMode: 'contain' }} /><Text style={S.mute}>v{APP_VERSION} · device {deviceId}</Text></View>
@@ -27,7 +27,7 @@ export default function Login({ onDone, deviceId, locked, user, onCustomer, onSe
     <View style={S.card}>
       {!locked ? <TouchableOpacity onPress={onSetup} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, padding: 10, borderRadius: 12, backgroundColor: srvOk ? '#dcfce7' : srvOk === false ? '#fee2e2' : C.input }}>
         <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: srvOk ? '#16a34a' : srvOk === false ? '#dc2626' : '#94a3b8' }} />
-        <Text style={{ flex: 1, color: '#0f172a', fontWeight: '600' }} numberOfLines={2}>{srvOk ? `Server online · ${srvOk.at} · v${srvOk.v}` : srvOk === false ? (getServer() ? `Server offline · ${getServer()}` : 'No server set - tap to set up') : 'Checking server…'}</Text>
+        <Text style={{ flex: 1, color: '#0f172a', fontWeight: '600' }} numberOfLines={2}>{srvOk ? 'Online' : srvOk === false ? (getServer() ? 'Offline - tap to check Setup' : 'No server set - tap to set up') : 'Checking…'}</Text>
         <Ionicons name="settings-outline" size={20} color="#334155" /></TouchableOpacity> : null}
       <Text style={S.mute}>User ID</Text><TextInput style={S.input} value={u} onChangeText={setU} autoCapitalize="none" autoCorrect={false} editable={!locked} returnKeyType="next" />
       <Text style={S.mute}>Password</Text>

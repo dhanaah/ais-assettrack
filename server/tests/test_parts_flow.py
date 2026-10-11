@@ -575,6 +575,20 @@ with TestClient(app) as c:
     check(pr["pairing"].startswith("AISCUST1|") and pl_["c"] == "HMIL" and pl_["p"] == "CHN" and pl_["k"].startswith("aisd_") and isinstance(pl_["lan"], list)
           and "<svg" in pr["qr_svg"], f"pairing QR: customer, plant, device key, AIS-network addresses {pl_['lan']}, internet address '{pl_['wan']}'")
     DK = {"X-API-Key": pl_["k"], "X-Route": "WAN", "X-App-Version": "2.2.0"}
+    r = c.post("/api/v1/users", headers=A, json={"user_id": "hmil.staff", "full_name": "HMIL Stores", "plant_code": "CHN", "customer_code": "HMIL",
+                                                 "roles": ["CUST_STAFF"], "password": "Cust@1234"})
+    check(r.status_code == 200, f"Customer Staff user created for HMIL: {r.text[:80]}")
+    r = c.post("/api/v1/users", headers=A, json={"user_id": "bad.staff", "full_name": "x", "plant_code": "CHN", "roles": ["CUST_STAFF"], "password": "Cust@1234"})
+    check(r.status_code == 400, "Customer Staff without a customer refused")
+    r = c.post("/api/v1/auth/login", json={"user_id": "hmil.staff", "password": "Cust@1234", "device_id": "HHT-X", "app_version": "9.9.9"})
+    check(r.status_code == 403 and "customer HHT" in r.text, "customer staff cannot sign in on an AIS HHT")
+    r = c.post("/api/ext/v1/return-slip", headers=DK, json={"pallets": ["CHN-P002"], "vehicle_no": "TN09ZZ1"})
+    check(r.status_code == 401 and "sign-in" in r.text, "customer HHT slip needs a staff sign-in")
+    r = c.post("/api/ext/v1/staff-login", headers=DK, json={"user_id": "hmil.staff", "password": "wrong"})
+    check(r.status_code == 401, "wrong staff password refused")
+    st = c.post("/api/ext/v1/staff-login", headers=DK, json={"user_id": "HMIL.Staff", "password": "Cust@1234"}).json()
+    check(st.get("token") and set(st["perms"]) == {"CUST_RECEIVE", "CUST_RETURN"}, f"staff signs in on the customer HHT: {st.get('perms')}")
+    DK |= {"X-Staff-Token": st["token"]}
     me_ = c.get("/api/ext/v1/me", headers=DK).json()
     check(me_["customer"] == "HMIL" and me_["device"] == "HMIL gate HHT 1", "device key works on the customer API (/me)")
     v = c.post("/api/ext/v1/validate", headers=DK, json={"tags": held[:2] + ["NOPE-1"]}).json()
@@ -584,8 +598,8 @@ with TestClient(app) as c:
     with SessionLocal() as db:
         rs = db.get(models.ReturnSlip, sl["slip_no"]); dv = db.query(models.CustomerDevice).filter_by(customer_id=hm_id).first()
         src, by, route = rs.source, rs.created_by, dv.last_route
-    check(sl["qr_payload"].startswith("AIS1|RS|") and sl2.get("duplicate") and src == "CUST_HHT" and "HMIL gate HHT 1" in by and route == "WAN",
-          f"Option A slip from the customer HHT: signed QR, resend not doubled, source CUST_HHT, route recorded ({route})")
+    check(sl["qr_payload"].startswith("AIS1|RS|") and sl2.get("duplicate") and src == "CUST_HHT" and by == "hmil.staff" and route == "WAN",
+          f"Option A slip from the customer HHT: signed QR, resend not doubled, source CUST_HHT, made by the signed-in staff, route recorded ({route})")
     devs = c.get(f"/api/v1/customers/{hm_id}/devices", headers=M).json()
     check(len(devs) == 1 and devs[0]["last_route"] == "WAN" and devs[0]["app_version"] == "2.2.0", "paired devices listed with last route and app version")
     c.delete(f"/api/v1/customers/{hm_id}/devices/{devs[0]['id']}", headers=M)
@@ -648,6 +662,7 @@ with TestClient(app) as c:
     pr = c.post(f"/api/v1/customers/{hm_id}/devices", headers=M, json={"label": "HMIL gate HHT 2"}).json()
     raw = pr["pairing"].split("|", 1)[1]; pl2 = _json.loads(_b64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
     DK2 = {"X-API-Key": pl2["k"], "X-Route": "WAN"}
+    DK2 |= {"X-Staff-Token": c.post("/api/ext/v1/staff-login", headers=DK2, json={"user_id": "hmil.staff", "password": "Cust@1234"}).json()["token"]}
     me2 = c.get("/api/ext/v1/me", headers=DK2).json()
     check(pl2.get("s") and pl2.get("i") and me2["sign_key"] == pl2["s"] and me2["device_id"] == pl2["i"] and "TN09AB4321" in me2["vehicles"],
           f"pairing QR and /me give the offline signing key and the vehicle list ({len(me2['vehicles'])} vehicles)")
@@ -701,5 +716,17 @@ with TestClient(app) as c:
     check(st == ("LINKED", "DB-CHN-602", "GCS/9002", "INV-10", 1), f"trip already loaded: it takes the GCS no + invoice lines, GCS sheet LINKED (not loaded twice): {st}")
     o = c.post("/api/v1/picklists/gcs-open", headers=H, json={"gcs_no": "GCS/9002"}).json()
     check(o["picklist_no"] == "DB-CHN-602", "opening GCS 9002 on the HHT goes to the joined trip")
+    print("26. Customer staff receive an AIS delivery by scanning each pallet while unloading")
+    inc = c.get("/api/ext/v1/incoming", headers=DK2).json()["deliveries"]
+    d0 = next((d for d in inc if d["expected"]), None)
+    check(d0 is not None, f"incoming deliveries for HMIL listed with their pallets ({len(inc)})")
+    pal0 = d0["pallets"][0]["pallet_no"]
+    r = c.post("/api/ext/v1/receive", headers=DK2, json={"picklist_no": d0["picklist_no"], "scanned": [pal0, "AIS-CHN-F-06003-0091002"]}).json()
+    check(r["received"] == 1 and r["results"][0]["on_load"] and not r["results"][1]["on_load"] and r["extra"],
+          f"pallet on the delivery received; pallet not on it recorded as extra: {r['received']}/{r['expected']} extra {r['extra']}")
+    r2 = c.post("/api/ext/v1/receive", headers=DK2, json={"picklist_no": d0["picklist_no"], "scanned": [pal0]}).json()
+    check(r2["received"] == 1, "scanning the same pallet again is not counted twice")
+    r3 = c.post("/api/ext/v1/receive", headers={k: v for k, v in DK2.items() if k != "X-Staff-Token"}, json={"picklist_no": d0["picklist_no"], "scanned": [pal0]})
+    check(r3.status_code == 401, "receiving needs the staff sign-in")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

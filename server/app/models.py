@@ -74,6 +74,7 @@ class User(Base):
     user_id: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(100))
     plant_code: Mapped[str | None] = mapped_column(ForeignKey("plants.code"), index=True)  # None => all plants
+    customer_code: Mapped[str | None] = mapped_column(String(20), index=True)   # Customer Staff: the customer (site) they work for
     password_hash: Mapped[str] = mapped_column(String(100))
     email: Mapped[str | None] = mapped_column(String(120))
     mobile: Mapped[str | None] = mapped_column(String(20))
@@ -586,3 +587,18 @@ class Sequence(Base):
     __tablename__ = "sequences"
     key: Mapped[str] = mapped_column(String(40), primary_key=True)   # e.g. CHN:PL
     value: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class CustomerReceipt(Base):
+    """Customer staff scanned this pallet while unloading an AIS delivery at their site (customer HHT)."""
+    __tablename__ = "customer_receipts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    picklist_no: Mapped[str] = mapped_column(String(40), index=True)
+    plant_code: Mapped[str] = mapped_column(String(10), index=True)
+    customer_code: Mapped[str] = mapped_column(String(20), index=True)
+    pallet_no: Mapped[str] = mapped_column(String(40), index=True)
+    on_load: Mapped[bool] = mapped_column(Boolean, default=True)        # False = not on this delivery (exception)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    received_by: Mapped[str | None] = mapped_column(String(40))
+    device: Mapped[str | None] = mapped_column(String(60))
+    __table_args__ = (UniqueConstraint("picklist_no", "pallet_no", name="uq_custrcpt"),)

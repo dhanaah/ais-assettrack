@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { S, C, Btn, Page, Header, Screen, Segmented, useToast, Toast, Footer, CameraScanner } from '../ui/kit';
-import { api, setServer, getServer, getActiveServer, APP_VERSION } from '../lib/api';
+import { api, setServer, getServer } from '../lib/api';
 import { PrinterCard } from './Misc';
 import { allVehicles, addVehicle, removeVehicle, localVehicles, cleanVeh } from '../lib/vehicles';
 
@@ -28,32 +28,35 @@ export async function probeAll(addresses, ports = [80, 8001, 8002, 8003]) {
 }
 
 export function ServerCard({ toast, onSaved }) {
-  const [srv, setSrv] = useState(getServer() || ''); const [test, setTest] = useState(null); const [cam, setCam] = useState(false); const [busy, setBusy] = useState(false);
-  const runTest = async (value = srv) => {
+  // the server address is never shown (only Online / Offline); it can be typed once under "Enter manually"
+  const [srv, setSrv] = useState(''); const [manual, setManual] = useState(false); const [test, setTest] = useState(null); const [cam, setCam] = useState(false); const [busy, setBusy] = useState(false);
+  useEffect(() => { (async () => { if (!getServer()) return setTest({ ok: false, text: 'Not set - scan the server QR' }); try { await api('/health', { auth: false, timeout: 6000 }); setTest({ ok: true, text: 'Online' }); } catch (e) { setTest({ ok: false, text: 'Offline' }); } })(); }, []);
+  const runTest = async () => {
+    if (!srv.trim()) return toast('Type the server name or IP first', 'warn');
     setTest({ busy: true });
-    try { await setServer(value); const t0 = Date.now(); const h = await api('/health', { auth: false, timeout: 8000 }); setTest({ ok: true, text: `Connected · v${h.version} · ${Date.now() - t0} ms · ${(getActiveServer() || '').replace(/^https?:\/\//, '')}` }); onSaved && onSaved(); }
-    catch (e) { setTest({ ok: false, text: e.offline ? 'No answer - same Wi-Fi as the server? Is the server running? Try Scan server QR.' : e.message }); }
+    try { await setServer(srv.trim()); await api('/health', { auth: false, timeout: 8000 }); setTest({ ok: true, text: 'Online - server saved' }); setSrv(''); setManual(false); onSaved && onSaved(); }
+    catch (e) { setTest({ ok: false, text: e.offline ? 'Offline - no answer. Same Wi-Fi as the server? Try Scan server QR.' : e.message }); }
   };
   const onQr = async (code) => {
     setCam(false); const j = parseServerQr(code);
-    if (!j) return toast('Not an AssetTrack server QR - open http://<server>:8001/hht-setup on the PC', 'err');
+    if (!j) return toast('Not an AssetTrack server QR - tray icon › HHT setup QR on the server PC', 'err');
     setBusy(true); setTest({ busy: true });
     try {
       const ok = await probeAll(j.a, j.ports || [80, 8001, 8002, 8003]);
       const hosts = []; ok.forEach((o) => { const h = o.base.replace(/^https?:\/\//, '').replace(/:\d+$/, ''); if (!hosts.includes(h)) hosts.push(h); });
       j.a.filter((a) => /[a-z]/i.test(a) && a.includes('.') && !hosts.includes(a)).forEach((a) => hosts.push(a));   // domain name kept as a backup
-      if (!ok.length) { setTest({ ok: false, text: `None of ${j.a.join(', ')} answered - connect the HHT to the same network as the server` }); setSrv(hosts.join(', ') || j.a[0]); return; }
-      const value = hosts.join(', '); setSrv(value); await setServer(value);
-      setTest({ ok: true, text: `Connected · v${ok[0].version} · ${ok[0].ms} ms · ${ok[0].base.replace(/^https?:\/\//, '')}` }); toast('Server set from QR', 'done'); onSaved && onSaved();
+      await setServer(hosts.join(', ') || j.a.join(', '));
+      if (!ok.length) { setTest({ ok: false, text: 'Offline - the server did not answer. Connect the HHT to the same network as the server.' }); return; }
+      setTest({ ok: true, text: 'Online - server set from QR' }); toast('Server set from QR', 'done'); onSaved && onSaved();
     } finally { setBusy(false); }
   };
   return (<View style={S.card}><Text style={S.h2}>1. Server</Text>
+    {test && !test.busy ? <View style={[S.row, { marginBottom: 6 }]}><View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: test.ok ? '#16a34a' : '#dc2626' }} /><Text style={[S.body, { color: test.ok ? C.ok : C.warn, fontWeight: '700', flex: 1 }]}>{test.text}</Text></View> : test?.busy ? <ActivityIndicator color={C.accent} /> : null}
     <Btn title="Scan server QR" icon="qr-code-outline" busy={busy} onPress={() => setCam(true)} />
-    <Text style={[S.mute, { marginTop: 4 }]}>On the server PC: tray icon › "HHT setup QR", or open http://localhost:8001/hht-setup.</Text>
-    <Text style={[S.mute, { marginTop: 10 }]}>or type the server name / IP</Text>
-    <View style={S.row}><TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={srv} onChangeText={(t) => { setSrv(t); setTest(null); }} autoCapitalize="none" autoCorrect={false} placeholder="192.168.1.12 or PCNAME.asahiindia.com" />
-      <TouchableOpacity onPress={() => runTest()} style={[S.btnS, { marginTop: 0, paddingHorizontal: 12, minHeight: 46, justifyContent: 'center' }]}>{test?.busy ? <ActivityIndicator color={C.accent} /> : <Text style={S.btnSText}>Save & test</Text>}</TouchableOpacity></View>
-    {test && !test.busy ? <Text style={[S.body, { color: test.ok ? C.ok : C.warn, marginTop: 6, fontWeight: '700' }]}>{test.ok ? '✓ ' : '✗ '}{test.text}</Text> : <Text style={[S.mute, { marginTop: 4 }]}>Ports 80 / 8001 / 8002 / 8003 are tried automatically. Several addresses: separate with a comma.</Text>}
+    <Text style={[S.mute, { marginTop: 4 }]}>On the server PC: tray icon › "HHT setup QR".</Text>
+    {manual ? <View style={[S.row, { marginTop: 10 }]}><TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={srv} onChangeText={setSrv} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder="server name or IP" />
+      <TouchableOpacity onPress={runTest} style={[S.btnS, { marginTop: 0, paddingHorizontal: 12, minHeight: 46, justifyContent: 'center' }]}><Text style={S.btnSText}>Save & test</Text></TouchableOpacity></View>
+      : <TouchableOpacity onPress={() => setManual(true)}><Text style={[S.mute, { marginTop: 10, textDecorationLine: 'underline' }]}>Enter manually (IT / admin)</Text></TouchableOpacity>}
     <CameraScanner visible={cam} onClose={() => setCam(false)} onScan={onQr} /></View>);
 }
 
@@ -74,7 +77,7 @@ export function VehiclesCard({ toast }) {
 export default function Setup({ onBack, customer, initial }) {
   const [msg, toast] = useToast(); const [tab, setTab] = useState(initial || (customer ? 'printer' : 'server'));
   const tabs = customer ? [['printer', '2. Printer'], ['vehicles', '3. Vehicles']] : [['server', '1. Server'], ['printer', '2. Printer'], ['vehicles', '3. Vehicles']];
-  return (<Screen><Header title="Setup" sub={`Server · Printer · Vehicles · v${APP_VERSION}`} onBack={onBack} /><Page>
+  return (<Screen><Header title="Setup" sub="Server · Printer · Vehicles" onBack={onBack} /><Page>
     <Segmented options={tabs} value={tab} onChange={setTab} />
     {tab === 'server' ? <ServerCard toast={toast} /> : tab === 'printer' ? <PrinterCard toast={toast} /> : <VehiclesCard toast={toast} />}
     <Footer /></Page><Toast msg={msg} /></Screen>);
