@@ -106,7 +106,7 @@ def challan(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS {len(lines)}{f' · PART {k.part_no} QTY' if lpn_rows else ''}</th><th>{sum(x.qty for x in lpn_rows) if lpn_rows else len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>Purpose:</b> {purpose}</div>
     <div class="sig"><div>Prepared by (FG Warehouse)</div><div>Approved by (Logistics)</div><div>Received by (Customer / Driver)</div></div>
-    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
+    <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
     return HTMLResponse(html)
 
 
@@ -129,7 +129,7 @@ def slip_html(db, s, printed_by: str) -> str:
     <table><tr><th>#</th><th>Pallet No</th><th>Declared</th><th>Received</th><th>Exception</th></tr>{rows or '<tr><td colspan=5>Quantity-only slip (B2) — pallets identified at yard scan</td></tr>'}
     <tr><th colspan="4" style="text-align:right">DECLARED QTY</th><th>{s.declared_qty}</th></tr></table>
     <div class="sig"><div>Security (IN gate)</div><div>Driver</div><div>Pallet yard in-charge</div></div>
-    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%b-%y %H:%M} by {printed_by}</div></body></html>"""
+    <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {printed_by}</div></body></html>"""
 
 
 @router.get("/gcs/{no}", response_class=HTMLResponse)
@@ -175,7 +175,7 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS LOADED</th><th>{len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>OUT gate:</b> scan the QR at the top right. The gate accepts only a QR printed by AssetTrack for this GCS and vehicle.</div>
     <div class="sig"><div>PDI (Planning Bench)<br><b>{k.pdi_sign or '—'}</b></div><div>Logistics (Shift supervisor, Planning Bench)<br><b>{k.supervisor_sign or '—'}</b></div><div>Security (loading verified)<br><b>{p.user.full_name} ({p.user_id})</b></div></div>
-    <div class="foot">AIS AssetTrack · Developed by DT · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
+    <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
     return HTMLResponse(html)
 
 

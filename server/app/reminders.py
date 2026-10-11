@@ -112,7 +112,7 @@ Kindly arrange their return at the earliest and share the return slip / vehicle 
 <table style="border-collapse:collapse;width:100%" border="1" cellpadding="4">
 <tr style="background:#1e3a8a;color:#fff"><th>Pallet</th><th>Type</th><th>Our challan</th><th>Dispatched</th><th>Days</th><th>Over by</th></tr>{rows}</table>
 <p>{'<b style="color:#b91c1c">This is an escalation: the plant management is copied.</b>' if item['kind'] == 'ESCALATION' else ''}</p>
-<p>Regards,<br>AIS Glass - plant {e(pl)}<br><span style="color:#777;font-size:11px">Automatic message from {e(config.APP_NAME)} · {e(config.DEVELOPER)}</span></p>
+<p>Regards,<br>AIS Glass - plant {e(pl)}<br><span style="color:#777;font-size:11px">Automatic message from {e(config.APP_NAME)}</span></p>
 </body></html>"""
 
 

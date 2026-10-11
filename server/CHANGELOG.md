@@ -1,4 +1,6 @@
 # Changelog — AIS AssetTrack Server
+## 1.18.1 (2026-10-11) — "Developed by DT" only on the login screens (HHT app 2.7.1)
+- Shown on the HHT login, the customer staff sign-in and the web login page only; removed from the other HHT screens, the web footer after sign-in, thermal slips, gate pass / challan PDFs, prints, Excel / PDF exports, templates, reminder e-mails, the HHT setup page and the tray About box
 ## 1.18.0 (2026-10-11) — one server, plant-wise: plant chosen on the HHT, Bench trips served to their own plant (HHT app 2.7.0)
 - Users can work for more than one plant: central users (no plant) - any plant; plant users - own plant + "Also works for plants" (web Users, e.g. PUN;TLJ). Login returns the plants allowed
 - HHT: after sign-in, a user with more than one plant selects the plant (last used marked); every call carries the plant (X-Plant) and the server checks it is allowed - pick lists, GCS, pallets, slips and scans are those of that plant only; switching plant is refused while scans of the previous plant are not synced; unlock keeps the plant

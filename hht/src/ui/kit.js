@@ -186,9 +186,9 @@ export const ListRow = ({ title, sub, right, onLongPress, index }) => (
     {right}
   </TouchableOpacity>);
 
-export const Footer = () => (
+export const Footer = ({ credit }) => (
   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14 }}>
-    <AisLogo size={18} /><Text style={{ color: C.mute, fontSize: 11.5 }}>Asahi India Glass Ltd. · AssetTrack · Developed by DT<Text style={{ opacity: 0.3, fontSize: 9.5 }}>{'  v' + (FOOT.v || '')}</Text></Text></View>);
+    <AisLogo size={18} /><Text style={{ color: C.mute, fontSize: 11.5 }}>Asahi India Glass Ltd. · AssetTrack{credit ? ' · Developed by DT' : ''}<Text style={{ opacity: 0.3, fontSize: 9.5 }}>{'  v' + (FOOT.v || '')}</Text></Text></View>);
 export const FOOT = { v: '' };
 
 export const Backdrop = () => (

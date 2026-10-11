@@ -115,7 +115,7 @@ def _xlsx(kind, rows, sample=False):
                 cell.font = Font(italic=True, color="64748B")
     if sample:
         hl = wb.create_sheet("How to fill")
-        lines = [f"{sp['title']} - upload template (AIS AssetTrack, Developed by DT)", "",
+        lines = [f"{sp['title']} - upload template (AIS AssetTrack)", "",
                  "1. Keep the first row (headings) exactly as it is. Red headings (*) are required.",
                  "2. The grey rows are SAMPLES (code starts with SAMPLE) - they are skipped on upload. Replace them with your data.",
                  "3. One row per record. A row whose code already exists UPDATES that record; a new code ADDS a record.",

@@ -50,7 +50,7 @@ def to_xlsx(body: TableIn, p: Principal = Depends(current_user)):
     from openpyxl.utils import get_column_letter
     wb = Workbook(); ws = wb.active; ws.title = re.sub(r"[\[\]\*\?/\\:]", "", body.title)[:31] or "Data"
     ws.cell(row=1, column=1, value=f"AIS AssetTrack - {body.title}").font = Font(bold=True, size=13, color="1E3A8A")
-    ws.cell(row=2, column=1, value=(body.subtitle or "") + f"  Downloaded {datetime.now():%d-%b-%y %H:%M} by {p.user_id} · Developed by DT").font = Font(italic=True, color="64748B")
+    ws.cell(row=2, column=1, value=(body.subtitle or "") + f"  Downloaded {datetime.now():%d-%b-%y %H:%M} by {p.user_id}").font = Font(italic=True, color="64748B")
     hdr = 4
     for c, h in enumerate(body.columns, 1):
         cell = ws.cell(row=hdr, column=c, value=h)
@@ -111,7 +111,7 @@ def to_pdf(body: TableIn, p: Principal = Depends(current_user)):
         c.setFont("Helvetica-Bold", 13); c.setFillColor(colors.HexColor("#1E3A8A")); c.drawString(36 * mm, Hp - 11 * mm, body.title)
         c.setFont("Helvetica", 8); c.setFillColor(colors.HexColor("#64748B"))
         c.drawString(36 * mm, Hp - 16 * mm, (body.subtitle or "") + f"  ·  {len(body.rows)} rows  ·  downloaded {when} by {p.user_id}")
-        c.drawString(10 * mm, 7 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT")
+        c.drawString(10 * mm, 7 * mm, f"AIS AssetTrack v{config.APP_VERSION}")
         c.drawRightString(Wp - 10 * mm, 7 * mm, f"Page {doc.page}")
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10 * mm, rightMargin=10 * mm, topMargin=23 * mm, bottomMargin=12 * mm,
                             title=body.title, author="AIS AssetTrack")

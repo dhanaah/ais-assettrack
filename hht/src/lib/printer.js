@@ -174,7 +174,7 @@ export function slipDoc(slip, plant, dots, qr) {
     p.rule().bold(true).line(`TOTAL PALLETS: ${slip.declared_qty}`).bold(false);
   }
   if (slip.provisional) p.align('center').bold(true).line('PRINTED WITHOUT NETWORK').bold(false).line(slip.mode === 'A' ? 'QR signed by this HHT' : 'Sent to AIS when online').align('left');
-  p.line().line('Security: ____________').line().line('Driver  : ____________').line().align('center').line('Developed by DT').feed(4).cut();
+  p.line().line('Security: ____________').line().line('Driver  : ____________').feed(4).cut();
   return p;
 }
 
@@ -210,7 +210,7 @@ export async function printGcs(k, plant, qr, copies = 1) {
   const one = () => new Doc(dots).align('center').logo().line().bold(true).size(1, 2).line('GATE PASS (GCS)').size(1, 1).bold(false).line(plant?.name || plant?.code || '').line()
     .qr(qr, { scale: dots >= 576 ? 7 : 6 }).line().bold(true).size(2, 2).line(String(k.gcs_no || '')).size(1, 1).bold(false).line().align('left').rule()
     .line(`Vehicle : ${k.vehicle_no || ''}`).line(`Customer: ${k.customer_code || ''}`).line(`Invoice : ${k.invoice_no || ''}`).line(`Challan : ${k.challan_no || ''}`).line(`Pallets : ${k.scanned ?? k.qty ?? ''}`).rule()
-    .line('Show this QR at the OUT gate.').line().line('Loaded by: ____________').line().line('Driver   : ____________').line().align('center').line('Developed by DT').feed(4).cut();
+    .line('Show this QR at the OUT gate.').line().line('Loaded by: ____________').line().line('Driver   : ____________').feed(4).cut();
   await send(Array.from({ length: copies }, one));
   return { printed: true };
 }

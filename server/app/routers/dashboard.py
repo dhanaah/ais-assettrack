@@ -221,7 +221,7 @@ def export_report(name: str, plant: str | None = None, p: Principal = Depends(cu
     title, fn = EXPORTS[name]
     rows = fn(db, p, pl)
     wb = Workbook(); ws = wb.active; ws.title = title[:30]
-    ws.append([f"{config.APP_NAME} - {title}" + (f" - plant {pl}" if pl else " - all plants"), "", f"as of {utcnow():%d-%b-%y %H:%M} UTC", "", config.DEVELOPER])
+    ws.append([f"{config.APP_NAME} - {title}" + (f" - plant {pl}" if pl else " - all plants"), "", f"as of {utcnow():%d-%b-%y %H:%M} UTC", "", ""])
     ws["A1"].font = Font(bold=True, size=12)
     cols = list(rows[0].keys()) if rows else ["(no data)"]
     cols = [c for c in cols if not isinstance(rows[0].get(c), (dict, list))] if rows else cols
@@ -303,6 +303,6 @@ table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:3p
 <h2>4. Pallets overdue at customers</h2>{tbl(['Pallet', 'Customer', 'Name', 'Days', 'Limit', 'Challan'], [(r['pallet_no'], r['customer'], r['customer_name'], r['days'], r['limit'], r['challan']) for r in overdue[:150]])}
 {('<p class="none">… and ' + str(len(overdue) - 150) + ' more (see Reports > Overdue)</p>') if len(overdue) > 150 else ''}
 <h2>5. Pick lists open for more than 2 days</h2>{tbl(['Pick list', 'Type', 'Customer', 'Status', 'Created', 'Pallets'], [(k.picklist_no, k.dispatch_type, k.customer_code, k.status, f"{k.created_at:%d-%b-%y}", k.qty) for k in stuck])}
-<div class="foot"><span>Printed by {esc(p.user_id)} on {utcnow():%d-%b-%y %H:%M} UTC</span><span>{config.DEVELOPER} · v{config.APP_VERSION}</span></div>
+<div class="foot"><span>Printed by {esc(p.user_id)} on {utcnow():%d-%b-%y %H:%M} UTC</span><span>AIS AssetTrack v{config.APP_VERSION}</span></div>
 </body></html>"""
     return HTMLResponse(html_out)

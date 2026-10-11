@@ -212,7 +212,7 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
             return y - rh
 
         def footer():
-            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · pick list {pk.picklist_no} · printed {now:%d-%b-%y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
+            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · pick list {pk.picklist_no} · printed {now:%d-%b-%y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
             txt(x0 + tw, 13.5 * mm, f"Page {st['page']} of {total or '?'}", 8, True, align="r")
             txt(x0, 9.5 * mm, "Returnable packing material - property of Asahi India Glass Ltd. Not for sale.", 6.8, color=red)
 

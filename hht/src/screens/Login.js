@@ -63,6 +63,6 @@ export default function Login({ onDone, deviceId, locked, user, onCustomer, onSe
     {!locked && onCustomer ? <TouchableOpacity onPress={onCustomer} style={[S.card, { flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
       <Ionicons name="storefront-outline" size={22} color={C.accent} /><View style={{ flex: 1 }}><Text style={{ fontWeight: '700', color: C.fg }}>Customer device</Text>
       <Text style={S.mute}>HHT at a customer site for Option A return slips - pair with the QR from AIS</Text></View><Ionicons name="chevron-forward" size={18} color={C.mute} /></TouchableOpacity> : null}
-    <Footer />
+    <Footer credit />
   </Page><Toast msg={msg} /></Screen>);
 }

@@ -270,7 +270,7 @@ def main():
         webbrowser.open(_u("localhost", PORT))
 
     def on_about(icon, item):
-        info_box(f"{config.APP_NAME} v{config.APP_VERSION}\n{config.DEVELOPER}\n\nHHT / web address (use the name, not the IP):\n" + urls()[0] + "\n\nIP fallback:\n" + "\n".join(urls()[1:]) +
+        info_box(f"{config.APP_NAME} v{config.APP_VERSION}\n\nHHT / web address (use the name, not the IP):\n" + urls()[0] + "\n\nIP fallback:\n" + "\n".join(urls()[1:]) +
                  f"\n\nListening on ports: {', '.join(map(str, LIVE))} (HHT switches automatically if one is slow)\n\nData folder:\n{BASE_DIR}\nIntegration mode: {integration.MODE}\n\nIf HHTs cannot connect, ask IT to allow ports {', '.join(map(str, LIVE))} in Windows Firewall.")
 
     def on_copy(icon, item):

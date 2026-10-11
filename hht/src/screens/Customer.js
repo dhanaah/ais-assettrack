@@ -237,7 +237,7 @@ function StaffLogin({ onDone, onSetup }) {
       <Btn title="Sign in" icon="log-in-outline" busy={busy} onPress={go} /></View>
     <Btn title="Setup · Printer · Vehicles" secondary icon="construct-outline" onPress={onSetup} />
     <Btn title="Test printer" secondary icon="print-outline" onPress={async () => { if (!(await canPrint())) { toast('Choose the printer in Setup first', 'warn'); return onSetup(); } try { await testPrint({ code: pair?.p }); toast('Test page sent', 'done'); } catch (e) { toast('Printer not working: ' + e.message, 'err'); } }} />
-    <Footer /></Page><Toast msg={msg} /></Screen>);
+    <Footer credit /></Page><Toast msg={msg} /></Screen>);
 }
 
 // ---------------------------------------------------------------- receive an AIS delivery (unloading)

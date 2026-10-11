@@ -90,7 +90,7 @@ h1{{font-size:20px;margin:6px 0}}ol,ul{{text-align:left}}.q svg{{width:300px;hei
 <ol><li>On the HHT open AssetTrack - tap <b>Setup</b> (gear on the login screen)</li><li><b>1. Server</b> - <b>Scan server QR</b> - point at this code</li>
 <li>The HHT checks every address and keeps the ones that answer - then sign in</li></ol>
 <p class="m">Addresses in the code (ports {", ".join(map(str, config.SERVER_PORTS or [80, 8001, 8002, 8003]))}):</p><ul class="m">{addrs}</ul>
-<p class="m">The HHT must be on the same network as this server. AIS AssetTrack v{config.APP_VERSION} · {config.DEVELOPER}</p></div></body></html>""")
+<p class="m">The HHT must be on the same network as this server. AIS AssetTrack v{config.APP_VERSION}</p></div></body></html>""")
 
 
 @app.get("/api/v1/health")

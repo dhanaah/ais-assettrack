@@ -83,7 +83,7 @@ button.d.sm,button.s.sm{padding:3px 9px;font-size:11.5px}.acts{display:inline-fl
 <header><img src="/static/icon-on-dark.png" alt="AIS" style="height:46px"><img src="/static/wordmark-on-dark.png" alt="AssetTrack" style="height:38px"><small id="who"></small><span class="sp"></span><span id="upd" title="Data refreshes automatically every 30 seconds while you are not editing"></span><span id="clock"></span><small id="ver"></small><a id="apk" href="#" style="display:none;color:#fff;font-size:12.5px;margin-left:10px;background:rgba(255,255,255,.18);padding:4px 10px;border-radius:999px;text-decoration:none">📱 HHT app</a><button class="s" id="logout" style="display:none">Logout</button></header>
 <nav id="nav" style="display:none"></nav>
 <main id="main"></main>
-<footer>AIS AssetTrack · Developed by DT · Asahi India Glass Ltd. · <span id="ver2"></span></footer>
+<footer id="foot">AIS AssetTrack · Asahi India Glass Ltd. · <span id="credit">Developed by DT · </span><span id="ver2"></span></footer>
 <div id="msg"></div>
 <script>
 const API='/api/v1';let T=localStorage.getItem('tok'),ME=null,PAGE='dash';
@@ -116,6 +116,7 @@ const BENCH_HIDDEN=['pdi','stock','blankets'];   // only used when AssetTrack pl
 
 async function render(){
  const m=$('#main');m.innerHTML='';
+ const cr=document.getElementById('credit');if(cr)cr.style.display=T?'none':'';
  if(!T){$('#nav').style.display='none';$('#logout').style.display='none';$('#who').textContent='';
   const f=h('form',{className:'card login'},h('img',{src:'/static/icon-192.png',alt:'AIS',style:'height:70px;margin:0 auto 6px;display:block'}),h('img',{src:'/static/wordmark.png',alt:'AssetTrack',style:'max-width:280px;margin:0 auto 12px;display:block'}),h('h2',{},'Sign in'),field('User ID','user_id'),h('br'),field('Password','password','','password'),h('br'),h('button',{className:'p',type:'submit'},'Login'),h('p',{className:'muted',style:'margin-top:12px'},h('a',{href:'/hht-setup',target:'_blank'},'📱 HHT setup QR (connect an HHT to this server)')));
   f.onsubmit=async e=>{e.preventDefault();try{const d=formData(f);const r=await api('/auth/login',{method:'POST',body:{...d,device_id:'WEB'}});T=r.token;localStorage.setItem('tok',T);if(r.must_change_pw)msg('Please change your password (Users > My account)');render()}catch(x){msg(x.message,1)}};

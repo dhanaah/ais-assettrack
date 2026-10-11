@@ -228,7 +228,7 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             return y - RH
 
         def footer():
-            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · Developed by DT · pick list {pk.picklist_no} · printed {now:%d-%b-%y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
+            txt(x0, 13.5 * mm, f"AIS AssetTrack v{config.APP_VERSION} · pick list {pk.picklist_no} · printed {now:%d-%b-%y %H:%M}", 6.8, color=(0.4, 0.4, 0.4))
             txt(x0 + tw, 13.5 * mm, f"Page {st['page']} of {total or '?'}", 8, True, align="r")
             txt(x0, 9.5 * mm, "The OUT gate accepts only a QR printed by AssetTrack for this gate pass and vehicle.", 6.8, color=red)
 
