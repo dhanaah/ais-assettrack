@@ -3,8 +3,8 @@
 
 | Folder | What | Version |
 |---|---|---|
-| `server/` | FastAPI + SQL Server/SQLite API, admin web UI, external customer API, IIS deployment | 1.3.0 |
-| `hht/` | Android HHT app (React Native / Expo): offline outbox, scanner + Bluetooth print | 1.3.0 |
+| `server/` | FastAPI + SQLite / SQL Server API, admin web UI, customer API, tray app (Windows) | 1.16.0 |
+| `hht/` | Android HHT app (Expo): offline outbox, scanner / camera, any Bluetooth printer, customer HHT mode | 2.5.3 |
 | `docs/` | Flow charts (overview, 8 process flows, management view) as PDF + HTML source | v0.4 |
 
 ## Versioning
