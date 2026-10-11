@@ -580,6 +580,8 @@ class SlipIn(BaseModel):
     doc_unread: list[str] = []
     doc_text: str | None = None
     doc_read_qty: int | None = None
+    doc_types: dict[str, int] = {}      # pallets written by type only {F: 4, NF: 2}
+    doc_total: int | None = None        # total the customer wrote
 
 
 @router.get("/slips")
@@ -641,12 +643,15 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
             dm = docread.match(db, p.plant, cust.code, body.doc_text)
             body.doc_pallets = [x["pallet_no"] for x in dm["matched"] + dm["probable"]]; body.doc_unread = dm["unread"]
             body.doc_read_qty = body.doc_read_qty or dm["read"]
-        if body.doc_pallets or body.doc_text:
+            body.doc_types = body.doc_types or {x["type"]: x["doc_qty"] for x in dm["type_counts"]}; body.doc_total = body.doc_total or dm["stated_total"]
+        if body.doc_pallets or body.doc_text or body.doc_types or body.doc_total:
             pals = [x for x in dict.fromkeys(body.doc_pallets) if db.get(models.Pallet, x)][:500]
             sl.doc_pallets = json.dumps(pals); sl.doc_unread = json.dumps(body.doc_unread[:60])
             sl.doc_text = (body.doc_text or "")[:20000]; sl.doc_read_qty = body.doc_read_qty if body.doc_read_qty is not None else len(pals)
-            if sl.doc_read_qty and sl.doc_read_qty != body.declared_qty:
-                warnings.append(f"Document shows {sl.doc_read_qty} pallet number(s), count entered {body.declared_qty}")
+            sl.doc_types = json.dumps({str(k).upper()[:15]: int(v) for k, v in (body.doc_types or {}).items() if int(v) > 0}) if body.doc_types else None
+            sl.doc_total = body.doc_total or (sum(body.doc_types.values()) if body.doc_types else None) or (sl.doc_read_qty or None)
+            if sl.doc_total and sl.doc_total != body.declared_qty:
+                warnings.append(f"Customer document says {sl.doc_total} pallet(s), count entered {body.declared_qty}")
     else:
         if not body.pallets:
             raise HTTPException(400, "pallet list required")
@@ -739,12 +744,20 @@ def slip_doc_photo_get(no: str, i: int, p: Principal = Depends(current_user), db
 
 
 def doc_compare(db, sl) -> dict | None:
-    """Pallets read from the customer's document vs pallets received at the yard (Option B knock-off)."""
-    if not sl.doc_pallets:
+    """Customer's document vs pallets received at the yard (Option B knock-off): by pallet number when the document
+    lists them, by pallet type when it gives type quantities only, and the total."""
+    if not (sl.doc_pallets or sl.doc_types or sl.doc_total):
         return None
     doc = json.loads(sl.doc_pallets or "[]")
     got = [l.pallet_no for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no, received=True).all()]
-    return {"doc_qty": sl.doc_read_qty, "declared_qty": sl.declared_qty, "received": len(got),
+    rtype = {}
+    for x in got:
+        m = services.PALLET_ID_RE.match(x or "")
+        k = m.group(2) if m else "?"
+        rtype[k] = rtype.get(k, 0) + 1
+    dtype = json.loads(sl.doc_types or "{}")
+    return {"doc_qty": sl.doc_read_qty, "doc_total": sl.doc_total, "declared_qty": sl.declared_qty, "received": len(got),
+            "by_type": [{"type": k, "doc_qty": dtype.get(k), "received": rtype.get(k, 0)} for k in sorted(set(dtype) | set(rtype))],
             "on_doc_not_received": [services.short_ref(x) for x in doc if x not in got],
             "received_not_on_doc": [services.short_ref(x) for x in got if x not in doc],
             "unread": json.loads(sl.doc_unread or "[]")}

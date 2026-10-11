@@ -25,14 +25,17 @@ export async function matchPage(customer_code, page) {
 
 /** Several pages -> one result (each pallet once). */
 export function mergeResults(list) {
-  const seen = new Set(); const out = { matched: [], probable: [], other: [], unread: [], read: 0, stated_total: null, ai: false, ai_enabled: false };
+  const seen = new Set(); const types = {}; const held = {}; const out = { matched: [], probable: [], other: [], unread: [], read: 0, stated_total: null, ai: false, ai_enabled: false, type_counts: [], doc_kind: 'none' };
   for (const r of list) {
     if (!r) continue;
     for (const k of ['matched', 'probable', 'other']) for (const x of r[k] || []) if (!seen.has(x.pallet_no)) { seen.add(x.pallet_no); out[k].push(x); }
     for (const u of r.unread || []) if (!out.unread.includes(u)) out.unread.push(u);
     out.stated_total = Math.max(out.stated_total || 0, r.stated_total || 0) || null; out.ai = out.ai || !!r.ai; out.ai_enabled = out.ai_enabled || !!r.ai_enabled;
+    for (const t of r.type_counts || []) { types[t.type] = Math.max(types[t.type] || 0, t.doc_qty || 0); held[t.type] = t.at_customer; }   // same summary on 2 pages: not doubled
   }
   out.read = out.matched.length + out.probable.length + out.other.length + out.unread.length;
+  out.type_counts = Object.keys(types).sort().map((t) => ({ type: t, doc_qty: types[t], at_customer: held[t] }));
+  out.doc_kind = out.read && !out.type_counts.length ? 'list' : out.type_counts.length && !out.read ? 'types' : out.type_counts.length ? 'mixed' : out.stated_total ? 'total' : 'none';
   return out;
 }
 

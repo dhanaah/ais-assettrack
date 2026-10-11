@@ -22,6 +22,56 @@ _LABELS = {"NO", "DC", "DN", "INV", "BILL", "PO", "SO", "QTY", "NOS", "TOTAL", "
 _NUM = re.compile(r"(?<![A-Z0-9])(\d{3,7})(?![0-9])")
 
 
+def type_aliases(db: Session) -> dict[str, str]:
+    """Words a customer may write for a pallet type -> type code: the code itself (F, NF, RW) and the
+    description from the pallet type master ("FLAT", "NON FLAT", "RACK WINDSHIELD")."""
+    al = {}
+    codes = {k[0] for k in (_key(p.pallet_no) for p in db.query(models.Pallet.pallet_no).all()) if k}
+    for c in codes:
+        al[c] = c
+    for pt in db.query(models.PalletType).all():
+        code = (pt.code or "").upper()
+        if not code:
+            continue
+        al[code] = code
+        d = re.sub(r"[^A-Z ]+", " ", (pt.description or "").upper())
+        d = re.sub(r"\b(PALLETS?|PLTS?|TYPE|RETURNABLE|EMPTY)\b", " ", d)
+        d = re.sub(r"\s+", " ", d).strip()
+        if len(d) >= 3:
+            al[d] = code
+    return al
+
+
+def type_counts(text: str, aliases: dict[str, str]) -> tuple[dict[str, int], str]:
+    """Pallets written by type only: 'F - 4', 'NF:2 NOS', 'RW x 3', 'FLAT PALLET 6', '4 NOS F'.
+    Returns ({type: qty}, text with those parts blanked so they are not read as serial numbers)."""
+    t = (text or "").upper()
+    if not aliases:
+        return {}, t
+    alt = "|".join(re.escape(a).replace("\\ ", "\\s*") for a in sorted(aliases, key=len, reverse=True))
+    unit = r"(?:NOS?\.?|PCS\.?|PALLETS?|PLTS?)"
+    fwd = re.compile(rf"(?<![A-Z0-9])({alt})(?:\s*(?:PALLETS?|PLTS?|TYPE))?\s*[-:=X*×]?\s*(\d{{1,3}})\s*({unit})?(?![0-9A-Z/.-])")
+    rev = re.compile(rf"(?<![0-9A-Z/.-])(\d{{1,3}})\s*{unit}?\s*(?:OF\s*)?({alt})(?:\s*(?:PALLETS?|PLTS?))?(?![A-Z0-9])")
+    out: dict[str, int] = {}
+    spans = []
+    for m in fwd.finditer(t):
+        name, n, u = m.group(1), int(m.group(2)), m.group(3)
+        if (len(m.group(2)) <= 2 or u) and 0 < n < 500:      # 3+ digits without "nos" = a serial number
+            code = aliases.get(re.sub(r"\s+", " ", name).strip())
+            if code:
+                out[code] = out.get(code, 0) + n; spans.append(m.span())
+    for m in rev.finditer(t):
+        if any(a <= m.start() < b for a, b in spans):
+            continue
+        n, name = int(m.group(1)), m.group(2)
+        code = aliases.get(re.sub(r"\s+", " ", name).strip())
+        if code and 0 < n < 500 and re.search(rf"\d\s*{unit}", m.group(0)) or (code and re.search(r"PALLETS?|PLTS?", m.group(0))):
+            out[code] = out.get(code, 0) + n; spans.append(m.span())
+    for a, b in sorted(spans, reverse=True):
+        t = t[:a] + " " * (b - a) + t[b:]
+    return out, t
+
+
 def _key(pallet_no: str):
     m = services.PALLET_ID_RE.match(pallet_no or "")
     return (m.group(2), int(m.group(3))) if m else None
@@ -74,7 +124,8 @@ def match(db: Session, plant: str, customer: str, text: str) -> dict:
     at_cust = [p for p in db.query(models.Pallet).filter_by(customer_code=customer, status="AT_CUSTOMER").all() if _key(p.pallet_no)]
     types = {k[0] for k in (_key(p.pallet_no) for p in db.query(models.Pallet.pallet_no).all()) if k}
     by_key = {_key(p.pallet_no): p for p in at_cust}
-    toks = tokens(text, types)
+    tcount, rest_text = type_counts(text, type_aliases(db))
+    toks = tokens(rest_text, types)
     matched, probable, other, unread, taken = [], [], [], [], set()
 
     def add(lst, p, t, how, **extra):
@@ -110,25 +161,41 @@ def match(db: Session, plant: str, customer: str, text: str) -> dict:
             add(probable, c[0], t, "one digit differs")
         elif t["type"] or len(str(t["serial"])) >= 4:
             unread.append(t["raw"])
-    return {"matched": matched, "probable": probable, "other": other, "unread": unread[:40],
-            "read": len(matched) + len(probable) + len(other) + len(unread), "at_customer": len(at_cust)}
+    held = {}
+    for p in at_cust:
+        held[_key(p.pallet_no)[0]] = held.get(_key(p.pallet_no)[0], 0) + 1
+    types_out = [{"type": k, "doc_qty": v, "at_customer": held.get(k, 0)} for k, v in sorted(tcount.items())]
+    read = len(matched) + len(probable) + len(other) + len(unread)
+    stated = stated_total(rest_text)
+    how = "list" if read and not tcount else "types" if tcount and not read else "mixed" if tcount else "total" if stated else "none"
+    return {"matched": matched, "probable": probable, "other": other, "unread": unread[:40], "read": read, "at_customer": len(at_cust),
+            "type_counts": types_out, "stated_total": stated or (sum(tcount.values()) if tcount else None), "doc_kind": how}
 
 
-_TOTAL = re.compile(r"TOTAL[^0-9\n]{0,20}(\d{1,3})\b|\b(\d{1,3})\s*(?:NOS\.?\s*)?(?:PALLETS?|PLTS?|TROLLEYS?|BINS?)\b")
+# the count the customer wrote, strongest wording first
+_TOTALS = [re.compile(r"TOTAL[^0-9\n]{0,25}?(\d{1,3})(?!\d)"),
+           re.compile(r"(?:NO\.?\s*OF\s*)?(?:EMPTY\s*)?(?:PALLETS?|PLTS?|TROLLEYS?|BINS?)\s*(?:QTY|NOS?)?\s*[:=\-]?\s*(\d{1,3})(?![\d/.-])"),
+           re.compile(r"(?<![\d/.-])(\d{1,3})\s*(?:NOS\.?|PCS\.?|NUMBERS)?\s*(?:OF\s*)?(?:EMPTY\s*)?(?:PALLETS?|PLTS?|TROLLEYS?|BINS?)\b"),
+           re.compile(r"\bQTY\.?\s*[:=\-]?\s*(\d{1,3})(?![\d/.-])"),
+           re.compile(r"(?<![\d/.-])(\d{1,3})\s*NOS\b")]
 
 
 def stated_total(text: str) -> int | None:
-    """'Total 6 pallets', 'TOTAL QTY: 12', '14 Nos pallets' -> the count the customer wrote (largest found)."""
-    vals = [int(a or b) for a, b in _TOTAL.findall((text or "").upper()) if (a or b)]
-    vals = [v for v in vals if 0 < v < 1000]
-    return max(vals) if vals else None
+    """'Total 6 pallets', 'No of pallets: 12', '14 Nos', 'Qty 6' -> the count the customer wrote."""
+    t = (text or "").upper()
+    for rx in _TOTALS:
+        vals = [int(v) for v in rx.findall(t) if 0 < int(v) < 1000]
+        if vals:
+            return max(vals)
+    return None
 
 
 AI_PROMPT = ("Photo of a customer's document for returnable pallets sent back to the glass maker AIS (layout differs per customer; "
              "may be printed or handwritten, may be a table). List every PALLET identification written on it, one per line, exactly "
              "as written (examples: F-2948, NF7944, RW 1392, AIS-CHN-F-02948-0010001, or bare numbers in a pallet / trolley / bin "
              "column). Do NOT list document numbers, dates, vehicle numbers, phone numbers, quantities or part numbers. "
-             "If a number is unclear, give your best reading. Last line: TOTAL=<pallet count stated on the document, or ?>")
+             "If a number is unclear, give your best reading. If pallets are written only by type with a quantity (e.g. F - 4, Flat pallet 6), "
+             "write one line per type as TYPE QTY NOS. Last line: TOTAL=<pallet count stated on the document, or ?>")
 log = logging.getLogger("docread")
 
 
@@ -165,5 +232,5 @@ def read(db: Session, plant: str, customer: str, device_text: str, image: bytes 
         ai = re.sub(r"(?im)^\s*TOTAL\s*=.*$", "", ai)
     text = "\n".join(x for x in (device_text, ai) if x)
     res = match(db, plant, customer, text)
-    res.update({"ai": ai is not None, "ai_enabled": ai_enabled(), "stated_total": ai_total or stated_total(device_text), "text": text[:20000]})
+    res.update({"ai": ai is not None, "ai_enabled": ai_enabled(), "stated_total": ai_total or res.get("stated_total"), "text": text[:20000]})
     return res

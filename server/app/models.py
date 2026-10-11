@@ -375,6 +375,8 @@ class ReturnSlip(Base):
     doc_unread: Mapped[str | None] = mapped_column(Text)         # JSON [text] pallet-like numbers not matched
     doc_text: Mapped[str | None] = mapped_column(Text)           # text read from the photo(s)
     doc_read_qty: Mapped[int | None] = mapped_column(Integer)    # pallet numbers found on the document
+    doc_types: Mapped[str | None] = mapped_column(Text)          # JSON {type: qty} when written by type only (F - 4, NF - 2)
+    doc_total: Mapped[int | None] = mapped_column(Integer)       # total the customer wrote
     doc_photos: Mapped[str | None] = mapped_column(Text)         # JSON [file name]
 
 

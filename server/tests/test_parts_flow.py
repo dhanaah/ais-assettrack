@@ -627,5 +627,16 @@ with TestClient(app) as c:
     d = c.get(f"/api/v1/slips/{bno}", headers=H).json()["doc"]
     check(d["received"] == 3 and sorted(d["on_doc_not_received"]) == ["F-15005", "RW-05004"] and d["received_not_on_doc"] == [],
           f"yard receiving compared with the document: {d}")
+    m = c.post("/api/v1/slips/doc-match", headers=H, json={"customer_code": "HMIL", "text": "Returnable DC 7790\nF - 2\nRW : 1 NOS\n"}).json()
+    tc = {x["type"]: (x["doc_qty"], x["at_customer"]) for x in m["type_counts"]}
+    check(m["doc_kind"] == "types" and tc.get("F", (0,))[0] == 2 and tc.get("RW", (0,))[0] == 1 and m["stated_total"] == 3 and not m["unread"],
+          f"document with pallet types only (F - 2, RW : 1 NOS): read by type, total 3: {m['type_counts']}")
+    m = c.post("/api/v1/slips/doc-match", headers=H, json={"customer_code": "HMIL", "text": "Empty pallets returned\nNo of pallets - 5\nDC 7791"}).json()
+    check(m["doc_kind"] == "total" and m["stated_total"] == 5, f"document with the total only: 5 ({m['doc_kind']})")
+    r3 = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": 3, "vehicle_no": "TN09AB4323", "doc_text": "F - 2\nRW : 1 NOS"}).json()
+    ev(c, H, "PALLET_SCAN_YARD", {"slip_no": r3["slip_no"], "scanned": "AIS-CHN-RW-05004-0090003"})
+    d3 = c.get(f"/api/v1/slips/{r3['slip_no']}", headers=H).json()["doc"]
+    bt = {x["type"]: (x["doc_qty"], x["received"]) for x in d3["by_type"]}
+    check(d3["doc_total"] == 3 and bt.get("F") == (2, 0) and bt.get("RW") == (1, 1), f"yard compares by type: {d3['by_type']}")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

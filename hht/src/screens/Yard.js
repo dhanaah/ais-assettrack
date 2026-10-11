@@ -46,14 +46,15 @@ export default function Yard({ onBack }) {
   return (<Screen><Header title={slip.slip_no} sub={`Customer ${slip.customer} · mode ${slip.mode} · declared ${slip.qty}`} onBack={() => setSlip(null)} />
     <View style={[S.pad, { paddingBottom: 0 }]}>
       <Glass><View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-        <Ring value={qtyOnly ? `${scans.length}/${slip.qty}` : scans.length} label={qtyOnly ? 'received / count' : 'received'} color={qtyOnly && scans.length !== slip.qty ? C.amber : C.ok} size={76} />
+        <Ring value={qtyOnly ? `${scans.length}/${doc?.total || slip.qty}` : scans.length} label={qtyOnly ? 'received / count' : 'received'} color={qtyOnly && scans.length !== slip.qty ? C.amber : C.ok} size={76} />
         <Ring value={short.length} label={qtyOnly ? 'on doc, not yet' : 'short'} color={short.length ? C.warn : C.ok} size={76} />
         <Ring value={extra.length} label={qtyOnly ? 'not on doc' : 'excess/other'} color={extra.length ? C.amber : C.accent} size={76} />
       </View></Glass>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
         {[['accept', accept, setAccept, 'Accept other-plant', C.accent], ['dmg', damaged, setDamaged, 'Next scan = DAMAGED', C.warn]].map(([k, v, set, l, c]) => <TouchableOpacity key={k} onPress={() => set(!v)} activeOpacity={0.8} style={[S.btnS, { flex: 1, marginTop: 0, minHeight: 44, justifyContent: 'center', backgroundColor: v ? c : undefined, borderColor: v ? c : C.accent }]}><Text style={[S.btnSText, v ? { color: '#fff' } : null]}>{v ? '✓ ' : ''}{l}</Text></TouchableOpacity>)}
       </View>
-      {doc ? <TouchableOpacity onPress={() => doc.photos ? setShowDoc(true) : null} style={[S.btnS, { marginTop: 0, marginBottom: 6, flexDirection: 'row', justifyContent: 'center', gap: 6 }]}><Text style={S.btnSText}>📄 Customer document · {doc.read ?? doc.doc.length} read, {doc.doc.length} matched{doc.photos ? ` · view ${doc.photos} photo(s)` : ' · photo not uploaded yet'}</Text></TouchableOpacity> : qtyOnly ? <Text style={[S.mute, { marginBottom: 6 }]}>Option B count only, no customer document photo - scan every pallet.</Text> : null}
+      {doc ? <TouchableOpacity onPress={() => doc.photos ? setShowDoc(true) : null} style={[S.btnS, { marginTop: 0, marginBottom: 6, alignItems: 'center' }]}><Text style={S.btnSText}>📄 Customer document{doc.doc.length ? ` · ${doc.doc.length} pallet no.` : ''}{doc.total ? ` · total ${doc.total}` : ''}{doc.photos ? ` · view ${doc.photos} photo(s)` : ' · photo not uploaded yet'}</Text>
+        {Object.keys(doc.types || {}).length ? <Text style={[S.mute, { marginTop: 2 }]}>By type: {Object.entries(doc.types).map(([t, q]) => `${t} ${scans.filter(x => (/^AIS-[A-Z0-9]+-([A-Z0-9]+)-/.exec(x.pallet_no) || [])[1] === t).length}/${q}`).join('  ·  ')}</Text> : null}</TouchableOpacity> : qtyOnly ? <Text style={[S.mute, { marginBottom: 6 }]}>Option B count only, no customer document photo - scan every pallet.</Text> : null}
       <ScanInput onScan={onScan} placeholder="Scan pallet tag" />
     </View>
     <FlatList style={{ flex: 1, paddingHorizontal: 14, marginTop: 8 }} data={[...scans].reverse()} keyExtractor={x => String(x.id)} renderItem={({ item }) => (

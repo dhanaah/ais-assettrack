@@ -1,4 +1,8 @@
 # Changelog — AIS AssetTrack Server
+## 1.14.1 (2026-10-11) — customer document written by pallet type only, or total only (HHT app 2.4.2)
+- Pallet type with quantity read from the document: "F - 4", "NF : 2 NOS", "RW x 3", "4 Nos F pallets", and type names from the pallet type master ("Flat pallet 6", "Non flat 2"); shown per type against what AIS shows at the customer (warning when the document has more)
+- Total only: "Total 9", "No of pallets - 5", "6 pallets", "14 Nos", "Qty 7" - offered as the count; warning when the count entered differs
+- Slip keeps type quantities and the customer total; yard receiving shows received / document per type and against the customer total; web slip detail the same
 ## 1.14.0 (2026-10-11) — Option B: photo of the customer's manual document, read and matched; yard sees it (HHT app 2.4.0)
 - IN gate (Option B): security photographs the customer's DC / challan / pallet list (any layout, several pages). The HHT reads the text itself (Google ML Kit, offline) and the server finds the pallet numbers and matches them with the pallets the ledger shows at that customer
 - Matching for any customer format: full QR number, type + serial (F-2948, F.2948, NF7944, RW 1392), number only (when unique at the customer); reading slips fixed (O/0, I/1, S/5, B/8, Z/2, G/6); one wrong digit -> "probable"; DC no / invoice / date / vehicle / phone ignored; the customer's written total is picked up ("Total 6 pallets") and offered as the count

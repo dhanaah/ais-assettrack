@@ -35,7 +35,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
     if (!(+qty > 0)) return toast('Enter the number of pallets', 'err');
     const plant = await kv.get('plant');
     const body = { customer_code: cust.code, mode, vehicle_no: veh.trim().toUpperCase().replace(/\s/g, ''), pallets: [], declared_qty: +qty, customer_challan_no: dc || null, driver_name: drv || null };
-    if (pages.length) Object.assign(body, { doc_text: pages.map(p => p.text).join('\n----\n').slice(0, 20000), doc_pallets: res ? [...res.matched, ...res.probable].map(x => x.pallet_no) : [], doc_unread: res ? res.unread : [], doc_read_qty: res ? res.read : null });
+    if (pages.length) Object.assign(body, { doc_text: pages.map(p => p.text).join('\n----\n').slice(0, 20000), doc_pallets: res ? [...res.matched, ...res.probable].map(x => x.pallet_no) : [], doc_unread: res ? res.unread : [], doc_read_qty: res ? res.read : null, doc_types: res ? Object.fromEntries((res.type_counts || []).map(t => [t.type, t.doc_qty])) : {}, doc_total: res ? res.stated_total : null });
     let slip, provisional = false;
     if (sync.online) {
       try { slip = await api('/slips', { method: 'POST', body }); if (slip.warnings?.length) toast(slip.warnings.join('; '), 'warn'); }
@@ -77,7 +77,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
       {!!res && +qty > 0 && !!res.stated_total && res.stated_total !== +qty ? <Text style={[S.mute, { color: C.warn }]}>Count {qty} differs from the document total {res.stated_total} - count the pallets on the vehicle.</Text> : null}
     </View>
     <View style={S.card}><Text style={S.h2}>Customer document (photo)</Text>
-      <Text style={S.mute}>Photograph the customer's DC / challan / pallet list - every page. The pallet numbers are read and matched with the pallets AIS shows at {cust.code}. The photo is kept with the slip and the yard sees it at receiving.</Text>
+      <Text style={S.mute}>Photograph the customer's DC / challan / pallet list - every page. Pallet numbers, pallet types with quantity (F - 4) or just the total are read and matched with the pallets AIS shows at {cust.code}. The photo is kept with the slip and the yard sees it at receiving.</Text>
       {pages.length ? <ScrollView horizontal style={{ marginTop: 8 }}>{pages.map((p, i) => <View key={p.uri} style={{ marginRight: 8 }}><Image source={{ uri: p.uri }} style={{ width: 70, height: 96, borderRadius: 6, backgroundColor: C.line }} /><TouchableOpacity onPress={() => setPages(pages.filter(x => x !== p))} style={{ position: 'absolute', top: 2, right: 2, backgroundColor: '#0009', borderRadius: 10, paddingHorizontal: 5 }}><Text style={{ color: '#fff' }}>✕</Text></TouchableOpacity><Text style={[S.mute, { textAlign: 'center', fontSize: 10 }]}>page {i + 1}{p.res ? ' ✓' : ''}</Text></View>)}</ScrollView> : null}
       {reading ? <View style={[S.row, { marginTop: 8 }]}><ActivityIndicator color={C.accent} /><Text style={S.mute}>Reading the document…</Text></View> : null}
       <Btn title={pages.length ? `Add page ${pages.length + 1}` : 'Photo of customer document'} secondary icon="camera-outline" busy={reading} onPress={() => setCamOn(true)} />
