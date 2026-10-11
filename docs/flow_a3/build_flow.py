@@ -106,6 +106,7 @@ box("slip", 490, y2, 184, ch, "cust", "Return slip printed", ["no. auto · signe
 box("veh", 290, y2, 172, ch, "step", "Vehicle to AIS", ["with slip, document", "or nothing"])
 edge([P("atc", "b"), P("recv", "t")]); edge([P("recv", "l"), P("recvres", "r")])
 edge([P("retA", "l"), P("slip", "r")]); edge([P("slip", "l"), P("veh", "r")])
+edge([P("recvres", "l"), P("hold", "r")]); edge([P("hold", "l"), P("retA", "r")], "", "emptied", (921, P("hold", "l")[1] - 9))
 parts.append(f'<text class="note" x="702" y="{y2 + ch + 22}">Customer HHT: staff sign in with their own user · works without network, sends later</text>')
 
 # ------------------------------------------------------------------ RETURN
