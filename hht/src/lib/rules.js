@@ -1,5 +1,5 @@
 // Offline validation - same rules as the server, applied to the local cache. Developed by DT
-import { resolveTag, getPicklist, localScans, localScanExists, kv, getLpn, lpnsOnPallet, lpnScans, parsePalletQr, gcsCardCount } from './db';
+import { resolveTag, getPicklist, localScans, localScanExists, kv, getLpn, lpnsOnPallet, lpnScans, parsePalletQr, gcsCardCount, gcsCardsOnPallet } from './db';
 
 const PART_TYPES = ['CUSTOMER', 'STOCK_TRANSFER'];
 const DISPATCH_ZONES = ['FGWH', 'PACKING'];
@@ -26,7 +26,9 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
   let lpn = await getLpn(scanned); let pallet = null;
   if (!lpn) pallet = (await resolveTag(scanned)).pallet;
   if (palletScan) { const p2 = (await resolveTag(palletScan)).pallet; if (!p2) return { ok: false, msg: `Unknown pallet ${palletScan}` }; pallet = p2; }
-  if (!lpn && !pallet) return { ok: false, msg: `Unknown LPN / tag ${scanned}` };
+  // GCS loading: an unknown part card is not "unknown" - it is a card that is not on this GCS (no PDI) -> STOP below
+  const looksPallet = /^\s*(\{|AIS-)/i.test(scanned);
+  if (!lpn && !pallet && (pk.source !== 'GCS' || looksPallet)) return { ok: false, msg: `Unknown ${looksPallet ? 'pallet' : 'LPN / tag'} ${scanned}` };
 
   if (pk.dispatch_type === 'EMPTY_RETURN') {
     if (lpn) return { ok: false, msg: 'Empty return: scan the pallet' };
@@ -51,7 +53,7 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
     if (pallet.home !== plant) return { ok: false, msg: `Foreign pallet ${pallet.pallet_no} (${pallet.home})` };
     if (!lpn && await localScanExists(picklist_no, pallet.pallet_no)) return { ok: false, msg: 'Already loaded on this GCS', dup: true };
     if (!['AVAILABLE', 'ALLOCATED'].includes(pallet.status) || (pallet.status === 'ALLOCATED' && pallet.picklist !== picklist_no)) { if (['AT_CUSTOMER', 'IN_RETURN', 'IN_TRANSIT'].includes(pallet.status)) warn.push(`${pallet.pallet_no} shows ${pallet.status} - return scan missed, will be recorded`); else return { ok: false, msg: `${pallet.pallet_no} is ${pallet.status}${pallet.picklist ? ' (' + pallet.picklist + ')' : ''}` }; }
-    return { ok: true, pallet, lpns: lpn ? [lpn] : [], warn };
+    return { ok: true, pallet, lpns: lpn ? [lpn] : await gcsCardsOnPallet(picklist_no, pallet.pallet_no), warn };
   }
   if (!PART_TYPES.includes(pk.dispatch_type)) {
     if (lpn) return { ok: false, msg: 'Pallet-only list: scan the pallet' };

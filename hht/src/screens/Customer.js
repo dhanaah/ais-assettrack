@@ -56,8 +56,8 @@ export function PairDevice({ onBack, onPaired }) {
     {found ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.ok }]}>
       <Text style={S.h2}>{found.n}</Text>
       <Text style={S.body}>Customer {found.c} · AIS plant {found.p} · device "{found.d}"</Text>
-      <Text style={[S.mute, { marginTop: 6 }]}>AIS network: {(found.lan || []).join(', ') || '—'}</Text>
-      <Text style={S.mute}>Internet: {found.wan || 'not set yet (AIS IT publishes it)'}</Text>
+      <Text style={[S.mute, { marginTop: 6 }]}>AIS network: {(found.lan || []).length ? 'set' : '—'}</Text>
+      <Text style={S.mute}>Internet: {found.wan ? 'set' : 'not set yet (AIS IT publishes it)'}</Text>
       <Btn title="Pair this HHT" icon="link-outline" onPress={save} busy={busy} />
       {test?.err ? <Text style={[S.mute, { color: C.warn }]}>{test.err}</Text> : null}
     </View> : null}
@@ -161,7 +161,7 @@ function NewSlip({ onBack, onDone }) {
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan pallet QR / tag" />
       {list.map((x, i) => <TouchableOpacity key={x.shown} onLongPress={() => setList((l) => l.filter((y) => y.shown !== x.shown))} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 0.5, borderBottomColor: '#cbd5e1' }}>
         <Text style={[S.mute, { width: 28 }]}>{list.length - i}</Text><Text style={{ flex: 1, fontWeight: '700', color: C.fg }}>{x.pallet_no || x.shown}</Text>
-        <Pill s={x.state === 'ok' ? 'AVAILABLE' : x.state === 'warn' ? 'HELD' : 'IN_RETURN'} /><Text style={[S.mute, { marginLeft: 6, fontSize: 11 }]}>{x.state === 'ok' ? 'in ledger' : x.state === 'warn' ? 'check' : x.state === 'checking' ? '…' : 'not checked'}</Text></TouchableOpacity>)}
+        <Pill s={x.state === 'ok' ? 'AVAILABLE' : x.state === 'warn' ? 'HELD' : 'IN_RETURN'} label={x.state === 'ok' ? 'OK' : x.state === 'warn' ? 'CHECK' : 'WAIT'} /><Text style={[S.mute, { marginLeft: 6, fontSize: 11 }]}>{x.state === 'ok' ? 'in ledger' : x.state === 'warn' ? 'check' : x.state === 'checking' ? '…' : 'not checked'}</Text></TouchableOpacity>)}
       {list.length ? <Text style={[S.mute, { marginTop: 4 }]}>Long-press a pallet to remove it.</Text> : null}</View>
     <View style={S.card}>
       <VehiclePicker value={veh} onChange={setVeh} />

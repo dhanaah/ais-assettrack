@@ -302,7 +302,16 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
         audit(db, p, "YARD_RETURN_LOADED", "picklist", no, None, {"pallets": scanned}, request)
         ok, msg = _return_challan(db, k, p, request)
         db.commit()
-        return row(k) | {"challan_message": None if ok else f"Challan not made yet: {msg} - press Challan on the web Pick Lists page"}
+        pr = {}
+        if ok:                               # challan prints on the plant's network printer (Plant Master), no BT printer
+            from .. import gcsprint
+            from ..db import SessionLocal
+            try:
+                pr = gcsprint.print_challan_now(SessionLocal, no, p.user.id)
+            except Exception as e:
+                pr = {"print": f"PDF failed: {e}"[:200]}
+        return row(k) | {"challan_message": None if ok else f"Challan not made yet: {msg} - press Challan on the web Pick Lists page",
+                         "challan_print": pr.get("print"), "challan_pdf": pr.get("challan_pdf")}
     if lpnsvc.is_gcs(k):
         # Finish loading against a GCS: quantity = what was loaded; challan now; the GCS (made after invoicing) is the gate pass
         if scanned < 1:
@@ -789,8 +798,7 @@ def gate_entries(plant: str | None = None, days: int = 7, p: Principal = Depends
     for g in q.order_by(models.GateEntry.created_at.desc()).limit(2000).all():
         r = row(g)
         if g.kind == "CHALLAN":
-            k = db.query(models.PickList).filter_by(challan_no=g.ref_no).first()
-            r["yard_status"] = "RECEIVED" if k and k.status == "CLOSED" else "AT GATE / YARD"
+            r["yard_status"] = "CLOSED" if g.yard_closed_at else "AT GATE / YARD"
         else:
             sl = db.get(models.ReturnSlip, g.ref_no)
             r["yard_status"] = (sl.status if sl else "-")
@@ -907,6 +915,22 @@ def _gate_in_challan(db, p, k, request):
             "gcs_in_no": ge.gcs_in_no, "gcs_message": "Other-plant return on challan - registered at gate, receive the pallets at the pallet yard"}
 
 
+def _close_challan(db, p, ge, body, request):
+    """Other AIS plant's challan: the pallets on it are scanned at the yard (back home, AVAILABLE) and the challan is closed."""
+    if ge.yard_closed_at:
+        raise HTTPException(400, "Already closed")
+    k = db.query(models.PickList).filter_by(challan_no=ge.ref_no).first()
+    on = [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()] if k else []
+    got = [x for x in on if (pal := db.get(models.Pallet, x)) and pal.location_plant == p.plant and pal.status in ("AVAILABLE", "DAMAGED") and pal.zone == "YARD"]
+    short = [x for x in on if x not in got]
+    if short and not (body.supervisor_pin and verify_supervisor_pin(db, p.plant, body.supervisor_pin)):
+        raise HTTPException(403, f"{len(short)} pallet(s) on the challan not received - supervisor PIN to close")
+    ge.yard_closed_at = utcnow()
+    audit(db, p, "CHALLAN_YARD_CLOSE", "gate_entry", ge.entry_no, None, {"challan": ge.ref_no, "received": len(got), "short": short, "remarks": body.remarks}, request)
+    db.commit()
+    return {"slip_no": ge.ref_no, "status": "CLOSED", "received": len(got), "short": short, "exceptions": []}
+
+
 class CloseIn(BaseModel):
     supervisor_pin: str | None = None
     remarks: str | None = None
@@ -916,6 +940,9 @@ class CloseIn(BaseModel):
 def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(hht("RECONCILE_CLOSE")), db: Session = Depends(get_db)):
     sl = db.get(models.ReturnSlip, no)
     if not sl:
+        ge = db.query(models.GateEntry).filter_by(plant_code=p.plant, kind="CHALLAN", ref_no=no).first()
+        if ge:
+            return _close_challan(db, p, ge, body, request)
         raise HTTPException(404, "Not found")
     p.require_plant(sl.plant_code)
     if sl.status == "CLOSED":

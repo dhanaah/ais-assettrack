@@ -73,6 +73,8 @@ export async function resolveTag(scanned) {
   return { tag: null, pallet: p || null };
 }
 export const gcsCardCount = async (ref) => ((await (await openDb()).getFirstAsync('SELECT COUNT(*) c FROM lpns WHERE reserved_for=? OR picklist=?', ref, ref))?.c || 0);
+/** Part cards of this GCS that sit on the pallet (from the GCS file) - picked with the pallet scan, as the server does. */
+export const gcsCardsOnPallet = async (ref, pallet) => (await openDb()).getAllAsync("SELECT * FROM lpns WHERE pallet=? AND (reserved_for=? OR picklist=?) AND status IN ('RESERVED','AVAILABLE')", pallet, ref, ref);
 export const getLpn = async (s) => (await openDb()).getFirstAsync('SELECT * FROM lpns WHERE lpn=?', String(s).trim());
 export const lpnsOnPallet = async (pallet) => (await openDb()).getAllAsync("SELECT * FROM lpns WHERE pallet=? AND status IN ('AVAILABLE','RESERVED','PICKED','PDI_OK')", pallet);
 export const setLpnLocal = async (lpn, fields) => {

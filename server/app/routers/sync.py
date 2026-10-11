@@ -133,7 +133,9 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                 if line:
                     line.received = True
                 else:
-                    exc = "EXCESS" if pal.customer_code == slip.customer_code or pal.customer_code is None else "CROSS_CUSTOMER"
+                    same = pal.customer_code == slip.customer_code or pal.customer_code is None
+                    # Option B is a count only (no pallet list): a pallet of this customer is simply received; the count is checked at close
+                    exc = (None if slip.mode == "B2" else "EXCESS") if same else "CROSS_CUSTOMER"
                     db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pal.pallet_no, declared=False, received=True, exception=exc))
                 if slip.status in ("OPEN", "PENDING_VERIFICATION", "IN_GATE"):
                     slip.status = "RECEIVING"
@@ -261,6 +263,12 @@ def pull(request: Request, since: datetime | None = None, p: Principal = Depends
               "doc_photos": len(__import__("json").loads(sl.doc_photos or "[]")),
               "doc_types": __import__("json").loads(sl.doc_types or "{}"), "doc_total": sl.doc_total}
              for sl in db.query(models.ReturnSlip).filter(models.ReturnSlip.plant_code == p.plant, models.ReturnSlip.status != "CLOSED").all()]
+    # pallets coming home from another AIS plant: the challan registered at the IN gate is received at the yard like a slip
+    for ge in db.query(models.GateEntry).filter_by(plant_code=p.plant, kind="CHALLAN", yard_closed_at=None).all():
+        k = db.query(models.PickList).filter_by(challan_no=ge.ref_no).first()
+        if k:
+            slips.append({"slip_no": ge.ref_no, "customer": k.plant_code, "mode": "CHL", "qty": ge.qty, "status": "IN_GATE",
+                          "pallets": [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()]})
     customers = [{"code": c.code, "name": c.name, "return_mode": c.return_mode} for c in db.query(models.Customer).filter_by(plant_code=p.plant, active=True).all()]
     plant = db.get(models.Plant, p.plant)
     return {"server_time": utcnow().isoformat(), "full": since is None, "plant": {"code": plant.code, "name": plant.name,

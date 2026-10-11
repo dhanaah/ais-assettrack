@@ -80,6 +80,10 @@ def _key(pallet_no: str):
 def tokens(text: str, types: set[str]) -> list[dict]:
     """Pallet references in the text: [{raw, type or None, serial}] (each serial once)."""
     t = (text or "").upper()
+    # vehicle numbers (TN 22 BX 7310) and numbers written after a document label (DC No HM/RDC/24518) are not pallets
+    t = re.sub(r"\b[A-Z]{2}\s?-?\d{1,2}\s?-?[A-Z]{1,3}\s?-?\d{3,4}\b", " ", t)
+    t = re.sub(r"\b(?:PIN|PINCODE)?\s*[-:]?\s*\b\d{3}\s\d{3}\b", " ", t)        # postal PIN code 602 117
+    t = re.sub(r"\b(?:DC|D\.C\.|CHALLAN|INVOICE|INV|PO|GP|LR|GR|BILL|REF|GSTIN|PIN|MOB(?:ILE)?|PH(?:ONE)?)\s*(?:NO\.?|NUMBER|#)?\s*[:.\-]?\s*[A-Z0-9/\-]*\d[A-Z0-9/\-]*", " ", t)
     t = re.sub(r"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b|\b\d{1,2}[-/. ](JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*[-/. ]\d{2,4}\b|\b\d{1,2}:\d{2}(:\d{2})?\b", " ", t)  # dates, times
     out, seen, used = [], set(), []
     for m in _FULL.finditer(t):

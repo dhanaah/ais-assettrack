@@ -1,4 +1,14 @@
 # Changelog — AIS AssetTrack Server
+## 1.22.0 (HHT 2.12.0) - 2026-10-11
+Found while running every process end to end for the process presentation:
+- **Vehicle loading (HHT)**: a part card that is not on the GCS now shows "STOP - do PDI" on the HHT itself (before, an unknown card only said "Unknown LPN / tag").
+- **Vehicle loading (HHT)**: scanning a pallet now picks its part cards from the GCS on the HHT too, so "Finish loading" shows the right loaded quantity against the invoice.
+- **Yard - Option B**: pallets of the customer scanned on an Option B slip are received normally (they were wrongly flagged EXCESS and needed a PIN). Count matching the gate count closes without PIN.
+- **Yard - other-plant challan**: at the owner plant the challan registered at the IN gate appears in Yard In-ward; scan each pallet against the challan and close (PIN if short). Web gate register shows it CLOSED.
+- **Empty pallet return challan** (Yard loading) now prints automatically on the plant's network printer, same as GCS + challan.
+- **Customer document reading**: vehicle numbers (TN 22 BX 7310), DC / invoice numbers after their label and PIN codes are no longer read as pallet numbers.
+- HHT: IN gate result card shows the gate entry number; customer pairing screen no longer shows server addresses; customer return scan list shows OK / CHECK; Yard close button fits small screens (PIN field only when needed).
+
 ## 1.21.0 (HHT 2.11.0) - 2026-10-11
 - **Transporters - template and upload for plant users**: new permission `TRANSPORTER_MASTER`, given to Logistics and Plant Admin (also Master / Central Admin).
   - Masters › Transporters: "Template with sample", "Current data", "Upload", Edit / Delete now also for these plant users.

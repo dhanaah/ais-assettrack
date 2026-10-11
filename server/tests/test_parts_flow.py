@@ -785,5 +785,25 @@ with TestClient(app) as c:
     check(cl.status_code == 403 and "count 2" in cl.text, "count 2 but nothing scanned -> refused")
     cl = c.post(f"/api/v1/slips/{r['slip_no']}/close", headers=H, json={"supervisor_pin": "1234"})
     check(cl.status_code == 200, "supervisor PIN closes it with the difference recorded")
+    print("33. Option B at the yard: pallets of the customer are received (not 'excess'); count matches -> closes without PIN")
+    with SessionLocal() as db:
+        two = [x.pallet_no for x in db.query(models.Pallet).filter_by(customer_code="HMIL", status="AT_CUSTOMER", home_plant="CHN").limit(2).all()]
+    r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "B2", "declared_qty": len(two), "vehicle_no": "TN09AB7171", "doc_photo_count": 1}).json()
+    c.post(f"/api/v1/slips/{r['slip_no']}/doc-photo", headers=H, files={"file": ("d.jpg", b"\xff\xd8\xff fake", "image/jpeg")})
+    for pn in two:
+        e = ev(c, H, "PALLET_SCAN_YARD", {"slip_no": r["slip_no"], "scanned": pn})
+    check(len(two) == 2 and e["status"] == "APPLIED", f"yard scan on Option B applied, no EXCESS: {e['result'][:80]}")
+    cl = c.post(f"/api/v1/slips/{r['slip_no']}/close", headers=H, json={})
+    check(cl.status_code == 200 and cl.json()["received"] == 2, f"count matches -> closed without PIN: {cl.text[:120]}")
+    print("32. Other-plant challan received at the owner plant's yard and closed")
+    pull = c.get("/api/v1/sync/pull", headers=P).json()
+    chl = [x for x in pull["slips"] if x["mode"] == "CHL"]
+    check(chl and chl[0]["customer"] == "CHN" and "PUN-P001" in chl[0]["pallets"], f"PUN yard HHT lists the CHN challan with its pallets: {chl[:1]}")
+    cno = chl[0]["slip_no"]
+    cl = c.post(f"/api/v1/slips/{cno}/close", headers=P, json={})
+    check(cl.status_code == 403 and "not received" in cl.text, "pallet on the challan not received -> PIN needed")
+    cl = c.post(f"/api/v1/slips/{cno}/close", headers=P, json={"supervisor_pin": "1234"}).json()
+    check(cl["status"] == "CLOSED" and "PUN-P001" not in cl["short"], f"closed with PIN: {cl}")
+    check(not [x for x in c.get("/api/v1/sync/pull", headers=P).json()["slips"] if x["slip_no"] == cno], "closed challan leaves the yard list")
 print(f"\nALL {ok_n} CHECKS PASSED")
 os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)

@@ -382,3 +382,25 @@ def generate_and_print(SessionLocal, picklist_no: str, user_pk: int | None, qr_t
                 log.info("GCS print %s: %s", picklist_no, msg)
         threading.Thread(target=bg, daemon=True).start()
     return res
+
+
+def print_challan_now(SessionLocal, picklist_no: str, user_pk: int | None) -> dict:
+    """Empty pallet return (Yard loading / plant to plant): the challan PDF on the plant's shared / network printer."""
+    from .challanprint import build_challan_pdf
+    with SessionLocal() as db:
+        pk = db.get(models.PickList, picklist_no)
+        user = db.get(models.User, user_pk) if user_pk else None
+        plant = db.get(models.Plant, pk.plant_code)
+        cpath = challan_path(pk)
+        with open(cpath, "wb") as f:
+            f.write(build_challan_pdf(db, pk, user))
+        mode = (plant.gcs_print_mode or "OFF").upper(); printer = plant.gcs_printer
+    res = {"challan_pdf": os.path.basename(cpath), "print": "off" if mode == "OFF" or not printer else f"queued on {printer}"}
+    if mode != "OFF" and printer:
+        def bg():
+            with SessionLocal() as db:
+                from . import integration
+                ok, msg = print_pdf(cpath, db.get(models.Plant, pk.plant_code), copies=1)
+                integration._log(db, "PRINT", "CHALLAN", picklist_no, ok, msg); db.commit()
+        threading.Thread(target=bg, daemon=True).start()
+    return res

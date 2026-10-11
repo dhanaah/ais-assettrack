@@ -575,6 +575,7 @@ class GateEntry(Base):
     gcs_in_no: Mapped[str | None] = mapped_column(String(40))
     created_by: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    yard_closed_at: Mapped[datetime | None] = mapped_column(DateTime)       # other-plant challan: received at the yard and closed
 
 
 class AuditLog(Base):

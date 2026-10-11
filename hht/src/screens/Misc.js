@@ -25,7 +25,7 @@ export function GateIn({ onBack }) {
   };
   return (<Screen><Header title="IN Gate" sub="Customer: return slip QR · AIS plant: challan QR" onBack={onBack} /><Page>
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan return slip / challan QR" /></View>
-    {last ? <View style={S.card}><Text style={S.h2}>{last.slip_no} <Pill s={last.status} /></Text><Text style={S.mute}>{last.kind === 'CHALLAN' ? `Other-plant return from ${last.from_plant} · vehicle ${last.vehicle_no || '-'} · ${last.declared_qty} pallets on challan · receive at pallet yard` : `Customer ${last.customer_code} · vehicle ${last.vehicle_no} · declared ${last.declared_qty} · GCS ${last.gcs_in_no || 'pending (retry queue)'}`}</Text></View> : null}
+    {last ? <View style={S.card}><Text style={S.h2}>{last.slip_no} <Pill s={last.status} /></Text><Text style={S.mute}>{last.kind === 'CHALLAN' ? `Other-plant return from ${last.from_plant} · vehicle ${last.vehicle_no || '-'} · ${last.declared_qty} pallets on challan · receive at pallet yard` : `Customer ${last.customer_code} · vehicle ${last.vehicle_no} · declared ${last.declared_qty} · GCS ${last.gcs_in_no || 'pending (retry queue)'}`}</Text>{last.gate_entry ? <Text style={[S.body, { marginTop: 6, fontWeight: '700', color: C.ok }]}>Gate entry {last.gate_entry}{last.repeat ? ' (already registered)' : ''} · {last.kind === 'CHALLAN' ? 'other-plant challan' : last.mode === 'A' ? 'Option A slip' : 'Option B slip'}</Text> : null}</View> : null}
     <Text style={S.mute}>Customer vehicle without slip: make one with "Return Slip (Option B)". Pallets from another AIS plant come only with that plant's challan - scan the challan QR.</Text></Page><Toast msg={msg} /></Screen>);
 }
 
