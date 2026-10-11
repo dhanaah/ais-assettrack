@@ -123,6 +123,7 @@ function NewSlip({ onBack, onDone }) {
   const submit = async () => {
     if (!list.length) return toast('Scan the pallets first', 'err');
     if (!veh.trim()) return toast('Select or type the vehicle number', 'err');
+    if (!dc.trim()) return toast('Enter your delivery challan (DC) number', 'err');
     const warn = list.filter((x) => x.state === 'warn').length;
     const ok = await new Promise((res) => Alert.alert('Create return slip', `${list.length} pallet(s) on ${veh.toUpperCase()}${warn ? `\n${warn} pallet(s) not in your AIS ledger - AIS will check them at the gate` : ''}`, [{ text: 'Cancel', onPress: () => res(false) }, { text: 'Create slip', onPress: () => res(true) }]));
     if (!ok) return;
@@ -155,10 +156,10 @@ function NewSlip({ onBack, onDone }) {
       {list.length ? <Text style={[S.mute, { marginTop: 4 }]}>Long-press a pallet to remove it.</Text> : null}</View>
     <View style={S.card}>
       <VehiclePicker value={veh} onChange={setVeh} />
-      <Text style={S.mute}>Your delivery challan number</Text><TextInput style={S.input} value={dc} onChangeText={setDc} autoCapitalize="characters" />
+      <Text style={S.mute}>Your delivery challan (DC) number *</Text><TextInput style={S.input} value={dc} onChangeText={setDc} autoCapitalize="characters" />
       <Text style={S.mute}>Driver name</Text><TextInput style={S.input} value={drv} onChangeText={setDrv} />
       <Text style={S.mute}>Driver mobile</Text><TextInput style={S.input} value={mob} onChangeText={setMob} keyboardType="phone-pad" />
-      <Btn title={`Create slip · ${list.length} pallet(s)`} icon="checkmark-circle-outline" onPress={submit} busy={busy} color={list.length && veh ? C.ok : C.accent} />
+      <Btn title={`Create slip · ${list.length} pallet(s)`} icon="checkmark-circle-outline" onPress={submit} busy={busy} color={list.length && veh && dc ? C.ok : C.accent} />
       {!getRoute() ? <Text style={[S.mute, { marginTop: 6, color: canPrintOffline() ? C.ok : C.amber, textAlign: 'center' }]}>{canPrintOffline() ? 'No network is fine: the slip prints with this HHT\'s signed QR and is sent later.' : 'Connect once to AIS so this HHT can print slips without network.'}</Text> : null}</View>
   </Page><Toast msg={msg} /></Screen>);
 }

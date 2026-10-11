@@ -668,10 +668,12 @@ with TestClient(app) as c:
     with SessionLocal() as db:
         nl = db.query(models.ReturnSlipLine).filter_by(slip_no=ro).count(); dc = db.get(models.ReturnSlip, ro).customer_challan_no
     check(r.get("duplicate") and nl == 3 and dc == "HM/DC/901" and r["slip_no"] == ro, "HHT online again: same slip number, details merged (3rd pallet, DC)")
-    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": "RO-CHN-999-00001", "pallets": ["AIS-CHN-F-06003-0091002"], "vehicle_no": "TN09AB7777"})
+    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": "RO-CHN-999-00001", "pallets": ["AIS-CHN-F-06003-0091002"], "vehicle_no": "TN09AB7777", "customer_challan_no": "X1"})
     check(r.status_code == 400, "offline number of another HHT refused")
-    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": f"RO-CHN-{did}-00002", "pallets": ["AIS-CHN-F-06003-0091002"], "vehicle_no": "TN09AB7777"}).json()
-    check(r["slip_no"] == f"RO-CHN-{did}-00002" and r["declared_qty"] == 1, "offline slip sent before reaching the gate keeps its printed number (no DC needed)")
+    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": f"RO-CHN-{did}-00002", "pallets": ["AIS-CHN-F-06003-0091002"], "vehicle_no": "TN09AB7777"})
+    check(r.status_code == 422, "customer DC number is mandatory")
+    r = c.post("/api/ext/v1/return-slip", headers=DK2, json={"slip_no": f"RO-CHN-{did}-00002", "pallets": ["AIS-CHN-F-06003-0091002"], "vehicle_no": "TN09AB7777", "customer_challan_no": "HM/DC/902"}).json()
+    check(r["slip_no"] == f"RO-CHN-{did}-00002" and r["declared_qty"] == 1, "offline slip sent before reaching the gate keeps its printed number")
     pu = c.get("/api/v1/sync/pull", headers=H).json()
     check("TN09AB7777" in pu.get("vehicles", []), f"plant HHT gets the vehicle list at sync ({len(pu.get('vehicles', []))})")
 print(f"\nALL {ok_n} CHECKS PASSED")
