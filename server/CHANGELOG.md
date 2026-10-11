@@ -1,6 +1,7 @@
 # Changelog — AIS AssetTrack Server
 ## 1.15.1 (2026-10-11) — customer DC number mandatory on Option A slips (HHT app 2.5.1)
 - Customer HHT / customer API: the customer's delivery challan (DC) number is required again (also for slips printed without network)
+- HHT 2.5.2: "Test printer" on the login screen (before sign-in) - prints the test page on the selected Bluetooth printer, or opens Setup › 2. Printer when none is chosen
 ## 1.15.0 (2026-10-11) — HHT could not reach the server (fixed); login first, Setup; server QR; offline customer slips; online badge (HHT app 2.5.0)
 - FIX: the HHT app was not allowed to use http:// (Android blocks it unless the app says so) - the browser on the HHT could open the server but the app could not. Now allowed; the build checks it
 - Login screen: user ID + password only, with a line showing the server and whether it answers (green online / red offline, every 15 s); Setup button

@@ -40,7 +40,7 @@ class Guard extends React.Component {
 export default function App() {
   useKeepAwake();
   const [ready, setReady] = useState(false); const [me, setMe] = useState(null); const [screen, setScreen] = useState('home'); const [sync, setSync] = useState({ ...syncState });
-  const [cust, setCust] = useState(null); const [pairing, setPairing] = useState(false); const [setupOpen, setSetupOpen] = useState(false);
+  const [cust, setCust] = useState(null); const [pairing, setPairing] = useState(false); const [setupOpen, setSetupOpen] = useState(null);
   const [deviceId, setDev] = useState('HHT'); const [themeKey, setThemeKey] = useState('glass'); const [uiKey, setUiKey] = useState(0); const [locked, setLocked] = useState(false); const [lookupCode, setLookupCode] = useState(null);
   const lastTouch = useRef(Date.now()); const idleMin = useRef(30);
 
@@ -74,8 +74,8 @@ export default function App() {
     <CustomerApp deviceId={deviceId} onUnpaired={() => setCust(null)} onTheme={(k) => { setThemeKey(k); setUiKey(x => x + 1); }} onUi={() => setUiKey(x => x + 1)} /></Guard></React.Fragment>;
   if (pairing && !me) return <PairDevice onBack={() => setPairing(false)} onPaired={async () => { setPairing(false); setCust(await loadPairing()); }} />;
   const onLogin = (r) => { logActivity('LOGIN', r.user_id, r.plant); setMe(r); setLocked(false); lastTouch.current = Date.now(); setScreen('home'); startAutoSync(); syncNow({ full: true }).catch(() => { }); };
-  if ((!me || locked) && setupOpen) return <Setup onBack={() => setSetupOpen(false)} />;
-  if (!me || locked) return <React.Fragment key={themeKey + uiKey}><StatusBar style={T.dark ? 'light' : 'dark'} /><Login deviceId={deviceId} locked={locked && !!me} user={me?.user_id} onDone={onLogin} onCustomer={() => setPairing(true)} onSetup={() => setSetupOpen(true)} /></React.Fragment>;
+  if ((!me || locked) && setupOpen) return <Setup initial={setupOpen === true ? null : setupOpen} onBack={() => setSetupOpen(null)} />;
+  if (!me || locked) return <React.Fragment key={themeKey + uiKey}><StatusBar style={T.dark ? 'light' : 'dark'} /><Login deviceId={deviceId} locked={locked && !!me} user={me?.user_id} onDone={onLogin} onCustomer={() => setPairing(true)} onSetup={(tab) => setSetupOpen(typeof tab === 'string' ? tab : true)} /></React.Fragment>;
 
   const go = (sc) => { if (sc !== 'home') logActivity('SCREEN_OPEN', sc); setScreen(sc); };
   const back = () => { setLookupCode(null); setScreen('home'); };

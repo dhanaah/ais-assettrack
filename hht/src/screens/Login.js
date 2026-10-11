@@ -6,8 +6,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { S, C, Btn, Page, useToast, Toast, Footer, Screen, setNet } from '../ui/kit';
 import { login, setServer, getServer, APP_VERSION, api, getActiveServer } from '../lib/api';
 import { kv } from '../lib/db';
+import { canPrint, testPrint } from '../lib/printer';
 
 export default function Login({ onDone, deviceId, locked, user, onCustomer, onSetup }) {
+  const [pbusy, setPbusy] = useState(false);
   const [u, setU] = useState(user || ''); const [p, setP] = useState(''); const [srv, setSrv] = useState(getServer() || ''); const [busy, setBusy] = useState(false); const [test, setTest] = useState(null); const [showPw, setShowPw] = useState(false); const [msg, toast] = useToast();
   useEffect(() => { if (!user) kv.get('last_user').then(x => x && setU(x)); }, []);
   const [srvOk, setSrvOk] = useState(null);
@@ -33,6 +35,9 @@ export default function Login({ onDone, deviceId, locked, user, onCustomer, onSe
       <Btn title={locked ? 'Unlock' : 'Sign in'} icon={locked ? 'lock-open-outline' : 'log-in-outline'} onPress={go} busy={busy} />
     </View>
     {!locked ? <Btn title="Setup · Server · Printer · Vehicles" secondary icon="construct-outline" onPress={onSetup} /> : null}
+    {!locked ? <Btn title="Test printer" secondary icon="print-outline" busy={pbusy} onPress={async () => {
+      if (!(await canPrint())) { toast('No printer selected yet - choose it in Setup › 2. Printer', 'warn'); return onSetup('printer'); }
+      setPbusy(true); try { await testPrint(await kv.get('plant')); toast('Test page sent - check the printer', 'done'); } catch (e) { toast('Printer not working: ' + e.message, 'err'); } finally { setPbusy(false); } }} /> : null}
     {!locked && onCustomer ? <TouchableOpacity onPress={onCustomer} style={[S.card, { flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
       <Ionicons name="storefront-outline" size={22} color={C.accent} /><View style={{ flex: 1 }}><Text style={{ fontWeight: '700', color: C.fg }}>Customer device</Text>
       <Text style={S.mute}>HHT at a customer site for Option A return slips - pair with the QR from AIS</Text></View><Ionicons name="chevron-forward" size={18} color={C.mute} /></TouchableOpacity> : null}

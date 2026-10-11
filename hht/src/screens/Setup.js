@@ -71,8 +71,8 @@ export function VehiclesCard({ toast }) {
 }
 
 /** Setup screen (before login too). */
-export default function Setup({ onBack, customer }) {
-  const [msg, toast] = useToast(); const [tab, setTab] = useState(customer ? 'printer' : 'server');
+export default function Setup({ onBack, customer, initial }) {
+  const [msg, toast] = useToast(); const [tab, setTab] = useState(initial || (customer ? 'printer' : 'server'));
   const tabs = customer ? [['printer', '2. Printer'], ['vehicles', '3. Vehicles']] : [['server', '1. Server'], ['printer', '2. Printer'], ['vehicles', '3. Vehicles']];
   return (<Screen><Header title="Setup" sub={`Server · Printer · Vehicles · v${APP_VERSION}`} onBack={onBack} /><Page>
     <Segmented options={tabs} value={tab} onChange={setTab} />
