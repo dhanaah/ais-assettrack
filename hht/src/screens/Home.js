@@ -1,7 +1,7 @@
 // Home: live status strip, what is waiting (counts from the local cache), quick lookup, tiles by access right. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { S, C, Page, Header, Footer, Screen, ScanInput, T } from '../ui/kit';
+import { S, C, Page, Header, Footer, Screen, ScanInput, T, UserChip } from '../ui/kit';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb, kv } from '../lib/db';
@@ -58,7 +58,7 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
       <Text style={{ fontWeight: '700', fontSize: Math.round(14 * T.scale), color: C.fg }}>{t[1]}</Text><Text style={[S.mute, { marginTop: 3, fontSize: Math.round(11.5 * T.scale) }]}>{t[2]}</Text></TouchableOpacity>);
   };
   return (<Screen>
-    <Header logo sub={`${me.name} · ${me.plant} · ${me.roles.join(', ')}`} right={<TouchableOpacity onPress={onLogout} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Ionicons name="log-out-outline" size={18} color="#fff" /><Text style={{ color: '#fff' }}>Logout</Text></TouchableOpacity>} />
+    <Header logo below={<UserChip me={me} onLogout={onLogout} />} />
     <TouchableOpacity onPress={() => nav('pending')} style={{ backgroundColor: col, paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '92%' }}>
       <Ionicons name={sync.online ? 'wifi' : 'cloud-offline-outline'} size={14} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }} numberOfLines={1}>{sync.online ? 'ONLINE' : 'OFFLINE'} · {sync.pending} pending{sync.syncing ? ' · syncing…' : ''}{sync.lastSync ? ' · synced ' + fTime(sync.lastSync) : ''}{sync.lastError && sync.lastError !== 'LOGIN' ? ' · ' + sync.lastError : ''}</Text></TouchableOpacity>
     <Page>

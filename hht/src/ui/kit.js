@@ -1,6 +1,6 @@
 // Small UI kit + ScanInput (hardware scanner wedge + camera). Developed by DT
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Vibration, ScrollView, Image, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Modal, Vibration, ScrollView, Image, RefreshControl, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -153,13 +153,28 @@ export function NetBadge({ onPress }) {
     <Text style={{ color: '#fff', fontWeight: '700', fontSize: sc(11) }}>{txt}{n.pending ? ` · ${n.pending}` : ''}</Text></TouchableOpacity>);
 }
 
-export const Header = ({ title, sub, onBack, right, logo }) => (
-  <LinearGradient colors={GRAD.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingTop: 42, paddingBottom: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderBottomLeftRadius: 18, borderBottomRightRadius: 18, shadowColor: '#312e81', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
+export const Header = ({ title, sub, onBack, right, logo, below }) => (
+  <LinearGradient colors={GRAD.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingTop: 42, paddingBottom: below ? 58 : 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', borderBottomLeftRadius: 18, borderBottomRightRadius: 18, shadowColor: '#312e81', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
     {onBack ? <TouchableOpacity onPress={onBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ paddingRight: 12, paddingVertical: 4 }}><Ionicons name="chevron-back" size={26} color="#fff" /></TouchableOpacity> : null}
     {logo ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 10 }}><AisLogo size={38} onDark /><Wordmark height={26} onDark /></View> : null}
     <View style={{ flex: 1 }}>{title ? <Text style={{ color: '#fff', fontWeight: '700', fontSize: sc(17) }}>{title}</Text> : null}{sub ? <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: sc(12) }}>{sub}</Text> : null}</View>
     {right}<NetBadge />
+    {below ? <View style={{ position: 'absolute', left: 14, right: 14, bottom: 10 }}>{below}</View> : null}
   </LinearGradient>);
+
+/** Signed-in user, compact: initials, name on one line, plant and number of roles (tap = full role list). */
+export function UserChip({ me, onLogout }) {
+  const ini = String(me.name || me.user_id || '?').replace(/\(.*\)/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const roles = me.roles || [];
+  return (<View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 14, paddingVertical: 6, paddingHorizontal: 8 }}>
+    <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#312e81', fontWeight: '800', fontSize: 13 }}>{ini}</Text></View>
+    <TouchableOpacity style={{ flex: 1 }} activeOpacity={0.7} onPress={() => Alert.alert(me.name || me.user_id, `Plant ${me.plant || '-'}\nRoles: ${roles.join(', ') || '-'}`)}>
+      <Text style={{ color: '#fff', fontWeight: '700', fontSize: sc(14) }} numberOfLines={1}>{me.name || me.user_id}</Text>
+      <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: sc(11.5) }} numberOfLines={1}>{me.plant || 'All plants'} · {roles.length} role{roles.length === 1 ? '' : 's'} ›</Text>
+    </TouchableOpacity>
+    {onLogout ? <TouchableOpacity onPress={onLogout} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.18)' }}><Ionicons name="log-out-outline" size={16} color="#fff" /><Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Logout</Text></TouchableOpacity> : null}
+  </View>);
+}
 
 /** Segmented control: options [[value,label]], one look everywhere (replaces ad-hoc button rows). */
 export const Segmented = ({ options, value, onChange, color }) => (
