@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { THEMES } from './theme';
 import { feedback } from '../lib/feedback';
 import { kv } from '../lib/db';
+import { onHardwareScan, scannerAvailable } from '../lib/scanner';
 
 export const C = { ...THEMES.glass.C };
 export const GRAD = { ...THEMES.glass.GRAD };
@@ -87,54 +88,32 @@ function ScanModeSwitch({ mode }) {
   return <View style={{ flexDirection: 'row', alignSelf: 'flex-end', borderWidth: 1, borderColor: C.line, borderRadius: 999, padding: 2, marginBottom: 6 }}>{opt('native', 'barcode-outline', 'Scanner')}{opt('camera', 'camera-outline', 'Camera')}</View>;
 }
 
-/** ScanInput - scanner only, no manual typing:
- *  - a scan is accepted with or without the scanner's Enter suffix (Zebra DataWedge often sends none): when the
- *    characters stop arriving the code is taken automatically;
- *  - characters typed by hand (slow, key by key) are refused - "scan the code"; the soft keyboard never opens;
- *  - camera mode: the camera reads the code (any Android device). */
-const SCAN_GAP_MS = 80;      // a scanner "types" faster than this between characters; a person cannot
-const SCAN_END_MS = 160;     // no new character for this long = the scan is complete (no Enter needed)
+/** ScanInput - no keyboard at all: the device's own scanner (trigger button) or the camera reads the code.
+ *  Scanner mode: the hardware scanner sends the barcode to the app directly (Android broadcast - see lib/scanner.js);
+ *  there is no text field, so nothing can be typed and no keyboard ever opens. Camera mode: the camera reads it. */
 export function ScanInput({ onScan, placeholder = 'Scan tag / QR', autoFocus = true, disabled }) {
   const mode = useScanMode(); const camMode = mode === 'camera';
-  const [v, setV] = useState(''); const [cam, setCam] = useState(false); const [focused, setFocused] = useState(false); const [last, setLast] = useState(null); const [warn, setWarn] = useState(null);
-  const ref = useRef(); const busy = useRef(false); const lastT = useRef(0); const slow = useRef(false); const timer = useRef(null); const prev = useRef('');
-  const reset = () => { clearTimeout(timer.current); timer.current = null; slow.current = false; prev.current = ''; setV(''); };
+  const [cam, setCam] = useState(false); const [last, setLast] = useState(null); const busy = useRef(false);
   const submit = async (val) => {
-    const s = String(val ?? '').trim(); clearTimeout(timer.current); timer.current = null;
-    if (!s || busy.current) return;
-    busy.current = true; reset(); setWarn(null); setLast({ s: s.length > 34 ? s.slice(0, 32) + '…' : s, t: new Date() });
-    try { await onScan(s); } finally { busy.current = false; if (!camMode) setTimeout(() => ref.current?.focus(), 50); }
+    const s = String(val ?? '').trim(); if (!s || busy.current || disabled) return;
+    busy.current = true; setLast({ s: s.length > 34 ? s.slice(0, 32) + '…' : s, t: new Date() });
+    try { await onScan(s); } finally { busy.current = false; }
   };
-  const refuse = () => { reset(); feedback('err'); setWarn('Typing is not allowed - scan the code'); };
-  const finish = (t, enter) => {
-    const s2 = String(t || '').trim(); if (!s2) return reset();
-    if (slow.current) return refuse();
-    if (s2.length < 3) { if (enter) return refuse(); timer.current = setTimeout(reset, 1000); return; }   // 1-2 keys: not a code
-    submit(t);
-  };
-  const onChange = (t) => {
-    const now = Date.now(); const added = t.length - prev.current.length;
-    if (!prev.current) slow.current = false;                                  // first character of a new code
-    else if (added === 1 && now - lastT.current > SCAN_GAP_MS) slow.current = true;   // key by key = hand typing
-    lastT.current = now; prev.current = t; setV(t);
-    clearTimeout(timer.current); timer.current = setTimeout(() => finish(t), SCAN_END_MS);
-  };
-  useEffect(() => () => clearTimeout(timer.current), []);
-  useEffect(() => { if (autoFocus && !camMode) setTimeout(() => ref.current?.focus(), 200); }, [camMode]);
-  useEffect(() => { if (!cam && autoFocus && !camMode) setTimeout(() => ref.current?.focus(), 300); }, [cam]);
+  const ref = useRef(submit); ref.current = submit;
+  useEffect(() => { if (camMode || disabled) return undefined; return onHardwareScan((code) => ref.current(code)); }, [camMode, disabled]);
+  const hw = scannerAvailable();
   return (
     <View>
       <ScanModeSwitch mode={mode} />
       {camMode ? <TouchableOpacity disabled={disabled} onPress={() => setCam(true)} style={[S.btn, { marginTop: 0, marginBottom: 8, paddingVertical: sc(18), flexDirection: 'row', justifyContent: 'center', gap: 10 }]}><LinearGradient colors={GRAD.btn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ ...StyleSheet.absoluteFillObject }} /><Ionicons name="camera-outline" size={sc(26)} color="#fff" /><Text style={[S.btnText, { fontSize: sc(17) }]}>Tap to scan</Text></TouchableOpacity> : null}
       <View style={S.row}>
-        {!camMode ? <View style={{ flex: 1 }}>
-          <TextInput ref={ref} value={v} onChangeText={onChange} onSubmitEditing={() => finish(prev.current, true)} blurOnSubmit={false} placeholder={placeholder} editable={!disabled} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-            contextMenuHidden caretHidden={false} style={[S.input, { marginBottom: 0, fontSize: sc(17), borderColor: focused ? C.ok : C.accent, borderWidth: 2, paddingRight: 34 }]} autoCapitalize="characters" autoCorrect={false} showSoftInputOnFocus={false} returnKeyType="done" />
-          <View style={{ position: 'absolute', right: 10, top: 0, bottom: 0, justifyContent: 'center' }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: focused ? C.ok : C.warn }} /></View>
+        {!camMode ? <View style={[S.input, { flex: 1, marginBottom: 0, borderWidth: 2, borderColor: hw ? C.ok : C.warn, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: sc(52) }]}>
+          <Ionicons name="barcode-outline" size={sc(24)} color={hw ? C.ok : C.warn} />
+          <Text style={{ flex: 1, fontSize: sc(15), fontWeight: '600', color: C.fg }} numberOfLines={2}>{hw ? `${placeholder} - press the scanner trigger` : 'No hardware scanner on this device - use Camera'}</Text>
         </View> : <View style={{ flex: 1 }} />}
         {!camMode ? <TouchableOpacity onPress={() => setCam(true)} style={[S.btn, { paddingHorizontal: 14, marginTop: 0, paddingVertical: sc(11) }]}><LinearGradient colors={GRAD.btn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ ...StyleSheet.absoluteFillObject }} /><Ionicons name="camera-outline" size={sc(22)} color="#fff" /></TouchableOpacity> : null}
       </View>
-      <Text style={[S.mute, { marginTop: 4, fontSize: sc(11.5) }, warn ? { color: C.warn, fontWeight: '700' } : null]}>{warn ? '⚠ ' + warn : camMode ? '📷 Camera mode' : focused ? '● Scanner ready' : '○ Tap the field to activate the scanner'}{!warn && last ? `  ·  last: ${last.s} ${last.t.toTimeString().slice(0, 8)}` : ''}</Text>
+      <Text style={[S.mute, { marginTop: 4, fontSize: sc(11.5) }]}>{camMode ? '📷 Camera mode' : hw ? '● Scanner ready (no keyboard)' : '○ Scanner not available'}{last ? `  ·  last: ${last.s} ${last.t.toTimeString().slice(0, 8)}` : ''}</Text>
       <CameraScanner visible={cam} onClose={() => setCam(false)} onScan={(d) => { setCam(false); submit(d); }} />
     </View>);
 }

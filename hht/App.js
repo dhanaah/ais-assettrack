@@ -20,6 +20,7 @@ import { Move, Receipt, Pdi, Misses } from './src/screens/Movement';
 import CustomerApp, { PairDevice } from './src/screens/Customer';
 import Setup from './src/screens/Setup';
 import { loadPairing, setCustDevice } from './src/lib/custapi';
+import { startScanner } from './src/lib/scanner';
 
 /** Crash guard: a screen error shows a recovery page instead of a frozen white screen; details can be copied for DT. */
 class Guard extends React.Component {
@@ -46,7 +47,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      FOOT.v = APP_VERSION; await openDb(); await loadSession();
+      FOOT.v = APP_VERSION; await openDb(); await loadSession(); startScanner().catch(() => { });
       const tk = (await kv.get('theme')) || 'glass'; const scale = (await kv.get('ui_scale')) || 1; applyTheme(tk, scale); setThemeKey(tk); await loadScanMode();
       idleMin.current = (await kv.get('idle_min')) ?? 30;
       const id = (await kv.get('device_id')) || ('HHT-' + (Application.getAndroidId?.() || Math.random().toString(36).slice(2, 8)).toUpperCase().slice(-8));

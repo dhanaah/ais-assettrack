@@ -8,6 +8,8 @@ import { S, C, Btn, Page, Header, Screen, Segmented, useToast, Toast, Footer, Ca
 import { api, setServer, getServer } from '../lib/api';
 import { PrinterCard } from './Misc';
 import { allVehicles, addVehicle, removeVehicle, localVehicles, cleanVeh } from '../lib/vehicles';
+import { kv } from '../lib/db';
+import { scannerAvailable, deviceName, startScanner, setupZebra, onHardwareScan, PRESETS, STATUS } from '../lib/scanner';
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 function b64(s) { s = s.replace(/-/g, '+').replace(/_/g, '/').replace(/[^A-Za-z0-9+/]/g, ''); let o = '', b = 0, n = 0; for (const ch of s) { b = (b << 6) | B64.indexOf(ch); n += 6; if (n >= 8) { n -= 8; o += String.fromCharCode((b >> n) & 255); } } return o; }
@@ -73,12 +75,29 @@ export function VehiclesCard({ toast }) {
     <Text style={[S.mute, { marginTop: 6 }]}>{list.length} vehicle(s){list.length > 60 ? ' - first 60 shown' : ''}</Text></View>);
 }
 
+/** Scanner: the device's own scanner sends barcodes to the app (no keyboard). Zebra is set up automatically. */
+export function ScannerCard({ toast }) {
+  const [last, setLast] = useState(null); const [act, setAct] = useState(''); const [key, setKey] = useState(''); const hw = scannerAvailable();
+  useEffect(() => { kv.get('scanner_custom').then((c) => { if (c) { setAct(c.action || ''); setKey(c.key || ''); } }); return onHardwareScan((code) => setLast({ code, at: new Date() })); }, []);
+  return (<View style={S.card}><Text style={S.h2}>4. Scanner</Text>
+    <View style={[S.row, { marginBottom: 6 }]}><View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: hw ? '#16a34a' : '#dc2626' }} /><Text style={[S.body, { fontWeight: '700', flex: 1 }]}>{hw ? `Scanner module ready · ${deviceName()}` : 'No scanner module in this app build'}</Text></View>
+    <Text style={S.mute}>Scan fields take codes only from the device scanner (trigger) or the camera - there is no keyboard. Zebra DataWedge is set up automatically{STATUS.zebra ? ' (done on this HHT)' : ''}. Urovo, Newland, iData and Chainway work as they come.</Text>
+    <View style={[S.card, { marginTop: 10, borderWidth: 2, borderColor: last ? C.ok : C.line }]}><Text style={S.mute}>Test: press the scanner trigger on any barcode</Text><Text style={[S.big, { fontSize: 18 }]}>{last ? last.code : '—'}</Text>{last ? <Text style={S.mute}>read {last.at.toTimeString().slice(0, 8)}</Text> : null}</View>
+    <Btn title="Set up Zebra scanner again" secondary icon="refresh" onPress={() => { const ok = setupZebra(); toast(ok ? 'Zebra DataWedge profile "AIS AssetTrack" set' : 'Not available on this device', ok ? 'done' : 'warn'); }} />
+    <Text style={[S.mute, { marginTop: 12 }]}>Other brand (IT): the broadcast action and data key set in the device's scanner settings</Text>
+    <TextInput style={S.input} value={act} onChangeText={setAct} autoCapitalize="none" autoCorrect={false} placeholder="Broadcast action, e.g. com.vendor.SCAN" />
+    <TextInput style={S.input} value={key} onChangeText={setKey} autoCapitalize="none" autoCorrect={false} placeholder="Data key, e.g. barcode_data" />
+    <Btn title="Save scanner settings" secondary icon="save-outline" onPress={async () => { await kv.set('scanner_custom', act.trim() ? { action: act.trim(), key: key.trim() } : null); await startScanner(); toast('Scanner settings saved', 'done'); }} />
+    <Text style={[S.mute, { marginTop: 6, fontSize: 11 }]}>Built-in: {PRESETS.map((x) => x.id).join(' · ')}</Text>
+  </View>);
+}
+
 /** Setup screen (before login too). */
 export default function Setup({ onBack, customer, initial }) {
   const [msg, toast] = useToast(); const [tab, setTab] = useState(initial || (customer ? 'printer' : 'server'));
-  const tabs = customer ? [['printer', '2. Printer'], ['vehicles', '3. Vehicles']] : [['server', '1. Server'], ['printer', '2. Printer'], ['vehicles', '3. Vehicles']];
-  return (<Screen><Header title="Setup" sub="Server · Printer · Vehicles" onBack={onBack} /><Page>
+  const tabs = customer ? [['printer', '2. Printer'], ['vehicles', '3. Vehicles'], ['scanner', '4. Scanner']] : [['server', '1. Server'], ['printer', '2. Printer'], ['vehicles', '3. Vehicles'], ['scanner', '4. Scanner']];
+  return (<Screen><Header title="Setup" sub="Server · Printer · Vehicles · Scanner" onBack={onBack} /><Page>
     <Segmented options={tabs} value={tab} onChange={setTab} />
-    {tab === 'server' ? <ServerCard toast={toast} /> : tab === 'printer' ? <PrinterCard toast={toast} /> : <VehiclesCard toast={toast} />}
+    {tab === 'server' ? <ServerCard toast={toast} /> : tab === 'printer' ? <PrinterCard toast={toast} /> : tab === 'scanner' ? <ScannerCard toast={toast} /> : <VehiclesCard toast={toast} />}
     <Footer /></Page><Toast msg={msg} /></Screen>);
 }

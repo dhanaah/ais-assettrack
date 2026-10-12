@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## HHT 2.14.0 - 2026-10-12 (server unchanged 1.22.0)
+- **No keyboard on scan fields at all.** The scan field is no longer a text box: nothing can be typed and no keyboard (on-screen or Zebra Enterprise Keyboard) opens.
+  - Scanner mode: the device scanner (trigger button) sends the barcode straight to the app through its native broadcast - new built-in scanner module.
+  - Zebra: the app creates its own DataWedge profile "AIS AssetTrack" automatically at start (barcode on, broadcast output on, keystroke output OFF). No manual DataWedge setup.
+  - Urovo, Newland, iData, Chainway default broadcasts understood; another brand: Setup › 4. Scanner (action + data key, set by IT).
+  - Camera mode: the camera reads the code.
+- Setup › 4. Scanner: scanner status, test read, "Set up Zebra scanner again".
+
 ## HHT 2.13.0 - 2026-10-12 (server unchanged 1.22.0)
 - **Scan fields: scanner only, no manual keying** (every place a scan is required):
   - A scan is accepted even when the scanner sends no Enter at the end (Zebra DataWedge default) - the code is taken as soon as the characters stop.
