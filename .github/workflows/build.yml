@@ -104,11 +104,13 @@ jobs:
         shell: pwsh
         working-directory: AssetTrack/server
         run: |
-          ../python/python.exe -c "import pystray, PIL, tkinter, uvicorn, app.main; print('imports ok')"
-          if ($LASTEXITCODE) { exit 1 }
-          $p = Start-Process -FilePath ../python/python.exe -ArgumentList "run.py" -PassThru -WindowStyle Hidden
-          Start-Sleep -Seconds 12
+          $out = & ../python/python.exe -c "import sys; print(sys.path); import pystray, PIL, tkinter, uvicorn, app.main; print('imports ok')" 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE) { ($out -split "`n" | Select-Object -Last 8) | ForEach-Object { Write-Output "::error::$_" }; exit 1 }
+          $p = Start-Process -FilePath ../python/python.exe -ArgumentList "run.py" -PassThru -WindowStyle Hidden -RedirectStandardError ../run_err.txt -RedirectStandardOutput ../run_out.txt
+          Start-Sleep -Seconds 15
           try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8001/api/v1/health; Write-Host $r.Content; $ok = $r.StatusCode -eq 200 } catch { $ok = $false; Write-Host $_ }
+          if (-not $ok) { Get-Content ../run_err.txt -Tail 10 -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "::error::$_" } }
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 2
           Remove-Item -Force pallet.db*, secret.key, *.log -ErrorAction SilentlyContinue
