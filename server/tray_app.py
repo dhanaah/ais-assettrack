@@ -5,11 +5,17 @@ Data (pallet.db, logs) is kept next to the EXE. Developed by DT
 import os, sys, shutil, socket, threading, time, traceback, webbrowser, datetime, subprocess
 
 if "--ask-password" in sys.argv:          # helper process: shows only the password box, prints the answer
-    import tkinter as tk
-    from tkinter import simpledialog
-    r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
-    pw = simpledialog.askstring("Stop AssetTrack server", "Central admin password to stop the server:", show="*", parent=r)
-    r.destroy()
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+        r = tk.Tk(); r.withdraw(); r.attributes("-topmost", True)
+        pw = simpledialog.askstring("Stop AssetTrack server", "Central admin password to stop the server:", show="*", parent=r)
+        r.destroy()
+    except Exception:                     # no Tk (portable runtime without it): Windows' own password dialog
+        ps = ("$c = Get-Credential -UserName 'admin' -Message 'AssetTrack: central admin password to stop the server'; "
+              "if ($c) { $c.GetNetworkCredential().Password }")
+        pw = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
     if pw:
         sys.stdout.write(pw); sys.stdout.flush()
     sys.exit(0)
