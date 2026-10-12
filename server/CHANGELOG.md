@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## HHT 2.13.0 - 2026-10-12 (server unchanged 1.22.0)
+- **Scan fields: scanner only, no manual keying** (every place a scan is required):
+  - A scan is accepted even when the scanner sends no Enter at the end (Zebra DataWedge default) - the code is taken as soon as the characters stop.
+  - Codes typed by hand (key by key, also with Enter) are refused: "Typing is not allowed - scan the code", with error beep. The keyboard button on scan fields is removed; the soft keyboard never opens on a scan field.
+  - Camera mode reads the code with the camera; it no longer offers typing.
+  - Scanners that do send Enter keep working as before.
+
 ## 1.22.0 (HHT 2.12.0) - 2026-10-11
 Found while running every process end to end for the process presentation:
 - **Vehicle loading (HHT)**: a part card that is not on the GCS now shows "STOP - do PDI" on the HHT itself (before, an unknown card only said "Unknown LPN / tag").

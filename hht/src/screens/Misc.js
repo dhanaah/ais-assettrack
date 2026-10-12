@@ -65,7 +65,7 @@ export function Damage({ onBack }) {
   };
   return (<Screen><Header title="Damage / Tag issue" onBack={onBack} /><Page>
     <Segmented options={[['DAMAGE', 'Mark damaged', C.warn], ['TAG', 'Tag unreadable / lost', C.amber]]} value={kind} onChange={setKind} />
-    <View style={S.card}><TextInput style={S.input} placeholder="Remarks" value={remarks} onChangeText={setRemarks} /><ScanInput onScan={onScan} placeholder={kind === 'TAG' ? 'Scan tag or type pallet no' : 'Scan pallet tag'} /></View>
+    <View style={S.card}><TextInput style={S.input} placeholder="Remarks" value={remarks} onChangeText={setRemarks} /><ScanInput onScan={onScan} placeholder={kind === 'TAG' ? 'Scan tag' : 'Scan pallet tag'} /></View>
   </Page><Toast msg={msg} /></Screen>);
 }
 
