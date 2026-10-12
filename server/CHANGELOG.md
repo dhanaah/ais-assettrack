@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## HHT 2.15.0 - 2026-10-12 (server unchanged 1.22.0)
+- Home: the signed-in user is a compact strip under the logo - initials badge, name on one line, "plant · N roles" (tap for the full role list) and a small Logout button. No more wrapped role list beside the logo.
+
 ## HHT 2.14.0 - 2026-10-12 (server unchanged 1.22.0)
 - **No keyboard on scan fields at all.** The scan field is no longer a text box: nothing can be typed and no keyboard (on-screen or Zebra Enterprise Keyboard) opens.
   - Scanner mode: the device scanner (trigger button) sends the barcode straight to the app through its native broadcast - new built-in scanner module.
