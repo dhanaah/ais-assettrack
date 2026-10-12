@@ -4,14 +4,27 @@ rem AIS AssetTrack Server - tray application using installed Python (no EXE need
 rem Same as AssetTrack_Server.exe: tray icon, port 8001, data in server\pallet.db, log server\assettrack_server.log
 rem On a new PC the libraries are installed once (for this Windows user, no admin rights needed).
 cd /d "%AT%server"
+if not exist "%AT%scripts" mkdir "%AT%scripts"
 set "LOG=%AT%scripts\server_app.log"
 echo === %date% %time% === > "%LOG%"
+
+rem Portable package (python folder next to this file): everything is inside - no Python install, no internet needed
+if exist "%AT%python\pythonw.exe" (
+  "%AT%python\python.exe" -c "import pystray, PIL, uvicorn, app.main" >> "%LOG%" 2>&1
+  if errorlevel 1 ( echo PORTABLE SERVER CHECK FAILED - see scripts\server_app.log & powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Tail 12" & pause & exit /b 1 )
+  start "" "%AT%python\pythonw.exe" "%AT%server\tray_app.py"
+  echo started portable >> "%LOG%"
+  echo AssetTrack Server started - look for the AT icon near the clock. This window closes now.
+  timeout /t 3 >nul
+  exit /b 0
+)
 
 where python >nul 2>nul
 if errorlevel 1 (
   echo.
   echo PYTHON IS NOT INSTALLED on this PC.
-  echo Install Python 3.11 or newer from python.org - tick "Add python.exe to PATH" - then run this again.
+  echo Use the PORTABLE server instead ^(no Python install, no admin^): unzip AIS_AssetTrack_Server_Portable.zip
+  echo into this AssetTrack folder and run START_ASSETTRACK.bat again.
   pause & exit /b 1
 )
 
@@ -33,7 +46,7 @@ if errorlevel 1 (
   powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Tail 12"
   echo ------------------------------------------------------------
   echo If it says "No module named ..." or pip could not connect: this PC has no internet / proxy for pip.
-  echo   Then use the server EXE instead ^(no Python needed^) - ask for the server EXE link.
+  echo   Then use the PORTABLE server instead ^(AIS_AssetTrack_Server_Portable.zip - no Python, no internet^).
   pause & exit /b 1
 )
 for /f "delims=" %%P in ('python -c "import sys,os;print(os.path.join(os.path.dirname(sys.executable),'pythonw.exe'))"') do set "PYW=%%P"

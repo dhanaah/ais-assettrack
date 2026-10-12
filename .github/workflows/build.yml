@@ -71,6 +71,68 @@ jobs:
           body: "AIS AssetTrack Server v${{ env.SV }} for Windows PCs without Python. Unzip, open the AssetTrack_Server folder and run AssetTrack_Server.exe (tray icon). Developed by DT"
           files: AIS_AssetTrack_Server_EXE.zip
 
+  server-portable:
+    # Portable server: the official signed Python "embeddable" runtime + libraries + app in one folder.
+    # No EXE built by us (antivirus-friendly), no install, no admin rights, no internet on the PC.
+    needs: server
+    permissions: { contents: write }
+    runs-on: windows-latest
+    env: { PYV: '3.12.10' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12.10' }
+      - name: Build the portable folder
+        shell: pwsh
+        run: |
+          $root = "AssetTrack"; New-Item -ItemType Directory -Force "$root/python", "$root/scripts" | Out-Null
+          Invoke-WebRequest -UseBasicParsing "https://www.python.org/ftp/python/$env:PYV/python-$env:PYV-embed-amd64.zip" -OutFile py.zip
+          Expand-Archive py.zip "$root/python"
+          # search path: stdlib zip, Lib (tkinter), site-packages, the app folder; "import site" enables the libraries
+          Set-Content "$root/python/python312._pth" "python312.zip`n.`nLib`nLib\site-packages`n..\server`nimport site" -Encoding ascii
+          python -m pip install --disable-pip-version-check --only-binary=:all: --target "$root/python/Lib/site-packages" -r server/requirements.txt pystray pillow
+          # tkinter (password box when stopping the server) is not in the embeddable runtime: copy it from the same Python version
+          $py = Split-Path (Get-Command python).Source
+          Copy-Item -Recurse "$py/Lib/tkinter" "$root/python/Lib/tkinter"
+          Copy-Item "$py/DLLs/_tkinter.pyd", "$py/DLLs/tcl86t.dll", "$py/DLLs/tk86t.dll" "$root/python/"
+          Copy-Item -Recurse "$py/tcl" "$root/python/tcl"
+          Copy-Item -Recurse server "$root/server"
+          Remove-Item -Recurse -Force "$root/server/tests", "$root/server/dist", "$root/server/build" -ErrorAction SilentlyContinue
+          Copy-Item AssetTrack_Server_App.bat, START_ASSETTRACK.bat, Restart_AssetTrack_Server.bat "$root/"
+          Copy-Item docs/PORTABLE_SERVER.txt "$root/README_PORTABLE.txt"
+      - name: Smoke test with the portable Python only
+        shell: pwsh
+        working-directory: AssetTrack/server
+        run: |
+          ../python/python.exe -c "import pystray, PIL, tkinter, uvicorn, app.main; print('imports ok')"
+          if ($LASTEXITCODE) { exit 1 }
+          $p = Start-Process -FilePath ../python/python.exe -ArgumentList "run.py" -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 12
+          try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8001/api/v1/health; Write-Host $r.Content; $ok = $r.StatusCode -eq 200 } catch { $ok = $false; Write-Host $_ }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Remove-Item -Force pallet.db*, secret.key, *.log -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force logs, backups, gcs_docs, slip_docs -ErrorAction SilentlyContinue
+          if (-not $ok) { exit 1 }
+      - name: Zip
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path server/app/config.py -Pattern 'APP_VERSION = "([^"]+)"').Matches[0].Groups[1].Value
+          "SV=$v" | Out-File -Append $env:GITHUB_ENV
+          Compress-Archive -Force -Path AssetTrack/* -DestinationPath AIS_AssetTrack_Server_Portable.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: server-portable, path: AIS_AssetTrack_Server_Portable.zip }
+      - name: Publish with the server release server-v<version>
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: server-v${{ env.SV }}
+          name: AIS AssetTrack Server v${{ env.SV }} (Windows)
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          body: "AIS AssetTrack Server v${{ env.SV }} for Windows. AIS_AssetTrack_Server_Portable.zip: unzip into the AssetTrack folder and run START_ASSETTRACK.bat - no Python, no install, no admin, no EXE of ours (antivirus-friendly). AIS_AssetTrack_Server_EXE.zip: single EXE build. Developed by DT"
+          files: AIS_AssetTrack_Server_Portable.zip
+
   hht-apk:
     permissions: { contents: write }      # attach the APK to the GitHub release
     needs: server
