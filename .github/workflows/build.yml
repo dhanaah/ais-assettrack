@@ -29,6 +29,7 @@ jobs:
 
   server-exe:
     needs: server
+    permissions: { contents: write }      # attach the server EXE zip to a GitHub release
     runs-on: windows-latest
     defaults: { run: { working-directory: server } }
     steps:
@@ -52,6 +53,23 @@ jobs:
           if (-not $ok) { exit 1 }
       - uses: actions/upload-artifact@v4
         with: { name: server-exe, path: server/dist/AssetTrack_Server }
+      - name: Zip the server EXE for a direct download link (PCs without Python)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path app/config.py -Pattern 'APP_VERSION = "([^"]+)"').Matches[0].Groups[1].Value
+          "SV=$v" | Out-File -Append $env:GITHUB_ENV
+          Compress-Archive -Force -Path dist/AssetTrack_Server -DestinationPath ../AIS_AssetTrack_Server_EXE.zip
+      - name: Publish server EXE as GitHub release server-v<version> (not marked latest - the HHT link stays)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: server-v${{ env.SV }}
+          name: AIS AssetTrack Server v${{ env.SV }} (Windows EXE)
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          body: "AIS AssetTrack Server v${{ env.SV }} for Windows PCs without Python. Unzip, open the AssetTrack_Server folder and run AssetTrack_Server.exe (tray icon). Developed by DT"
+          files: AIS_AssetTrack_Server_EXE.zip
 
   hht-apk:
     permissions: { contents: write }      # attach the APK to the GitHub release
