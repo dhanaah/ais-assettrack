@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## Docs - 2026-10-13 (server 1.25.0, HHT 2.19.0 unchanged)
+- New `docs/DEPLOY_IIS_SQLSERVER.md`: step-by-step production install on IIS + SQL Server and how to update from E:\AssetTrack.
+- `docs/DEPLOY_SERVER_IT.md`: customer HHTs over the restricted FortiClient VPN account (nothing published to the internet); database name PalletDB as in the SQL script.
+- `server/web.config`: placeholder secret removed - the server makes its own random secret.key.
+
 ## Server 1.25.0 - 2026-10-13 (HHT unchanged 2.19.0)
 - Web application: **Neon** theme (approved sample). Button **◐ Neon** in the top bar switches (◐ Glass switches back); each browser remembers its choice. Near-black glass cards with violet edge and glow, purple header, selected menu with glowing left bar, glowing buttons and inputs. Chart and status colours unchanged.
 

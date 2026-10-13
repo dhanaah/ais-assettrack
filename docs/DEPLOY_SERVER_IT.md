@@ -12,12 +12,13 @@ provide. Developed by DT.
 | Server / VM | Windows Server 2019+ (or Windows 10/11), 2 vCPU, 4 GB RAM, 20 GB disk, always on | runs the service |
 | DNS name | `assettrack` (and `assettrack.aisglass.local`) → the server's IP | HHTs connect by name, never by IP |
 | Firewall | inbound TCP **80, 8001, 8002, 8003** from all plant networks and the plant Wi-Fi used by HHTs | web + HHT API (several ports = fail-over) |
-| SQL Server | database `AssetTrack`, login `assettrack_user` with `db_owner` on it (or a Windows service account) | production database |
+| SQL Server | database `PalletDB`, login `pallet_app` with `db_owner` on it (or the IIS app-pool / service Windows account) - script `server\sql\create_db.sql` | production database |
 | ODBC driver | "ODBC Driver 18 for SQL Server" on the server | the program talks to SQL Server through it |
 | Service account | a Windows account that stays logged in, or a scheduled task "at start-up" that runs the EXE | keeps the server running after reboot |
 | Backup | nightly backup of the SQL database (SQLite: the `backups` folder next to the EXE) | recovery |
 | Outbound | SMTP relay access (customer reminder emails); HTTPS to the Oracle EBS API host | emails, EBS integration |
-| Optional | reverse proxy (IIS / nginx) with an AIS certificate on 443; publish only `/api/ext/` to the internet for customers | HTTPS, customer API |
+| Optional | IIS with an AIS certificate on 443 (see `DEPLOY_IIS_SQLSERVER.md`) | HTTPS inside the AIS network |
+| Customer sites | a **restricted SSL-VPN account** (FortiClient) that can reach only the AssetTrack server, port 8001 | customer HHTs reach AIS over VPN - nothing is published to the internet |
 
 ## 2. Install
 
@@ -43,4 +44,5 @@ provide. Developed by DT.
 * **Updates:** stop (tray → Stop server, admin password) → replace the EXE folder → start. Data and settings stay.
 * **Backups (SQLite only):** `backups\pallet-YYYYMMDD.db`, 14 days, plus tray → *Backup database now*.
 * **Second instance:** a second start is refused with a message, so a scheduled task and a manual start cannot clash.
-* **Customer API** for customer IT teams: `docs/Customer_Return_Slip_API.md`.
+* **Customer API** for customer IT teams: `docs/Customer_Return_Slip_API.md` (reached over the AIS VPN only).
+* **IIS + SQL Server** (production option instead of the EXE): `docs/DEPLOY_IIS_SQLSERVER.md`.
