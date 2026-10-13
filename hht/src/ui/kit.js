@@ -11,7 +11,7 @@ import { onHardwareScan, scannerAvailable } from '../lib/scanner';
 
 export const C = { ...THEMES.glass.C };
 export const GRAD = { ...THEMES.glass.GRAD };
-export const T = { key: 'glass', dark: false, blur: 40, blurTint: 'light', scale: 1 };
+export const T = { key: 'glass', dark: false, blur: 40, blurTint: 'light', scale: 1, glow: null };
 const sc = (n) => Math.round(n * T.scale);
 export const S = {};
 const makeStyles = () => StyleSheet.create({
@@ -34,8 +34,15 @@ const makeStyles = () => StyleSheet.create({
 /** Switch theme: copies values into C / GRAD / S in place; caller re-renders (App bumps a key). */
 export function applyTheme(key, scale) {
   const th = THEMES[key] || THEMES.glass;
-  Object.assign(C, th.C); Object.assign(GRAD, th.GRAD); Object.assign(T, { key: THEMES[key] ? key : 'glass', dark: th.dark, blur: th.blur, blurTint: th.blurTint, scale: scale || T.scale || 1 });
+  Object.assign(C, th.C); Object.assign(GRAD, th.GRAD); Object.assign(T, { key: THEMES[key] ? key : 'glass', dark: th.dark, blur: th.blur, blurTint: th.blurTint, scale: scale || T.scale || 1, glow: th.glow || null });
   Object.assign(S, makeStyles());
+  if (T.glow) {          // neon: cards and buttons give off a soft glow in the accent colour
+    Object.assign(S, StyleSheet.create({
+      card: { ...StyleSheet.flatten(S.card), shadowColor: T.glow, shadowOpacity: 0.28, shadowRadius: 14, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
+      btn: { ...StyleSheet.flatten(S.btn), shadowColor: T.glow, shadowOpacity: 0.75, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
+      btnS: { ...StyleSheet.flatten(S.btnS), shadowColor: T.glow, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 0 } },
+    }));
+  }
 }
 applyTheme('glass');
 

@@ -2,7 +2,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 
-export const APP_VERSION = '2.18.0';
+export const APP_VERSION = '2.19.0';
 let token = null, baseUrl = null, deviceHeader = 'HHT', plantSel = null;   // plantSel: plant chosen at sign-in (X-Plant)
 export const setPlant = async (code) => { plantSel = code || null; await kv.set('sel_plant', plantSel); };
 export const getPlant = () => plantSel;

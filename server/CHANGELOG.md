@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## HHT 2.19.0 - 2026-10-13 (server unchanged 1.24.0)
+- New theme **Neon (dark)** in Settings › Theme (approved sample): near-black glass cards with a faint violet edge and soft violet glow, purple header, glowing violet buttons and selected options. Status colours (OK / warning / error) unchanged. Layout unchanged.
+
 ## Server 1.24.0 + HHT 2.18.0 - 2026-10-13 - remaining review items closed
 - **Print / Excel links no longer carry the sign-in token.** The web asks for a 2-minute ticket when you open a print or download; an old link is useless after 2 minutes. Sign-in tokens in links are refused.
 - **Password change ends older sign-ins** (other browsers / HHTs with the old password must sign in again). Unknown user names take the same time as wrong passwords.

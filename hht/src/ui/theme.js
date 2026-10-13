@@ -12,5 +12,9 @@ export const THEMES = {
   outdoor: { name: 'Outdoor (high contrast)', dark: false,
     C: { bg: '#ffffff', card: '#ffffff', fg: '#000000', mute: '#1f2937', accent: '#0b2a6f', violet: '#b00020', ok: '#006b3c', warn: '#b00020', amber: '#9a4d00', line: '#111827', sky: '#0b2a6f', input: '#ffffff', inputBorder: '#111827' },
     GRAD: { screen: ['#ffffff', '#ffffff', '#ffffff'], header: ['#0b2a6f', '#0b2a6f', '#0b2a6f'], btn: ['#0b2a6f', '#0b2a6f'], ok: ['#006b3c', '#006b3c'], amber: ['#9a4d00', '#9a4d00'], red: ['#b00020', '#b00020'], blobs: ['transparent', 'transparent', 'transparent'] }, blur: 0, blurTint: 'light' },
+  // Neon: near-black glass panels, one violet accent that glows (cards, buttons, active items). glow = shadow colour.
+  neon: { name: 'Neon (dark)', dark: true, glow: '#a855f7',
+    C: { bg: '#0e0f13', card: 'rgba(24,25,32,0.92)', fg: '#f4f4f5', mute: '#a1a1aa', accent: '#c084fc', violet: '#f472b6', ok: '#4ade80', warn: '#fb7185', amber: '#fbbf24', line: 'rgba(168,85,247,0.28)', sky: '#22d3ee', input: 'rgba(18,19,25,0.95)', inputBorder: 'rgba(168,85,247,0.38)' },
+    GRAD: { screen: ['#0b0b10', '#111117', '#170d24'], header: ['#140c24', '#3b0764', '#7e22ce'], btn: ['#7c3aed', '#c026d3'], ok: ['#059669', '#22c55e'], amber: ['#d97706', '#f59e0b'], red: ['#e11d48', '#f43f5e'], blobs: ['rgba(168,85,247,0.22)', 'rgba(34,211,238,0.08)', 'rgba(217,70,239,0.16)'] }, blur: 30, blurTint: 'dark' },
 };
 export const THEME_KEYS = Object.keys(THEMES);
