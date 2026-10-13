@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.24.0 + HHT 2.18.0 - 2026-10-13 - remaining review items closed
+- **Print / Excel links no longer carry the sign-in token.** The web asks for a 2-minute ticket when you open a print or download; an old link is useless after 2 minutes. Sign-in tokens in links are refused.
+- **Password change ends older sign-ins** (other browsers / HHTs with the old password must sign in again). Unknown user names take the same time as wrong passwords.
+- **IN gate (HHT): "Slip QR will not scan (supervisor)"** - pick the open Option A slip, enter the supervisor PIN, let it in (audit log). Same style as the OUT gate manual override.
+- **HHT sync:** a scan made while a sync is running is no longer overwritten by the server's older copy of that pallet (the pallet is pulled again on the next sync).
+- **Retry job:** scheduler.ps1 sends the key from server\job.key; a call passed on by IIS / a proxy without the key is refused. The server logs an error if secret.key cannot be written.
+
 ## Server 1.23.0 + HHT 2.17.0 - 2026-10-13 - full review: security and logic fixes
 Full check of the whole application (security, server logic, HHT app) by separate reviewers. All 226 process checks pass plus 30 new checks (server/tests/audit_fixes_check.py, also run by the build).
 

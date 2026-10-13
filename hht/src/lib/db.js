@@ -40,11 +40,32 @@ export const kv = {
 };
 
 // ---------- reference cache
+// pallets with a scan on this HHT that the server has not taken yet (scanned while the sync was running): the pull must
+// not put the older server state over that scan
+async function palletsWithPendingScans(d) {
+  const out = new Set();
+  for (const e of await d.getAllAsync("SELECT payload FROM outbox WHERE status='PENDING'")) {
+    let p = {}; try { p = JSON.parse(e.payload) || {}; } catch (x) { }
+    for (const v of [p.local_pallet, p.pallet, p.pallet_no, p.scanned]) {
+      if (!v || typeof v !== 'string') continue;
+      out.add(v);
+      const t = await d.getFirstAsync('SELECT pallet FROM tags WHERE tag=?', v); if (t && t.pallet) out.add(t.pallet);
+    }
+  }
+  return out;
+}
+
+/** Returns true when every pallet was taken; false when some were kept for a pending scan (pull them again next time). */
 export async function applyPull(data) {
   const d = await openDb();
+  let keep = new Set(), kept = 0;
   await d.withTransactionAsync(async () => {
-    if (data.full) { await d.execAsync('DELETE FROM pallets; DELETE FROM tags; DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers; DELETE FROM lpns;'); }
-    for (const p of (data.pallets || [])) await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist, p.zone || 'YARD', p.load || 'EMPTY', p.load_ref || null, p.location || null);
+    keep = await palletsWithPendingScans(d);
+    if (data.full) {
+      const ks = [...keep]; await d.runAsync(`DELETE FROM pallets WHERE pallet_no NOT IN (${ks.map(() => '?').join(',') || "''"})`, ...ks);
+      await d.execAsync('DELETE FROM tags; DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers; DELETE FROM lpns;');
+    }
+    for (const p of (data.pallets || [])) if (keep.has(p.pallet_no) || (p.tag && keep.has(p.tag))) kept++; else await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist, p.zone || 'YARD', p.load || 'EMPTY', p.load_ref || null, p.location || null);
     for (const l of (data.lpns || [])) { if (['DISPATCHED', 'REJECTED', 'MISSING'].includes(l.status)) await d.runAsync('DELETE FROM lpns WHERE lpn=?', l.lpn); else await d.runAsync('INSERT OR REPLACE INTO lpns VALUES(?,?,?,?,?,?,?)', l.lpn, l.part, l.qty, l.pallet, l.status, l.reserved_for, l.picklist); }
     for (const t of (data.tags || [])) await d.runAsync('INSERT OR REPLACE INTO tags VALUES(?,?,?)', t.tag, t.pallet, t.status);
     // masters come in full each pull: replace them only when the server sent the list
@@ -58,7 +79,8 @@ export async function applyPull(data) {
     for (const c of (data.customers || [])) await d.runAsync('INSERT OR REPLACE INTO customers VALUES(?,?,?)', c.code, c.name, c.return_mode);
   });
   await kv.set('plant', data.plant);
-  await kv.set('last_pull', data.server_time);
+  if (!kept) await kv.set('last_pull', data.server_time);     // a pallet was kept for a pending scan: same delta comes again next pull
+  return !kept;
 }
 
 // AIS pallet label QR: {"uniquePalletID":"AIS-AAB-ANF-00001-0000001","ownerPlant":"AAB","palletType":"ANF",...} or the plain ID

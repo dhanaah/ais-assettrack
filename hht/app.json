@@ -2,7 +2,7 @@
   "expo": {
     "name": "AIS AssetTrack",
     "slug": "ais-assettrack",
-    "version": "2.17.0",
+    "version": "2.18.0",
     "orientation": "portrait",
     "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,7 +18,7 @@
       },
       "package": "com.aisglass.pallethht",
       "allowBackup": false,
-      "versionCode": 46,
+      "versionCode": 47,
       "permissions": [
         "CAMERA",
         "BLUETOOTH",

@@ -26,7 +26,9 @@ def test_health_and_dashboard():
         t = c.post("/api/v1/auth/login", json={"user_id": "admin", "password": "Admin@123"}).json()["token"]
         H = {"Authorization": "Bearer " + t}
         assert c.get("/api/v1/dashboard", headers=H).status_code == 403, "built-in admin must change the first password before anything else"
-        assert c.post("/api/v1/auth/change-password", headers=H, json={"old_password": "Admin@123", "new_password": "Str0ng!Pass#2026"}).status_code == 200
+        r = c.post("/api/v1/auth/change-password", headers=H, json={"old_password": "Admin@123", "new_password": "Str0ng!Pass#2026"})
+        assert r.status_code == 200
+        H = {"Authorization": "Bearer " + r.json()["token"]}          # older sign-in ends with the password change
         assert c.get("/api/v1/dashboard", headers=H).status_code == 200
         assert c.get("/api/v1/reports/export/pallets.xlsx", headers=H).status_code == 200
         assert c.get("/api/v1/reminders", headers=H).status_code == 200

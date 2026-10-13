@@ -60,9 +60,38 @@ def check_pw(p: str, h: str) -> bool:
         return False
 
 
+def _pv(user: models.User) -> str:
+    """Password version: changes when the password changes, so older sign-ins stop working."""
+    return (user.password_hash or "")[-10:]
+
+
 def make_token(user: models.User) -> str:
     exp = datetime.utcnow() + timedelta(hours=config.TOKEN_HOURS)
-    return jwt.encode({"sub": user.user_id, "uid": user.id, "exp": exp}, config.JWT_SECRET, algorithm=config.JWT_ALGO)
+    return jwt.encode({"sub": user.user_id, "uid": user.id, "exp": exp, "pv": _pv(user)}, config.JWT_SECRET, algorithm=config.JWT_ALGO)
+
+
+def make_ticket(user: models.User) -> str:
+    """Short ticket (2 min) for opening a print / Excel download in a new tab - the real sign-in token never goes in a link."""
+    exp = datetime.utcnow() + timedelta(minutes=2)
+    return jwt.encode({"sub": user.user_id, "uid": user.id, "exp": exp, "typ": "tkt", "pv": _pv(user)}, config.JWT_SECRET, algorithm=config.JWT_ALGO)
+
+
+def decode_user(db: Session, raw: str, ticket: bool):
+    """Checks a sign-in token (ticket=False) or a link ticket (ticket=True). Returns the user or raises 401."""
+    try:
+        data = jwt.decode(raw, config.JWT_SECRET, algorithms=[config.JWT_ALGO])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Link expired - open it again" if ticket else "Session expired, login again")
+    except jwt.PyJWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    if (data.get("typ") == "tkt") != ticket:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    user = db.get(models.User, data.get("uid"))
+    if not user or not user.active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
+    if "pv" in data and data["pv"] != _pv(user):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Password changed - login again")
+    return user
 
 
 class Principal:
@@ -108,18 +137,11 @@ def load_perms(db: Session, user: models.User) -> set[str]:
 
 
 def current_user(request: Request, creds: HTTPAuthorizationCredentials = Depends(bearer), db: Session = Depends(get_db)) -> Principal:
-    raw = creds.credentials if creds else request.query_params.get("tok")   # ?tok= allows browser downloads / new-tab prints
+    # links opened in a new tab (prints, Excel downloads) carry a 2-minute ticket (?tok=), never the sign-in token
+    raw = creds.credentials if creds else request.query_params.get("tok")
     if not raw:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login required")
-    try:
-        data = jwt.decode(raw, config.JWT_SECRET, algorithms=[config.JWT_ALGO])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired, login again")
-    except jwt.PyJWTError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
-    user = db.get(models.User, data.get("uid"))
-    if not user or not user.active:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
+    user = decode_user(db, raw, ticket=not creds)
     if (user.must_change_pw and user.user_id == config.BOOTSTRAP_ADMIN_USER and not request.url.path.startswith("/api/v1/auth/")
             and not (request.method == "GET" and request.url.path in ("/api/v1/roles", "/api/v1/perm-groups", "/api/v1/plants"))):   # Users page (My account) still opens
         # the built-in admin keeps its known first password until it is changed: nothing else works before that

@@ -127,7 +127,7 @@ with TestClient(app) as c:
     check(r["status"] == "DISPATCHED", "dispatched")
     p1 = c.get("/api/v1/pallets/CHN-P001", headers=H).json(); p1 = p1.get("pallet") or p1
     check(p1["status"] == "AT_CUSTOMER" and p1["load_state"] == "LOADED", "pallet AT_CUSTOMER and LOADED")
-    pr = c.get(f"/print/challan/{no}?tok=" + H["Authorization"][7:])
+    pr = c.get(f"/print/challan/{no}?tok=" + c.post("/api/v1/auth/ticket", headers=H).json()["ticket"])
     check(pr.status_code == 200 and "L1" in pr.text and r["invoice_no"] in pr.text, "challan print shows LPN lines + invoice")
     print("8. missed scans on return")
     r = c.post("/api/v1/slips", headers=H, json={"customer_code": "HMIL", "mode": "A", "pallets": ["CHN-P001", "CHN-P006"]})
@@ -364,7 +364,7 @@ with TestClient(app) as c:
     r = c.post(f"/api/v1/picklists/{no}/confirm", headers=H).json()
     check(r["status"] == "APPROVED" and r["challan_no"] and r["gcs_qr"].startswith("AIS1|GCS|GCS-CHN-7781|CHN|HMIL|TN09AB1234|3|"), f"finish loading -> challan {r.get('challan_no')} + signed GCS QR, ready for the gate")
     qr = r["gcs_qr"]
-    pr = c.get(f"/print/gcs/{no}?tok=" + W["Authorization"].split()[1])
+    pr = c.get(f"/print/gcs/{no}?tok=" + c.post("/api/v1/auth/ticket", headers=W).json()["ticket"])
     check(pr.status_code == 200 and "GCS-CHN-7781" in pr.text and "TN09AB1234" in pr.text, "GCS print page with QR")
     bad = qr[:-8] + "DEADBEEF"
     r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": bad})
@@ -423,7 +423,7 @@ with TestClient(app) as c:
     rd = PdfReader(_io.BytesIO(pdf)); text = rd.pages[0].extract_text()
     check(len(rd.pages) == 1 and all(x in text for x in ("INV/26/0201", "INV/26/0202", "INV/26/0203", "BL-9", "Inv No.", "Cust Part No", "Line Amount", "Finished Goods Materials Gate Pass", "Vehicle Type", "32 FT MXL", "ANF-00007")) and "AIS-CHN-ANF-00007" not in text,
           "PDF: one A4 page with every invoice line and the short pallet number")
-    h = c.get(f"/print/gcs/{no9}?tok={W['Authorization'].split()[1]}").text
+    h = c.get(f"/print/gcs/{no9}?tok=" + c.post("/api/v1/auth/ticket", headers=W).json()["ticket"]).text
     check("INV/26/0203" in h and "Cust Part No" in h and "ANF-00007" in h, "web GCS print lists the invoice lines")
     with SessionLocal() as db:                          # long load -> several pages, "X of Y", signs on the last page
         for k in range(70):

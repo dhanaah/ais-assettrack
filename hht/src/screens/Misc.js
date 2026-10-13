@@ -17,6 +17,14 @@ const needOnline = (toast) => { if (!sync.online) { toast('This step needs the s
 
 export function GateIn({ onBack }) {
   const [msg, toast] = useToast(); const [last, setLast] = useState(null);
+  // slip QR torn / smudged: supervisor picks the open Option A slip and lets it in with the PIN (recorded in the audit log)
+  const [noQr, setNoQr] = useState(false); const [open, setOpen] = useState([]); const [sel, setSel] = useState(null); const [pin, setPin] = useState(''); const [busy, setBusy] = useState(false);
+  useEffect(() => { if (noQr) api('/slips?status=OPEN').then((r) => setOpen((r || []).filter((x) => x.mode === 'A'))).catch((e) => toast(e.message, 'err')); }, [noQr]);
+  const letIn = async () => {
+    if (!sel || !pin) return toast('Pick the slip and enter the supervisor PIN', 'warn'); if (!needOnline(toast)) return; setBusy(true);
+    try { const r = await api(`/slips/${encodeURIComponent(sel)}/gate-in`, { method: 'POST', body: { supervisor_pin: pin } }); setLast(r); toast(`Gate entry ${r.gate_entry || ''} · ${sel}: ${r.status} (supervisor)`, 'done'); logActivity('GATE_IN_PIN', sel, r.status); setPin(''); setSel(null); setNoQr(false); syncNow().catch(() => {}); }
+    catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
+  };
   const onScan = async (code) => {
     if (!needOnline(toast)) return;
     const no = code.startsWith('AIS1|RS|') || code.startsWith('AIS1|RO|') || code.startsWith('RTS|') ? code.split('|')[code.startsWith('AIS1|') ? 2 : 1] : code;   // RO = printed by a customer HHT without network
@@ -24,7 +32,15 @@ export function GateIn({ onBack }) {
     catch (e) { toast(e.message, 'err'); }
   };
   return (<Screen><Header title="IN Gate" sub="Customer: return slip QR · AIS plant: challan QR" onBack={onBack} /><Page>
-    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan return slip / challan QR" /></View>
+    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan return slip / challan QR" />
+      <SwitchRow label="Slip QR will not scan (supervisor)" hint="Option A slip with a torn / smudged QR - needs a supervisor PIN; recorded in the audit log" value={noQr} onChange={setNoQr} danger />
+      {noQr ? <View style={{ marginTop: 6 }}>
+        {open.length === 0 ? <Text style={S.mute}>No open Option A slip</Text> : open.slice(0, 30).map((x) => (
+          <TouchableOpacity key={x.slip_no} onPress={() => setSel(x.slip_no)} style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, marginBottom: 4, backgroundColor: sel === x.slip_no ? C.accent : C.input }}>
+            <Text style={{ fontWeight: '700', color: sel === x.slip_no ? '#fff' : C.fg }}>{x.slip_no} · {x.vehicle_no || '-'}</Text>
+            <Text style={{ fontSize: 12, color: sel === x.slip_no ? '#fff' : C.mute }}>{x.customer_code} · {x.declared_qty} pallets</Text></TouchableOpacity>))}
+        <TextInput style={[S.input, { marginTop: 6 }]} placeholder="Supervisor PIN" value={pin} onChangeText={setPin} secureTextEntry keyboardType="number-pad" />
+        <Btn title="Let in with supervisor PIN" icon="shield-checkmark-outline" busy={busy} onPress={letIn} /></View> : null}</View>
     {last ? <View style={S.card}><Text style={S.h2}>{last.slip_no} <Pill s={last.status} /></Text><Text style={S.mute}>{last.kind === 'CHALLAN' ? `Other-plant return from ${last.from_plant} · vehicle ${last.vehicle_no || '-'} · ${last.declared_qty} pallets on challan · receive at pallet yard` : `Customer ${last.customer_code} · vehicle ${last.vehicle_no} · declared ${last.declared_qty} · GCS ${last.gcs_in_no || 'pending (retry queue)'}`}</Text>{last.gate_entry ? <Text style={[S.body, { marginTop: 6, fontWeight: '700', color: C.ok }]}>Gate entry {last.gate_entry}{last.repeat ? ' (already registered)' : ''} · {last.kind === 'CHALLAN' ? 'other-plant challan' : last.mode === 'A' ? 'Option A slip' : 'Option B slip'}</Text> : null}</View> : null}
     <Text style={S.mute}>Customer vehicle without slip: make one with "Return Slip (Option B)". Pallets from another AIS plant come only with that plant's challan - scan the challan QR.</Text></Page><Toast msg={msg} /></Screen>);
 }

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, config
 from ..db import get_db
-from ..security import check_pw, hash_pw, make_token, current_user, Principal, load_perms, audit, require_client_version, pin_in_use
+from ..security import check_pw, hash_pw, make_token, make_ticket, current_user, Principal, load_perms, audit, require_client_version, pin_in_use
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -25,10 +25,20 @@ class SetPinIn(BaseModel):
     pin: str
 
 
+_DUMMY = hash_pw("not-a-user-password")
+
+
+@router.post("/ticket")
+def ticket(p: Principal = Depends(current_user)):
+    """2-minute ticket for a print / download link opened in a new tab."""
+    return {"ticket": make_ticket(p.user)}
+
+
 @router.post("/login")
 def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     u = db.query(models.User).filter(models.User.user_id == body.user_id.strip().lower()).first()
     if not u or not u.active:
+        check_pw(body.password, _DUMMY)            # same time as a real check: user names cannot be guessed from the reply time
         raise HTTPException(401, "Invalid user or password")
     if body.device_id:
         require_client_version(body.app_version)
@@ -86,7 +96,7 @@ def change_pw(body: ChangePwIn, p: Principal = Depends(current_user), db: Sessio
     u.password_hash = hash_pw(body.new_password); u.must_change_pw = False
     audit(db, p, "CHANGE_PASSWORD", "user", u.user_id)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "token": make_token(u)}        # old sign-ins stop; this browser continues with the new token
 
 
 @router.post("/set-pin")

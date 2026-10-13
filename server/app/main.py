@@ -155,9 +155,13 @@ def apk_file(name: str):
 
 @app.post("/api/v1/jobs/retry")
 def job_retry(request: Request):
-    """Called by the scheduler every 5 min on the server PC itself - refused from any other computer."""
+    """Called by the scheduler every 5 min on the server PC (scheduler.ps1 sends the key from server\\job.key).
+    Without the key: only a direct call on the server PC itself (not one passed on by IIS / a proxy)."""
+    import hmac
+    key = request.headers.get("x-job-key") or ""
     host = request.client.host if request.client else ""
-    if host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+    proxied = any(request.headers.get(h) for h in ("x-forwarded-for", "x-original-for", "x-arr-log-id", "x-original-url"))
+    if not (key and hmac.compare_digest(key, config.JOB_KEY)) and (proxied or host not in ("127.0.0.1", "::1", "localhost", "testclient")):
         raise HTTPException(403, "Only from the server PC")
     with SessionLocal() as db:
         return integration.run_retries(db)

@@ -136,8 +136,10 @@ with TestClient(app, raise_server_exceptions=False) as c:
     print("6. print pages escape what customers type")
     r = c.post("/api/ext/v1/return-slip", headers=DK, json={"pallets": ["AIS-CHN-F-06004-0091003"], "vehicle_no": "TN09AB3434",
                                                          "driver_name": "<script>alert(1)</script>", "client_ref": str(uuid.uuid4())}).json()
-    t = H["Authorization"].split()[1]
+    t = c.post("/api/v1/auth/ticket", headers=H).json()["ticket"]
     page = c.get(f"/print/slip/{r['slip_no']}?tok={t}").text
+    check(c.get(f"/print/slip/{r['slip_no']}?tok=" + H["Authorization"].split()[1]).status_code == 401, "sign-in token in a link is refused (2-minute ticket only)")
+    check(c.get("/api/v1/reports/export/pallets.xlsx?tok=" + t).status_code == 200, "ticket opens an Excel download")
     check("<script>alert(1)</script>" not in page and "&lt;script&gt;" in page, "driver name shown as text, not run")
 
     print("7. Option B slip sent twice by the gate HHT: same slip back")
@@ -199,6 +201,25 @@ with TestClient(app, raise_server_exceptions=False) as c:
     print("14. damage mark only for this plant's pallets")
     r = ev(c, H, "DAMAGE_MARK", {"scanned": "PUN-P900"})
     check(r["status"] == "REJECTED", "Pune pallet cannot be marked damaged at Chennai")
+
+    print("15. Option A slip with a torn QR: supervisor PIN lets it in, typed number alone does not")
+    r = c.post("/api/ext/v1/return-slip", headers=DK, json={"pallets": ["CHN-P006"], "vehicle_no": "TN09AB9898", "client_ref": str(uuid.uuid4())}).json()
+    sno = r["slip_no"]
+    r1 = c.post(f"/api/v1/slips/{sno}/gate-in", headers=H, json={})
+    check(r1.status_code == 400 and "supervisor PIN" in r1.text, f"slip number without QR held ({r1.status_code})")
+    r2 = c.post(f"/api/v1/slips/{sno}/gate-in", headers=H, json={"supervisor_pin": "1234"})
+    check(r2.status_code == 200, f"let in with supervisor PIN ({r2.status_code} {r2.text[:80]})")
+
+    print("16. retry job: key from job.key works; a call passed on by IIS / proxy without it is refused")
+    check(c.post("/api/v1/jobs/retry", headers={"X-Forwarded-For": "10.1.2.3"}).status_code == 403, "proxied call without key refused")
+    check(c.post("/api/v1/jobs/retry", headers={"X-Forwarded-For": "10.1.2.3", "X-Job-Key": config.JOB_KEY}).status_code == 200, "call with the job key accepted")
+
+    print("17. password change ends older sign-ins")
+    W2 = tok(c, "chn", hht=False)
+    r = c.post("/api/v1/auth/change-password", headers=W2, json={"old_password": "x", "new_password": "newpass1"})
+    check(r.status_code == 200 and r.json().get("token"), "changed, new token given")
+    check(c.get("/api/v1/auth/me", headers=H).status_code == 401, "old token refused")
+    check(c.get("/api/v1/auth/me", headers={"Authorization": "Bearer " + r.json()["token"]}).status_code == 200, "new token works")
 
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")

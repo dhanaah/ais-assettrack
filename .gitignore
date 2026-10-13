@@ -26,3 +26,5 @@ server/secret.key
 **/backups/
 server/server.pid
 server/apk/
+server/job.key
+**/job.key

@@ -1,5 +1,5 @@
 """Print-ready documents (A4): pallet challan and return slip, with AIS logo and QR.
-Open in browser -> Print / Save as PDF. Token passed as ?tok= so the page can be opened in a new tab."""
+Open in browser -> Print / Save as PDF. A 2-minute link ticket is passed as ?tok= so the page can be opened in a new tab."""
 import html
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -35,13 +35,8 @@ def esc(o):
 
 
 def _auth(tok: str, db: Session) -> Principal:
-    try:
-        data = jwt.decode(tok, config.JWT_SECRET, algorithms=[config.JWT_ALGO])
-    except jwt.PyJWTError:
-        raise HTTPException(401, "Invalid or expired token")
-    u = db.get(models.User, data.get("uid"))
-    if not u or not u.active:
-        raise HTTPException(401, "User inactive")
+    from ..security import decode_user
+    u = decode_user(db, tok, ticket=True)          # 2-minute link ticket (POST /api/v1/auth/ticket)
     return Principal(u, load_perms(db, u))
 
 

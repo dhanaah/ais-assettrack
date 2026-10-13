@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.23.0"
+APP_VERSION = "1.24.0"
 API_MIN_CLIENT = os.getenv("PALLET_MIN_CLIENT", "1.6.0")   # HHT app must be >= this (settings.env PALLET_MIN_CLIENT) - older apps are told to update
 DEVELOPER = "Developed by DT"
 
@@ -47,11 +47,29 @@ def _load_secret() -> str:
         v = secrets.token_urlsafe(48)
         f.write_text(v, encoding="utf-8")
         return v
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("assettrack").error("secret.key could not be read or written (%s) - using the built-in secret: QR check codes are NOT safe. Give the server folder write access.", e)
         return LEGACY_SECRET
 
 
 JWT_SECRET = _load_secret()
+
+
+def _job_key() -> str:
+    """Key for the 5-minute retry job (scheduler.ps1 sends it). Written to server\\job.key for the scheduler to read."""
+    import hmac, hashlib
+    k = hmac.new(JWT_SECRET.encode(), b"JOBKEY", hashlib.sha256).hexdigest()[:32]
+    try:
+        f = BASE_DIR / "job.key"
+        if not f.exists() or f.read_text(encoding="utf-8").strip() != k:
+            f.write_text(k, encoding="utf-8")
+    except Exception:
+        pass
+    return k
+
+
+JOB_KEY = _job_key()
 JWT_ALGO = "HS256"
 TOKEN_HOURS = int(os.getenv("PALLET_TOKEN_HOURS", "12"))
 MAX_FAILED_LOGINS = 5
