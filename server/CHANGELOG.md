@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## HHT 2.16.0 - 2026-10-13 (server unchanged 1.22.0)
+- Customer HHT: VPN to AIS through FortiClient VPN (installed on the HHT, AIS SSL-VPN account from AIS IT). Approved sample.
+  - No connection to AIS: red card "Not connected to AIS" with **Connect VPN** (opens FortiClient; Play Store page if not installed) and **Recheck**.
+  - VPN on but server not answering: amber card - ask AIS IT to allow the VPN account to reach AssetTrack.
+  - Online: green pill shows "via VPN"; on returning to AssetTrack it rechecks by itself and sends waiting slips / receipts.
+  - Same card on the customer staff sign-in screen. Offline signed slips still work as before.
+
 ## HHT 2.15.0 - 2026-10-12 (server unchanged 1.22.0)
 - Home: the signed-in user is a compact strip under the logo - initials badge, name on one line, "plant · N roles" (tap for the full role list) and a small Logout button. No more wrapped role list beside the logo.
 

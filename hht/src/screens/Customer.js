@@ -3,7 +3,7 @@
 //  * Return slip (Option A) - scan the empty pallets -> slip with AIS-signed QR -> portable printer. Talks to AIS directly on the AIS network, through the internet address otherwise (see custapi).
 // Developed by DT
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import qrcode from 'qrcode-generator';
@@ -16,6 +16,7 @@ import { printSlip, canPrint, testPrint } from '../lib/printer';
 import { feedback } from '../lib/feedback';
 import { fDT, fDate } from '../lib/when';
 import { Settings } from './Misc';
+import { vpnActive, openVpnApp } from '../lib/vpn';
 
 /** QR drawn with plain views (dark runs merged per row) - shown so the gate can scan it from the screen too. */
 export function QrView({ text, size = 220 }) {
@@ -31,8 +32,36 @@ export function QrView({ text, size = 220 }) {
   return <View style={{ width: size, height: size, backgroundColor: '#fff', padding: cell * 2, alignSelf: 'center', borderRadius: 8 }}>{rows}</View>;
 }
 
-const routeText = (r) => !r ? 'Offline' : 'Online';
-const routeColor = (r) => !r ? '#dc2626' : '#16a34a';
+
+/** Connection to AIS: green pill when online; red / amber card with "Connect VPN" (opens FortiClient) when not. */
+function NetCard({ route, pend, onRecheck, toast, style }) {
+  const [vpn, setVpn] = useState(vpnActive());
+  useEffect(() => { setVpn(vpnActive()); }, [route]);
+  if (route === undefined) return (<View style={[S.row, { alignSelf: 'flex-start', marginHorizontal: 14, marginTop: 10, backgroundColor: C.input, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }, style]}>
+    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#94a3b8' }} /><Text style={{ fontWeight: '700', color: C.fg }}>Checking…</Text></View>);
+  if (route) return (<TouchableOpacity onPress={onRecheck} style={[{ backgroundColor: '#16a34a', paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }, style]}>
+    <Ionicons name={vpn ? 'lock-closed-outline' : route.kind === 'LAN' ? 'business-outline' : 'globe-outline'} size={14} color="#fff" />
+    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }}>Online{vpn ? ' · via VPN' : ''}{pend ? ` · ${pend} waiting` : ''} · tap to recheck</Text></TouchableOpacity>);
+  const open = async () => { const r = await openVpnApp();
+    if (r === 'store') toast('FortiClient VPN is not installed - install it, then add the AIS VPN connection', 'warn');
+    else if (r === 'none') toast('FortiClient VPN is not installed on this HHT - ask AIS IT', 'err'); };
+  const amber = vpn;
+  return (<View style={[{ marginHorizontal: 14, marginTop: 10, borderRadius: 14, padding: 12, borderWidth: 1.5, backgroundColor: amber ? '#fffbeb' : '#fef2f2', borderColor: amber ? '#fcd34d' : '#fca5a5' }, style]}>
+    <View style={[S.row, { gap: 6 }]}><Ionicons name={amber ? 'warning' : 'cloud-offline'} size={18} color={amber ? '#b45309' : '#b91c1c'} />
+      <Text style={{ flex: 1, fontWeight: '800', fontSize: 14, color: amber ? '#b45309' : '#b91c1c' }}>{amber ? 'VPN connected – AIS server not answering' : `Not connected to AIS${pend ? ` · ${pend} waiting` : ''}`}</Text></View>
+    <Text style={{ fontSize: 12, color: '#334155', marginTop: 4, marginBottom: 10 }}>{amber ? 'Ask AIS IT to check the VPN account can reach AssetTrack. Slips still print offline.' : 'VPN is off. Connect the VPN to send slips now. Slips still print offline.'}</Text>
+    <View style={[S.row, { gap: 8 }]}>
+      <TouchableOpacity onPress={open} style={{ flex: 1, backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+        <Ionicons name="lock-closed" size={15} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700' }}>{amber ? 'Open VPN' : 'Connect VPN'}</Text></TouchableOpacity>
+      <TouchableOpacity onPress={onRecheck} style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: 10, paddingVertical: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+        <Ionicons name="refresh" size={15} color="#0f172a" /><Text style={{ color: '#0f172a', fontWeight: '700' }}>Recheck</Text></TouchableOpacity></View></View>);
+}
+/** Recheck when the operator comes back to AssetTrack (e.g. after connecting FortiClient). */
+function useOnResume(fn) {
+  useEffect(() => { let st = AppState.currentState;
+    const sub = AppState.addEventListener('change', (n) => { if (st.match(/inactive|background/) && n === 'active') fn(); st = n; });
+    return () => sub.remove(); }, [fn]);
+}
 
 // ---------------------------------------------------------------- pairing (from the Login screen)
 export function PairDevice({ onBack, onPaired }) {
@@ -84,7 +113,7 @@ export default function CustomerApp({ deviceId, onUnpaired, onTheme, onUi }) {
 }
 
 function CustHome({ pair, nav }) {
-  const [route, setRoute] = useState(getRoute()); const [pend, setPend] = useState(0); const [held, setHeld] = useState(null); const [me, setMe] = useState(null); const [msg, toast] = useToast();
+  const [route, setRoute] = useState(getRoute() || undefined); const [pend, setPend] = useState(0); const [held, setHeld] = useState(null); const [me, setMe] = useState(null); const [msg, toast] = useToast();
   const refresh = useCallback(async (force) => {
     try { const r = await findRoute(force); setRoute(r); } catch (e) { setRoute(null); }
     const sent = await sendPending().catch(() => []); if (sent.length) toast(`${sent.length} waiting slip(s) sent`, 'done');
@@ -93,6 +122,7 @@ function CustHome({ pair, nav }) {
     try { setMe(await refreshMe()); const h = await ext('/holding'); setHeld(h); } catch (e) { if (e.status === 401) toast(e.message, 'err'); }
   }, []);
   useEffect(() => { refresh(true); const t = setInterval(() => refresh(false), 60000); return () => clearInterval(t); }, []);
+  const resume = useCallback(() => setTimeout(() => refresh(true), 1500), [refresh]); useOnResume(resume);   // VPN takes a moment after FortiClient
   const overdue = held ? held.pallets.filter((p) => p.overdue).length : 0;
   const tiles = [...(staffCan('CUST_RECEIVE') ? [['receive', 'Receive delivery', 'Scan each pallet while unloading', ['#f59e0b', '#c2410c'], 'download-outline']] : []),
     ...(staffCan('CUST_RETURN') ? [['new', 'Return empty pallets', 'Scan pallets, print return slip', ['#a855f7', '#7e22ce'], 'document-text-outline']] : []),
@@ -100,9 +130,7 @@ function CustHome({ pair, nav }) {
     ['slips', 'Our return slips', pend ? `${pend} waiting to send` : 'Status, reprint', ['#22c55e', '#15803d'], 'list-outline'],
     ['settings', 'Settings', 'Printer, vehicles · sign out', ['#64748b', '#334155'], 'settings-outline']];
   return (<Screen><Header logo sub={`${getStaff()?.name || ''} · ${me?.name || pair?.n || ''}`} />
-    <TouchableOpacity onPress={() => refresh(true)} style={{ backgroundColor: routeColor(route), paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}>
-      <Ionicons name={route ? (route.kind === 'LAN' ? 'business-outline' : 'globe-outline') : 'cloud-offline-outline'} size={14} color="#fff" />
-      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }}>{routeText(route)}{pend ? ` · ${pend} waiting` : ''} · tap to recheck</Text></TouchableOpacity>
+    <NetCard route={route} pend={pend} onRecheck={() => refresh(true)} toast={toast} />
     <Page onRefresh={() => refresh(true)}>
       <Glass style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
         <Ring value={held ? String(held.count) : '—'} label="AIS pallets here" color={C.accent} size={88} />
@@ -224,13 +252,14 @@ function CustSettings({ onBack, onSetup, onLogout, deviceId, onUnpaired, onTheme
 
 // ---------------------------------------------------------------- customer staff sign-in
 function StaffLogin({ onDone, onSetup }) {
-  const pair = getPairing(); const [u, setU] = useState(''); const [p, setP] = useState(''); const [busy, setBusy] = useState(false); const [route, setRoute] = useState(null); const [msg, toast] = useToast();
-  useEffect(() => { findRoute(true).then(setRoute).catch(() => setRoute(false)); }, []);
+  const pair = getPairing(); const [u, setU] = useState(''); const [p, setP] = useState(''); const [busy, setBusy] = useState(false); const [route, setRoute] = useState(undefined); const [msg, toast] = useToast();
+  const recheck = useCallback(() => { setRoute(undefined); findRoute(true).then(setRoute).catch(() => setRoute(null)); }, []);
+  useEffect(() => { recheck(); }, []);
+  const resume = useCallback(() => setTimeout(recheck, 1500), [recheck]); useOnResume(resume);
   const go = async () => { if (!u.trim() || !p) return toast('Enter user ID and password', 'warn'); setBusy(true);
     try { const r = await staffLogin(u, p); toast(r.offline ? 'Signed in (no network)' : 'Signed in', 'done'); onDone(r); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
   return (<Screen><Header logo sub={`${pair?.n || pair?.c || ''} · customer HHT`} /><Page>
-    <View style={[S.row, { alignSelf: 'flex-start', marginBottom: 10, backgroundColor: route ? '#dcfce7' : route === false ? '#fee2e2' : C.input, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }]}>
-      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: route ? '#16a34a' : route === false ? '#dc2626' : '#94a3b8' }} /><Text style={{ fontWeight: '700', color: '#0f172a' }}>{route ? 'Online' : route === false ? 'Offline' : 'Checking…'}</Text></View>
+    <NetCard route={route} onRecheck={recheck} toast={toast} style={{ marginHorizontal: 0, marginTop: 0, marginBottom: 10 }} />
     <View style={S.card}><Text style={S.h2}>Customer staff sign-in</Text>
       <Text style={S.mute}>User ID (given by AIS)</Text><TextInput style={S.input} value={u} onChangeText={setU} autoCapitalize="none" autoCorrect={false} />
       <Text style={S.mute}>Password</Text><TextInput style={S.input} value={p} onChangeText={setP} secureTextEntry onSubmitEditing={go} />

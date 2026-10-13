@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.core.content.ContextCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -59,6 +61,26 @@ class AisScannerModule : Module() {
     }
 
     Function("stop") { stopReceiver() }
+
+    // VPN (customer HHT): is a VPN connection up right now?
+    Function("isVpnActive") {
+      val c = ctx ?: return@Function false
+      try {
+        val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        cm.allNetworks.any { n -> cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
+      } catch (_: Exception) { false }
+    }
+
+    // Open the first installed app from the list (e.g. FortiClient VPN). Returns its package, or "" if none installed.
+    Function("openApp") { packages: List<String> ->
+      val c = ctx ?: return@Function ""
+      for (pkg in packages) {
+        val i = c.packageManager.getLaunchIntentForPackage(pkg) ?: continue
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { c.startActivity(i); return@Function pkg } catch (_: Exception) {}
+      }
+      ""
+    }
 
     // Zebra DataWedge: own profile for this app - barcode input on, broadcast output on, keystroke output OFF
     Function("configureZebra") { profile: String, action: String ->
