@@ -120,6 +120,10 @@ def current_user(request: Request, creds: HTTPAuthorizationCredentials = Depends
     user = db.get(models.User, data.get("uid"))
     if not user or not user.active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
+    if (user.must_change_pw and user.user_id == config.BOOTSTRAP_ADMIN_USER and not request.url.path.startswith("/api/v1/auth/")
+            and not (request.method == "GET" and request.url.path in ("/api/v1/roles", "/api/v1/perm-groups", "/api/v1/plants"))):   # Users page (My account) still opens
+        # the built-in admin keeps its known first password until it is changed: nothing else works before that
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Change the admin password first (Users > My account)")
     p = Principal(user, load_perms(db, user))
     want = (request.headers.get("x-plant") or "").strip().upper()
     if want and want != (user.plant_code or ""):        # plant selected on the HHT (one server, many plants)
@@ -212,12 +216,25 @@ def pin_in_use(db: Session, plant: str | None, pin: str, except_user_pk: int | N
     return None
 
 
+_PIN_FAILS: dict[str, list[float]] = {}
+PIN_MAX_FAILS, PIN_WINDOW, PIN_LOCK = 8, 600, 600       # 8 wrong PINs in 10 min at a plant -> PIN use paused 10 min
+
+
 def verify_supervisor_pin(db: Session, plant: str | None, pin: str) -> models.User | None:
-    """Return the supervisor user whose PIN matches (same plant or central). PINs are unique per plant (see pin_in_use)."""
+    """Return the supervisor user whose PIN matches (same plant or central). PINs are unique per plant (see pin_in_use).
+    Wrong PINs are counted per plant: after too many, PINs are refused for a while (stops guessing every 4-digit PIN)."""
+    import time
+    if not pin:
+        return None
+    key, now = plant or "*", time.time()
+    fails = [t for t in _PIN_FAILS.get(key, []) if now - t < max(PIN_WINDOW, PIN_LOCK)]
+    if len([t for t in fails if now - t < PIN_WINDOW]) >= PIN_MAX_FAILS:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many wrong supervisor PINs - PIN use paused for 10 minutes")
     q = db.query(models.User).filter(models.User.supervisor_allowed == True, models.User.active == True)
     if plant:
         q = q.filter((models.User.plant_code == plant) | (models.User.plant_code.is_(None)))
     for u in q.all():
-        if u.supervisor_pin_hash and check_pw(pin, u.supervisor_pin_hash):
+        if pin and u.supervisor_pin_hash and check_pw(pin, u.supervisor_pin_hash):
             return u
+    fails.append(now); _PIN_FAILS[key] = fails[-50:]
     return None

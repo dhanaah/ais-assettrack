@@ -44,15 +44,18 @@ export async function applyPull(data) {
   const d = await openDb();
   await d.withTransactionAsync(async () => {
     if (data.full) { await d.execAsync('DELETE FROM pallets; DELETE FROM tags; DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers; DELETE FROM lpns;'); }
-    for (const p of data.pallets) await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist, p.zone || 'YARD', p.load || 'EMPTY', p.load_ref || null, p.location || null);
+    for (const p of (data.pallets || [])) await d.runAsync('INSERT OR REPLACE INTO pallets VALUES(?,?,?,?,?,?,?,?,?,?,?)', p.pallet_no, p.tag, p.home, p.type, p.status, p.customer, p.picklist, p.zone || 'YARD', p.load || 'EMPTY', p.load_ref || null, p.location || null);
     for (const l of (data.lpns || [])) { if (['DISPATCHED', 'REJECTED', 'MISSING'].includes(l.status)) await d.runAsync('DELETE FROM lpns WHERE lpn=?', l.lpn); else await d.runAsync('INSERT OR REPLACE INTO lpns VALUES(?,?,?,?,?,?,?)', l.lpn, l.part, l.qty, l.pallet, l.status, l.reserved_for, l.picklist); }
-    for (const t of data.tags) await d.runAsync('INSERT OR REPLACE INTO tags VALUES(?,?,?)', t.tag, t.pallet, t.status);
-    await d.execAsync('DELETE FROM picklists; DELETE FROM slips; DELETE FROM customers;');
-    for (const k of data.picklists) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned, k.dispatch_type || 'PALLET_ONLY', k.part_no, k.part_qty, k.to_plant, k.picked_qty || 0, k.source || 'APP', k.load_point || null, k.vehicle_no || null, k.gcs_no || null, k.invoice_no || null);
-    for (const s of data.slips) await d.runAsync('INSERT OR REPLACE INTO slips VALUES(?,?,?,?,?,?)', s.slip_no, s.customer, s.mode, s.qty, s.status, JSON.stringify(s.pallets));
+    for (const t of (data.tags || [])) await d.runAsync('INSERT OR REPLACE INTO tags VALUES(?,?,?)', t.tag, t.pallet, t.status);
+    // masters come in full each pull: replace them only when the server sent the list
+    if (Array.isArray(data.picklists)) await d.execAsync('DELETE FROM picklists;');
+    if (Array.isArray(data.slips)) await d.execAsync('DELETE FROM slips;');
+    if (Array.isArray(data.customers)) await d.execAsync('DELETE FROM customers;');
+    for (const k of (data.picklists || [])) await d.runAsync('INSERT OR REPLACE INTO picklists VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', k.picklist_no, k.customer, k.type, k.qty, k.status, k.scanned, k.dispatch_type || 'PALLET_ONLY', k.part_no, k.part_qty, k.to_plant, k.picked_qty || 0, k.source || 'APP', k.load_point || null, k.vehicle_no || null, k.gcs_no || null, k.invoice_no || null);
+    for (const s of (data.slips || [])) await d.runAsync('INSERT OR REPLACE INTO slips VALUES(?,?,?,?,?,?)', s.slip_no, s.customer, s.mode, s.qty, s.status, JSON.stringify(s.pallets));
     if (Array.isArray(data.vehicles)) await d.runAsync('INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)', 'vehicles_srv', JSON.stringify(data.vehicles));
-    { const docs = {}; for (const s of data.slips) if ((s.doc && s.doc.length) || s.doc_photos || s.doc_total || (s.doc_types && Object.keys(s.doc_types).length)) docs[s.slip_no] = { doc: s.doc || [], read: s.doc_read, photos: s.doc_photos || 0, types: s.doc_types || {}, total: s.doc_total }; await d.runAsync('INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)', 'slip_docs', JSON.stringify(docs)); }
-    for (const c of data.customers) await d.runAsync('INSERT OR REPLACE INTO customers VALUES(?,?,?)', c.code, c.name, c.return_mode);
+    { const docs = {}; for (const s of (data.slips || [])) if ((s.doc && s.doc.length) || s.doc_photos || s.doc_total || (s.doc_types && Object.keys(s.doc_types).length)) docs[s.slip_no] = { doc: s.doc || [], read: s.doc_read, photos: s.doc_photos || 0, types: s.doc_types || {}, total: s.doc_total }; await d.runAsync('INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)', 'slip_docs', JSON.stringify(docs)); }
+    for (const c of (data.customers || [])) await d.runAsync('INSERT OR REPLACE INTO customers VALUES(?,?,?)', c.code, c.name, c.return_mode);
   });
   await kv.set('plant', data.plant);
   await kv.set('last_pull', data.server_time);
@@ -115,6 +118,14 @@ export const markEvent = async (event_id, status, result) => {
   const d = await openDb();
   await d.runAsync('UPDATE outbox SET status=?, result=?, attempts=attempts+1 WHERE event_id=?', status, result || null, event_id);
   if (status === 'REJECTED') await undoRejected(d, event_id);
+};
+/** Server could not take this event (error answer): count the try; after `max` tries it is FAILED (no longer sent). */
+export const failEvent = async (event_id, msg, max = 5) => {
+  const d = await openDb();
+  await d.runAsync("UPDATE outbox SET attempts=attempts+1, result=? WHERE event_id=? AND status='PENDING'", String(msg || '').slice(0, 300), event_id);
+  const r = await d.getFirstAsync('SELECT attempts FROM outbox WHERE event_id=?', event_id);
+  if (r && r.attempts >= max) { await d.runAsync("UPDATE outbox SET status='FAILED' WHERE event_id=? AND status='PENDING'", event_id); await undoRejected(d, event_id); return true; }
+  return false;
 };
 // a dock scan the server refused must leave the local pick-list ledger too (otherwise the count on the HHT is wrong)
 async function undoRejected(d, event_id) {

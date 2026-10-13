@@ -15,6 +15,11 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - name: Test suite (80+ end-to-end checks) - the build stops here if anything fails
         run: pytest
+      - name: Process flow (226 checks) and review fixes - the build stops here if anything fails
+        env: { PYTHONPATH: ".", PALLET_BENCH_SCHEDULER: "0", PALLET_PICKLIST_SOURCE: "APP" }
+        run: |
+          python tests/test_parts_flow.py
+          python tests/audit_fixes_check.py
       - name: Import check + API smoke (SQLite, STUB integrations)
         run: |
           python -c "from app.main import app; print('import ok')"

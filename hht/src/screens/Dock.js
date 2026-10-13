@@ -59,7 +59,7 @@ export default function Dock({ onBack, yard = false }) {
     if (v.warn.length) setAlert(v.warn.join('\n'));
     const r = await pushAndResult(id);
     if (r.status === 'REJECTED') { setAlert('Server rejected: ' + r.result); toast(r.result, 'err'); await syncNow({ full: true }).catch(() => {}); await refresh(); }
-    else if (r.status === 'EXCEPTION') setAlert(r.result);
+    else if (r.status === 'EXCEPTION' || r.status === 'FAILED') setAlert(r.result);
   };
   const remove = (item, isLpn) => Alert.alert('Remove', (isLpn ? 'LPN ' + item.lpn : 'Pallet ' + item.pallet_no + ' and its LPNs') + ' from this list?', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => {
     if (isLpn) { await removeLpnScans(pk.picklist_no, { lpn: item.lpn }); await setLpnLocal(item.lpn, { status: 'RESERVED', picklist: null }); }

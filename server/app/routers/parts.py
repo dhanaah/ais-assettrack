@@ -352,6 +352,7 @@ def list_txns(plant: str | None = None, status: str | None = None, p: Principal 
 
 @router.post("/lpn-txns/retry")
 def retry_txns(plant: str | None = None, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    p.require("INTEGRATION_CONFIG")
     res = lpnsvc.process_pending_txns(db)
     db.commit()
     return res

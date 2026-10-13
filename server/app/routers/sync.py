@@ -15,7 +15,7 @@ Dock scan accepts LPN or pallet (optional second scan `pallet`). Missed scans fo
 Any other type is stored with status EXCEPTION for review (forward compatible).
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
@@ -118,6 +118,19 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
             alert, block = lpnsvc.check_yard(db, pal, plant, slip, user_id=p.user_id, device_id=e.device_id)
             if block:
                 return "EXCEPTION", "⚠ " + alert
+            if pal.status == "ALLOCATED":
+                # still on a pick list that is not gated out: take it off that list (line removed) so it cannot go on a
+                # second list and be dispatched twice
+                pk = db.get(models.PickList, pal.picklist_no) if pal.picklist_no else None
+                if pk and pk.status not in ("DISPATCHED", "CLOSED", "CANCELLED"):
+                    for r in db.query(models.PickListLpn).filter_by(picklist_no=pk.picklist_no, pallet_no=pal.pallet_no).all():
+                        x = db.get(models.Lpn, r.lpn_no)
+                        if x:
+                            x.status, x.picklist_no = "RESERVED", None
+                        db.delete(r)
+                    lpnsvc._release_pallet(db, pk, pal, plant, p.user_id, e.device_id, e.event_id)
+                    rel = f"{pal.pallet_no} taken off pick list {pk.picklist_no} ({pk.status}) - scan it again at the Dock if it is still needed"
+                    alert = f"{alert} | {rel}" if alert else rel
             if pal.home_plant != plant:
                 if not pl.get("accept_foreign"):
                     raise services.RuleError(f"Foreign pallet {pal.pallet_no} ({pal.home_plant}) - not accepted")
@@ -134,8 +147,12 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                     line.received = True
                 else:
                     same = pal.customer_code == slip.customer_code or pal.customer_code is None
-                    # Option B is a count only (no pallet list): a pallet of this customer is simply received; the count is checked at close
-                    exc = (None if slip.mode == "B2" else "EXCESS") if same else "CROSS_CUSTOMER"
+                    # Option B is a count only (no pallet list): a pallet of this customer is simply received; the count is checked at close.
+                    # A pallet that is already in the plant (not at a customer / in return) was not on this vehicle: ALREADY_IN, not counted.
+                    if slip.mode == "B2" and pal.status not in ("AT_CUSTOMER", "IN_RETURN", "IN_TRANSIT"):
+                        exc = "ALREADY_IN"
+                    else:
+                        exc = (None if slip.mode == "B2" else "EXCESS") if same else "CROSS_CUSTOMER"
                     db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pal.pallet_no, declared=False, received=True, exception=exc))
                 if slip.status in ("OPEN", "PENDING_VERIFICATION", "IN_GATE"):
                     slip.status = "RECEIVING"
@@ -153,6 +170,8 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
             tag, pal = services.resolve_tag(db, pl["scanned"])
             if not pal:
                 raise services.RuleError("Unknown tag")
+            if plant not in (pal.location_plant, pal.home_plant):
+                raise services.RuleError(f"{pal.pallet_no} is not at {plant} - cannot mark damaged here")
             services.move(db, pal, "DAMAGED", event_type="DAMAGE_MARK", user_id=p.user_id, device_id=e.device_id, event_id=e.event_id, plant=plant, remarks=pl.get("remarks"))
             return "APPLIED", pal.pallet_no
         if t == "TAG_REPLACE_REQ":
@@ -168,6 +187,8 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
         return "REJECTED", str(ex.detail)
     except KeyError as ex:
         return "REJECTED", f"Missing field {ex}"
+    except (TypeError, ValueError, AttributeError) as ex:          # bad data in one event: reject it, keep the rest of the batch
+        return "REJECTED", f"Invalid event data ({type(ex).__name__})"
 
 
 @router.post("/push")
@@ -191,6 +212,11 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
             dev.pending_reported = int(e.payload.get("pending", 0) or 0)
             db.commit()
             results.append({"event_id": e.event_id, "status": "APPLIED", "result": "ok"}); continue
+        from .. import config as _cfg
+        lt = e.local_ts.astimezone(timezone.utc).replace(tzinfo=None) if e.local_ts.tzinfo else e.local_ts
+        if datetime(2026, 1, 1) <= lt < utcnow() - timedelta(days=_cfg.EVENT_RETENTION_DAYS):   # before 2026 = HHT clock reset, not an old scan
+            # older than the event history kept on the server: it may already have been applied and purged - never re-apply
+            results.append({"event_id": e.event_id, "status": "REJECTED", "result": "scan too old - older than the event history kept"}); continue
         sp = db.begin_nested()
         status, msg = _apply(db, p, e)
         if status == "REJECTED":

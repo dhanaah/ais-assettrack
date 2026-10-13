@@ -25,7 +25,7 @@ def docs_dir() -> str:
 
 def pdf_path(pk) -> str:
     import re
-    return os.path.join(docs_dir(), f"GCS_{re.sub(r'[^A-Za-z0-9]+', '_', pk.gcs_no or pk.picklist_no)}.pdf")
+    return os.path.join(docs_dir(), f"GCS_{re.sub(r'[^A-Za-z0-9]+', '_', (pk.plant_code or '') + '_' + (pk.gcs_no or pk.picklist_no))}.pdf")   # plant in the name: same GCS no. at two plants never shares a file
 
 
 _ONES = "Zero One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve Thirteen Fourteen Fifteen Sixteen Seventeen Eighteen Nineteen".split()

@@ -4,7 +4,7 @@ Developed by DT
 """
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import os
@@ -63,6 +63,18 @@ for r in (auth, masters, imports, sync, documents, reports, external, prints, ac
     app.include_router(r.router)
 app.include_router(external.admin)
 app.add_middleware(ActivityMiddleware)
+
+
+MAX_UPLOAD_MB = 30
+
+
+@app.middleware("http")
+async def _limit_body(request: Request, call_next):
+    """Uploads (Excel masters, WMS stock, document photos) are refused above MAX_UPLOAD_MB - a huge file cannot stall the server."""
+    n = request.headers.get("content-length")
+    if n and n.isdigit() and int(n) > MAX_UPLOAD_MB * 1024 * 1024:
+        return JSONResponse({"detail": f"File too large (max {MAX_UPLOAD_MB} MB)"}, status_code=413)
+    return await call_next(request)
 
 static_dir = config.BASE_DIR / "app" / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -142,7 +154,10 @@ def apk_file(name: str):
 
 
 @app.post("/api/v1/jobs/retry")
-def job_retry():
-    """Called by the scheduler every 5 min (or manually). No auth: bind to localhost in IIS/nginx."""
+def job_retry(request: Request):
+    """Called by the scheduler every 5 min on the server PC itself - refused from any other computer."""
+    host = request.client.host if request.client else ""
+    if host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        raise HTTPException(403, "Only from the server PC")
     with SessionLocal() as db:
         return integration.run_retries(db)

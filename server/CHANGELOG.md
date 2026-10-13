@@ -1,4 +1,41 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.23.0 + HHT 2.17.0 - 2026-10-13 - full review: security and logic fixes
+Full check of the whole application (security, server logic, HHT app) by separate reviewers. All 226 process checks pass plus 30 new checks (server/tests/audit_fixes_check.py, also run by the build).
+
+**Pallet records (logic)**
+- A pallet on an open pick list that is scanned at the Yard is now properly taken off that list - it can no longer go out on two challans. OUT gate holds a vehicle if a pallet is no longer on its load, and only one gate can dispatch a load.
+- Cancelling a pick list frees only its own pallets.
+- Offline (RO) slip sent after the slip was closed at the yard: the closed slip is not changed; extra pallets are only reported.
+- Same pallet twice on an offline slip no longer stops the customer HHT from sending.
+- Gate-opened offline slip + later HHT details: short pallet references are matched to the full number (no double lines).
+- A customer slip can no longer move another plant's pallet, or a pallet on another customer's load.
+- Option B: a pallet already in the plant scanned at the yard is ALREADY_IN and is not counted.
+- Document numbers (gate entry, slip, challan...) can no longer repeat when two requests come at the same moment.
+- Option B slip sent twice by the gate HHT: the same slip is returned (no error).
+- Other-plant stock-transfer challans close when the pallets are received at FGWH / Packing.
+- One bad scan no longer blocks a whole sync batch; scans older than the kept history are refused (HHT with a reset clock still OK).
+- Supervisor PIN asked once per close (one wrong PIN = one try).
+
+**Security**
+- Print pages (slip, challan, GCS) show customer-typed text as text - it can never run as script.
+- Built-in admin must change the first password before anything else works (Users page still opens).
+- Old public QR secret accepted only for slips / GCS made before 11-Oct-2026; QR vehicle must match the slip.
+- Option A slips at the IN gate need the slip QR (or a supervisor PIN - server side ready).
+- Customer staff cannot sign in to the AIS system (customer HHT only).
+- Too many wrong supervisor PINs at a plant -> PIN use paused 10 minutes.
+- Retry job only from the server PC; EBS transfer retry needs Integration permission; damage mark only for own plant's pallets.
+- Customer API no longer shows other customers' codes. Uploads above 30 MB refused. GCS PDF file name includes the plant.
+
+**HHT 2.17.0**
+- Login token no longer kept in the plain app database; phone backup of app data is off.
+- Scans are ignored while AssetTrack is in the background (a scan in another app no longer acts here).
+- Scans made while the HHT is busy wait in line - none are dropped.
+- Customer HHT: slip / receipt queue can no longer lose a slip; unpairing is refused while slips wait; internet address must be https.
+- Offline sign-in (customer staff, plant idle-lock): salted password check kept securely, expires with the sign-in, 5 wrong tries -> 5 min wait. Staff signed in on the old app still sign in offline (moved to the new check).
+- Plant switch: sign-in is saved only after the unsynced-scans check passes.
+- A scan the server keeps refusing is marked FAILED after 5 tries and undone on the HHT (no longer blocks the queue).
+- VPN card refreshes after FortiClient connects; small fixes in pairing QR checks and dock / move rules.
+
 ## HHT 2.16.0 - 2026-10-13 (server unchanged 1.22.0)
 - Customer HHT: VPN to AIS through FortiClient VPN (installed on the HHT, AIS SSL-VPN account from AIS IT). Approved sample.
   - No connection to AIS: red card "Not connected to AIS" with **Connect VPN** (opens FortiClient; Play Store page if not installed) and **Recheck**.

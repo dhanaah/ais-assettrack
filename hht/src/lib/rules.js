@@ -24,14 +24,16 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
   if (pk.status !== 'OPEN') return { ok: false, msg: `Pick list is ${pk.status}` };
   const warn = [];
   let lpn = await getLpn(scanned); let pallet = null;
-  if (!lpn) pallet = (await resolveTag(scanned)).pallet;
-  if (palletScan) { const p2 = (await resolveTag(palletScan)).pallet; if (!p2) return { ok: false, msg: `Unknown pallet ${palletScan}` }; pallet = p2; }
+  const retired = (t) => t && t.status === 'RETIRED';
+  if (!lpn) { const rt = await resolveTag(scanned); if (retired(rt.tag)) return { ok: false, msg: `Tag ${rt.tag.tag} is retired` }; pallet = rt.pallet; }
+  if (palletScan) { const rt2 = await resolveTag(palletScan); if (retired(rt2.tag)) return { ok: false, msg: `Tag ${rt2.tag.tag} is retired` }; const p2 = rt2.pallet; if (!p2) return { ok: false, msg: `Unknown pallet ${palletScan}` }; pallet = p2; }
   // GCS loading: an unknown part card is not "unknown" - it is a card that is not on this GCS (no PDI) -> STOP below
   const looksPallet = /^\s*(\{|AIS-)/i.test(scanned);
   if (!lpn && !pallet && (pk.source !== 'GCS' || looksPallet)) return { ok: false, msg: `Unknown ${looksPallet ? 'pallet' : 'LPN / tag'} ${scanned}` };
 
   if (pk.dispatch_type === 'EMPTY_RETURN') {
     if (lpn) return { ok: false, msg: 'Empty return: scan the pallet' };
+    if (!pallet) return { ok: false, msg: `Unknown pallet ${scanned}` };
     if (pallet.home !== pk.to_plant) return { ok: false, msg: `${pallet.pallet_no} belongs to ${pallet.home}, return is for ${pk.to_plant}` };
     if (!['HELD', 'IN_WIP'].includes(pallet.status)) return { ok: false, msg: `${pallet.pallet_no} is ${pallet.status}` };
     if (await localScanExists(picklist_no, pallet.pallet_no)) return { ok: false, msg: 'Already scanned', dup: true };
@@ -91,6 +93,7 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
 
 const ROUTES = { PRODUCTION: ['YARD'], FGWH: ['PRODUCTION'], PACKING: ['PRODUCTION', 'FGWH'], YARD: ['PACKING'] };
 export async function validateMove(scanned, toZone) {
+  if (!ROUTES[toZone]) return { ok: false, msg: `Unknown zone ${toZone}` };
   let { pallet } = await resolveTag(scanned);
   if (!pallet) { const l = await getLpn(scanned); if (l && l.pallet) pallet = (await resolveTag(l.pallet)).pallet; }
   if (!pallet) return { ok: false, msg: `Unknown pallet ${scanned}` };

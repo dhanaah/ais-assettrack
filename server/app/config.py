@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.22.0"
+APP_VERSION = "1.23.0"
 API_MIN_CLIENT = os.getenv("PALLET_MIN_CLIENT", "1.6.0")   # HHT app must be >= this (settings.env PALLET_MIN_CLIENT) - older apps are told to update
 DEVELOPER = "Developed by DT"
 
@@ -22,6 +22,8 @@ DB_URL = os.getenv("PALLET_DB_URL", f"sqlite:///{BASE_DIR / 'pallet.db'}")
 
 # Security -----------------------------------------------------------------
 LEGACY_SECRET = "change-me-in-production-" + APP_NAME          # the old built-in secret (public on GitHub): verification only
+from datetime import datetime as _dt
+LEGACY_CUTOFF = _dt(2026, 10, 11)    # old-secret labels accepted only for slips / GCS made before this (per-install secret since 10-Oct-2026)
 
 
 def _load_secret() -> str:
@@ -29,6 +31,9 @@ def _load_secret() -> str:
     Order: PALLET_JWT_SECRET env -> secret.key next to the database (made once, random) -> legacy default (dev only)."""
     env = os.getenv("PALLET_JWT_SECRET")
     if env:
+        if "CHANGE-ME" in env.upper() or len(env) < 24:
+            import logging
+            logging.getLogger("assettrack").warning("PALLET_JWT_SECRET is the web.config placeholder / too short - set a long random value (labels must be reprinted after a change)")
         return env
     try:
         db_url = os.getenv("PALLET_DB_URL", "")

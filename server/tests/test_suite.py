@@ -25,10 +25,12 @@ def test_health_and_dashboard():
         assert h["db"] == "ok" and h["version"]
         t = c.post("/api/v1/auth/login", json={"user_id": "admin", "password": "Admin@123"}).json()["token"]
         H = {"Authorization": "Bearer " + t}
+        assert c.get("/api/v1/dashboard", headers=H).status_code == 403, "built-in admin must change the first password before anything else"
+        assert c.post("/api/v1/auth/change-password", headers=H, json={"old_password": "Admin@123", "new_password": "Str0ng!Pass#2026"}).status_code == 200
         assert c.get("/api/v1/dashboard", headers=H).status_code == 200
         assert c.get("/api/v1/reports/export/pallets.xlsx", headers=H).status_code == 200
         assert c.get("/api/v1/reminders", headers=H).status_code == 200
-        r = c.post("/api/v1/auth/login", json={"user_id": "admin", "password": "Admin@123", "device_id": "D1", "app_version": "0.9.0"})
+        r = c.post("/api/v1/auth/login", json={"user_id": "admin", "password": "Str0ng!Pass#2026", "device_id": "D1", "app_version": "0.9.0"})
         assert r.status_code == 426, "old HHT app must be told to update"
         assert c.get("/api/v1/health").json()["picklist_source"] == "BENCH"
         assert c.get("/api/v1/app/latest").json()["min_client"]

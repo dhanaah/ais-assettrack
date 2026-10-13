@@ -1,5 +1,6 @@
 """Print-ready documents (A4): pallet challan and return slip, with AIS logo and QR.
 Open in browser -> Print / Save as PDF. Token passed as ?tok= so the page can be opened in a new tab."""
+import html
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -10,6 +11,27 @@ from ..db import get_db
 from ..security import Principal, load_perms
 
 router = APIRouter(prefix="/print", tags=["print"])
+
+
+class _Esc:
+    """Read-only view of a record whose text values are HTML-escaped - names, driver, DC no. etc. typed by customers or
+    in masters can never become script on the print page."""
+    def __init__(self, o):
+        object.__setattr__(self, "_o", o)
+
+    def __getattr__(self, n):
+        v = getattr(self._o, n)
+        return html.escape(v) if isinstance(v, str) else v
+
+
+def esc(o):
+    if o is None:
+        return None
+    if isinstance(o, dict):
+        return {k: (html.escape(v) if isinstance(v, str) else v) for k, v in o.items()}
+    if isinstance(o, str):
+        return html.escape(o)
+    return _Esc(o)
 
 
 def _auth(tok: str, db: Session) -> Principal:
@@ -63,9 +85,10 @@ def challan(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     cust = db.query(models.Customer).filter_by(code=k.customer_code, plant_code=k.plant_code).first()
     tr = db.get(models.Transporter, k.transporter_code) if k.transporter_code else None
     lines = db.query(models.PickListLine).filter_by(picklist_no=no).order_by(models.PickListLine.scanned_at).all()
+    lines = [esc(x) for x in lines]; k, cust, tr, plant = esc(k), esc(cust), esc(tr), esc(plant)
     rows = ""
     for i, l in enumerate(lines, 1):
-        pal = db.get(models.Pallet, l.pallet_no)
+        pal = esc(db.get(models.Pallet, l._o.pallet_no))
         rows += f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{pal.current_tag if pal else ''}</td><td>{(pal.pallet_type if pal else '') or ''} {(pal.size if pal else '') or ''}</td><td>1</td></tr>"
     hold = (cust.holding_limit_days if cust and cust.holding_limit_days else plant.holding_days_default)
     dt = k.dispatch_type or "PALLET_ONLY"
@@ -73,15 +96,15 @@ def challan(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
                                                    (models.PickListLpn.pdi_result == "OK") | models.PickListLpn.pdi_result.is_(None)).all()
     lpn_by = {}
     for r in lpn_rows:
-        lpn_by.setdefault(r.pallet_no, []).append(r)
+        lpn_by.setdefault(r.pallet_no, []).append(esc(r))
     if lpn_rows:
         rows = ""
         for i, l in enumerate(lines, 1):
-            pal = db.get(models.Pallet, l.pallet_no)
-            ls = lpn_by.get(l.pallet_no, [])
+            pal = esc(db.get(models.Pallet, l._o.pallet_no))
+            ls = lpn_by.get(l._o.pallet_no, [])
             rows += (f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{pal.current_tag if pal else ''}</td>"
                      f"<td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in ls)}</td><td>{sum(x.qty for x in ls)}</td></tr>")
-    to_plant = db.get(models.Plant, k.to_plant) if k.to_plant else None
+    to_plant = esc(db.get(models.Plant, k._o.to_plant)) if k.to_plant else None
     if dt == "EMPTY_RETURN":
         title, consignee = "DELIVERY CHALLAN — RETURN OF EMPTY RETURNABLE PALLETS", f"{to_plant.name if to_plant else k.to_plant} ({k.to_plant})<br>{(to_plant.address or '') if to_plant else ''}<br>GSTIN {(to_plant.gstin or '') if to_plant else ''}"
         purpose = f"Return of empty returnable pallets (owned by AIS {k.to_plant}) after consumption of material. Not a sale."
@@ -106,7 +129,7 @@ def challan(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS {len(lines)}{f' · PART {k.part_no} QTY' if lpn_rows else ''}</th><th>{sum(x.qty for x in lpn_rows) if lpn_rows else len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>Purpose:</b> {purpose}</div>
     <div class="sig"><div>Prepared by (FG Warehouse)</div><div>Approved by (Logistics)</div><div>Received by (Customer / Driver)</div></div>
-    <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
+    <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {esc(p.user_id)}</div></body></html>"""
     return HTMLResponse(html)
 
 
@@ -114,9 +137,10 @@ def slip_html(db, s, printed_by: str) -> str:
     """Pallet Return Slip - the A4 pattern shown in the approval deck. Used by AIS (web/HHT) and by the customer API."""
     plant = db.get(models.Plant, s.plant_code)
     cust = db.query(models.Customer).filter_by(code=s.customer_code, plant_code=s.plant_code).first()
-    lines = db.query(models.ReturnSlipLine).filter_by(slip_no=s.slip_no).all()
-    rows = "".join(f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{'✓' if l.declared else ''}</td><td>{'✓' if l.received else ''}</td><td>{l.exception or ''}</td></tr>" for i, l in enumerate(lines, 1))
+    lines = [esc(x) for x in db.query(models.ReturnSlipLine).filter_by(slip_no=s.slip_no).all()]
     qr = services.slip_qr(s, signed=s.source != "HHT")
+    s, plant, cust, printed_by = esc(s), esc(plant), esc(cust), esc(printed_by)
+    rows = "".join(f"<tr><td>{i}</td><td>{l.pallet_no}</td><td>{'✓' if l.declared else ''}</td><td>{'✓' if l.received else ''}</td><td>{l.exception or ''}</td></tr>" for i, l in enumerate(lines, 1))
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>Return slip {s.slip_no}</title><style>{CSS}</style></head><body>
     <button class="btn" onclick="window.print()">Print / Save PDF</button>
     {_head(plant, 'PALLET RETURN SLIP', qr)}
@@ -146,11 +170,11 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     lines = db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).order_by(models.PickListLine.scanned_at).all()
     lpn_by = {}
     for r in db.query(models.PickListLpn).filter_by(picklist_no=k.picklist_no).all():
-        lpn_by.setdefault(r.pallet_no, []).append(r)
-    rows = "".join(f"<tr><td>{i}</td><td><b>{gcssvc.short_pallet(l.pallet_no)}</b></td><td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in lpn_by.get(l.pallet_no, [])) or '—'}</td><td>{l.scanned_at:%d-%b %H:%M}</td><td>{l.user_id or ''}</td></tr>" for i, l in enumerate(lines, 1))
+        lpn_by.setdefault(r.pallet_no, []).append(esc(r))
+    rows = "".join(f"<tr><td>{i}</td><td><b>{esc(gcssvc.short_pallet(l.pallet_no))}</b></td><td>{'<br>'.join(f'{x.lpn_no} · {x.part_no} × {x.qty}' for x in lpn_by.get(l.pallet_no, [])) or '—'}</td><td>{l.scanned_at:%d-%b %H:%M}</td><td>{esc(l.user_id or '')}</td></tr>" for i, l in enumerate(lines, 1))
     qr = gcssvc.gcs_qr(k, len(lines))
-    RED = ' style="color:#c8102e;font-weight:700"'
-    items = gcssvc.items_loaded(db, k.picklist_no); has_cards = any(lpn_by.values())
+    items = [esc(i) for i in gcssvc.items_loaded(db, k.picklist_no)]
+    k, cust, plant = esc(k), esc(cust), esc(plant)
     invs = list(dict.fromkeys(i["invoice_no"] for i in items if i["invoice_no"]))
     fn = lambda v, d=0: "" if v in (None, "") else (f"{v:,.{d}f}" if d else f"{v:,}")
     tot = lambda key: sum((i.get(key) or 0) for i in items)
@@ -174,8 +198,8 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     <table><tr><th>#</th><th>Pallet</th><th>Part cards (LPN)</th><th>Loaded at</th><th>By</th></tr>{rows}
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS LOADED</th><th>{len(lines)}</th></tr></table>
     <div style="margin-top:8px;font-size:11px"><b>OUT gate:</b> scan the QR at the top right. The gate accepts only a QR printed by AssetTrack for this GCS and vehicle.</div>
-    <div class="sig"><div>PDI (Planning Bench)<br><b>{k.pdi_sign or '—'}</b></div><div>Logistics (Shift supervisor, Planning Bench)<br><b>{k.supervisor_sign or '—'}</b></div><div>Security (loading verified)<br><b>{p.user.full_name} ({p.user_id})</b></div></div>
-    <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {p.user_id}</div></body></html>"""
+    <div class="sig"><div>PDI (Planning Bench)<br><b>{k.pdi_sign or '—'}</b></div><div>Logistics (Shift supervisor, Planning Bench)<br><b>{k.supervisor_sign or '—'}</b></div><div>Security (loading verified)<br><b>{esc(p.user.full_name)} ({esc(p.user_id)})</b></div></div>
+    <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {esc(p.user_id)}</div></body></html>"""
     return HTMLResponse(html)
 
 

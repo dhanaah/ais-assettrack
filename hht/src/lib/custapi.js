@@ -12,6 +12,12 @@ import { setNet } from '../ui/kit';
 import { hmacSha256Hex, sha256Hex } from './hmac';
 import { setServerVehicles, usedVehicle, cleanVeh } from './vehicles';
 import { parsePalletQr } from './db';
+import { saveCred, checkCred } from './localauth';
+
+// outbox / history changes run one after another (the timer, resume and a new slip can touch them at the same moment)
+let chain = Promise.resolve();
+const serial = (fn) => { const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; };
+const isHttps = (u) => /^https:\/\/[^/\s]+/i.test(String(u || '').trim());
 
 let pair = null;                 // { v, p, c, n, d, lan: [], ports: [], wan, k }
 let route = null;                // { base, kind: 'LAN' | 'WAN', at }
@@ -39,7 +45,15 @@ function b64decode(s) {
 export function parsePairing(text) {
   const s = String(text || '').trim();
   if (!s.startsWith('AISCUST1|')) return null;
-  try { const j = JSON.parse(b64decode(s.slice(9))); return j && j.k && j.c && j.p ? j : null; } catch (e) { return null; }
+  try {
+    const j = JSON.parse(b64decode(s.slice(9)));
+    if (!j || typeof j !== 'object' || typeof j.k !== 'string' || !j.k || typeof j.c !== 'string' || !j.c || typeof j.p !== 'string' || !j.p) return null;
+    if (j.s != null && typeof j.s !== 'string') return null;
+    j.lan = Array.isArray(j.lan) ? j.lan.map(String).filter(Boolean) : [];          // AIS-network names / IPs
+    j.ports = Array.isArray(j.ports) ? j.ports.map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 65536) : [];
+    j.wan = isHttps(j.wan) ? String(j.wan).trim().replace(/\/+$/, '') : null;        // internet address: https only
+    return j;
+  } catch (e) { return null; }
 }
 export async function savePairing(j) {
   const { k, s: sk, ...meta } = j;
@@ -65,18 +79,26 @@ export async function refreshMe() {
   return me;
 }
 export const canPrintOffline = () => !!(pair && pair.s && pair.i);
-export async function unpair() { await SecureStore.deleteItemAsync('cust_key'); await SecureStore.deleteItemAsync('cust_sign').catch(() => {}); await kv.set('cust_pair', null); pair = null; route = null; }
+/** Slips / receipts still waiting to be sent (they belong to this pairing - sent with its key). */
+export async function waitingCount() { return (await outbox()).length + ((await kv.get('cust_recv_outbox')) || []).length; }
+export async function unpair() {
+  const n = await waitingCount();
+  if (n) throw new Error(`${n} slip(s) / receipt(s) are still waiting to be sent. Connect to AIS (VPN) and send them first - then remove the pairing.`);
+  await SecureStore.deleteItemAsync('cust_key'); await SecureStore.deleteItemAsync('cust_sign').catch(() => {}); await kv.set('cust_pair', null); pair = null; route = null; }
 export const getPairing = () => pair;
 export const getRoute = () => route;
 export async function setInternetAddress(url) {        // if IT publishes the address after pairing
-  if (!pair) return; pair = { ...pair, wan: (url || '').trim().replace(/\/+$/, '') };
+  if (!pair) return;
+  const u = (url || '').trim().replace(/\/+$/, '');
+  if (u && !isHttps(u)) throw new Error('The internet address must start with https:// (ask AIS IT)');
+  pair = { ...pair, wan: u };
   const { k, s: _s, ...meta } = pair; await kv.set('cust_pair', meta); route = null;
 }
 
 // ---------------------------------------------------------------- route: AIS network first, internet second
 function lanBases() {
-  const out = []; const ports = pair?.ports?.length ? pair.ports : [80, 8001, 8002, 8003];
-  (pair?.lan || []).forEach((h) => ports.forEach((p) => { const u = `http://${h}${p === 80 ? '' : ':' + p}`; if (!out.includes(u)) out.push(u); }));
+  const out = []; const ports = Array.isArray(pair?.ports) && pair.ports.length ? pair.ports : [80, 8001, 8002, 8003];
+  (Array.isArray(pair?.lan) ? pair.lan : []).forEach((h) => ports.forEach((p) => { const u = `http://${h}${p === 80 ? '' : ':' + p}`; if (!out.includes(u)) out.push(u); }));
   return out;
 }
 async function ping(base, timeout) {
@@ -96,7 +118,8 @@ export async function findRoute(force) {
   const lan = lanBases();
   const hit = await firstTrue(lan.map((b) => ping(b, 2500)), lan);
   if (hit) { route = { base: hit, kind: 'LAN', at: Date.now() }; setNet({ state: 'online' }); return route; }
-  if (pair.wan && await ping(pair.wan, 8000)) { route = { base: pair.wan, kind: 'WAN', at: Date.now() }; setNet({ state: 'online' }); return route; }
+  // internet: https only (the API key and staff token travel on it)
+  if (isHttps(pair.wan) && await ping(pair.wan, 8000)) { route = { base: pair.wan, kind: 'WAN', at: Date.now() }; setNet({ state: 'online' }); return route; }
   route = null; setNet({ state: 'offline' });
   const e = new Error(pair.wan ? 'No network to AIS (AIS Wi-Fi or internet)' : 'AIS server not reachable and no internet address set'); e.offline = true; throw e;
 }
@@ -124,15 +147,15 @@ export async function ext(path, { method = 'GET', body, timeout = 15000 } = {}, 
 const uid = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
 export async function outbox() { return (await kv.get('cust_outbox')) || []; }
 export async function history() { return (await kv.get('cust_slips')) || []; }
-async function remember(slip) {
+const remember = (slip) => serial(async () => {
   const h = await history(); const i = h.findIndex((x) => x.slip_no === slip.slip_no);
   if (i >= 0) h[i] = { ...h[i], ...slip }; else h.unshift(slip);
   await kv.set('cust_slips', h.slice(0, 200));
-}
+});
 /** Create an Option A return slip. Returns { sent: true, slip } or { sent: false, queued } when there is no network. */
 export async function createSlip(body) {
   body = { ...body, vehicle_no: cleanVeh(body.vehicle_no) }; usedVehicle(body.vehicle_no).catch(() => {});
-  const item = { client_ref: uid(), body, created: new Date().toISOString(), tries: 0 };
+  const item = { client_ref: uid(), body, created: new Date().toISOString(), tries: 0, pc: pair?.c, pi: pair?.i };   // pc/pi: made under this pairing
   try {
     const slip = await ext('/return-slip', { method: 'POST', body: { ...body, client_ref: item.client_ref } });
     await remember({ ...slip, made_on_device: item.created });
@@ -140,9 +163,9 @@ export async function createSlip(body) {
   } catch (e) {
     if (!e.offline) throw e;
     let slip = null;
-    if (canPrintOffline()) { slip = await offlineSlip(body, item.created); item.body = { ...body, slip_no: slip.slip_no }; await remember(slip); }
-    const ob = await outbox(); ob.push({ ...item, last_error: e.message }); await kv.set('cust_outbox', ob);
-    setNet({ state: 'offline', pending: ob.length });
+    if (canPrintOffline()) { slip = await serial(() => offlineSlip(body, item.created)); item.body = { ...body, slip_no: slip.slip_no }; await remember(slip); }
+    const n = await serial(async () => { const ob = await outbox(); ob.push({ ...item, last_error: e.message }); await kv.set('cust_outbox', ob); return ob.length; });
+    setNet({ state: 'offline', pending: n });
     return { sent: false, queued: item, reason: e.message, slip };
   }
 }
@@ -166,37 +189,59 @@ async function offlineSlip(body, created) {
     declared_qty: qty, created_at: created, qr_payload: qr, offline: true, pallets: body.pallets.map((x) => ({ pallet_no: parsePalletQr(x)?.pallet_no || x })) };
 }
 /** Send waiting slips (same client reference: never doubled). Returns the slips sent now. */
-export async function sendPending() {
+// One run at a time (a second caller gets the running one). The outbox is not held during the network calls: at the
+// end only the slips sent now are taken out of the CURRENT outbox, so a slip queued meanwhile is never lost.
+let sendingSlips = null;
+export function sendPending() {
+  if (!sendingSlips) sendingSlips = sendSlipsNow().finally(() => { sendingSlips = null; });
+  return sendingSlips;
+}
+async function sendSlipsNow() {
   const ob = await outbox(); if (!ob.length) return [];
-  const left = [], sent = [];
+  const done = new Set(), upd = new Map(), sent = [];
   for (const it of ob) {
-    try { const slip = await ext('/return-slip', { method: 'POST', body: { ...it.body, client_ref: it.client_ref } }); await remember({ ...slip, offline: false, made_on_device: it.created }); sent.push(slip); }
-    catch (e) { left.push({ ...it, tries: (it.tries || 0) + 1, last_error: e.message }); if (e.offline) { left.push(...ob.slice(ob.indexOf(it) + 1)); break; } }
+    if (it.pc && pair && (it.pc !== pair.c || (it.pi && pair.i && it.pi !== pair.i))) { upd.set(it.client_ref, { ...it, last_error: 'Made under another pairing - not sent' }); continue; }
+    try { const slip = await ext('/return-slip', { method: 'POST', body: { ...it.body, client_ref: it.client_ref } }); done.add(it.client_ref); await remember({ ...slip, offline: false, made_on_device: it.created }); sent.push(slip); }
+    catch (e) { upd.set(it.client_ref, { ...it, tries: (it.tries || 0) + 1, last_error: e.message }); if (e.offline) break; }
   }
-  await kv.set('cust_outbox', left);
+  await serial(async () => { const cur = await outbox(); await kv.set('cust_outbox', cur.filter((x) => !done.has(x.client_ref)).map((x) => upd.get(x.client_ref) || x)); });
   return sent;
 }
 export async function refreshSlip(no) { const s = await ext('/return-slip/' + encodeURIComponent(no)); await remember(s); return s; }
 
 // ---------------------------------------------------------------- customer staff sign-in (role Customer Staff)
 // Online: checked by AIS, gives a token valid 30 days. Offline: the same user can sign in again with the password
-// checked against a hash kept on this HHT (only users who signed in here online before).
+// checked against a salted hash kept in SecureStore (only users who signed in here online before, until their sign-in
+// expires; 5 wrong tries -> 5 minutes wait - see localauth).
 const keyOf = (u) => 'cust_tok_' + String(u).replace(/[^A-Za-z0-9._-]/g, '_');
+const credScope = () => 'cust_' + (pair?.c || '');
+const expired = (k) => !k || !(k.until > Date.now());
 export const getStaff = () => staff;
 export const staffCan = (perm) => !!(staff && (staff.perms || []).includes(perm));
-export async function loadStaff() { const s = await kv.get('cust_staff_now'); if (!s) return null; const tok = await SecureStore.getItemAsync(keyOf(s.user_id)); staff = tok ? { ...s, tok } : null; return staff; }
+export async function loadStaff() {
+  const s = await kv.get('cust_staff_now'); if (!s) return null;
+  if (expired(((await kv.get('cust_staff_known')) || {})[s.user_id])) { staff = null; await kv.set('cust_staff_now', null); return null; }   // 30-day sign-in over
+  const tok = await SecureStore.getItemAsync(keyOf(s.user_id)); staff = tok ? { ...s, tok } : null; return staff;
+}
 export async function staffLogin(user, pw) {
-  user = String(user || '').trim().toLowerCase(); const h = sha256Hex(user + '|' + pw + '|' + (pair?.c || ''));
+  user = String(user || '').trim().toLowerCase();
   try {
     const r = await ext('/staff-login', { method: 'POST', body: { user_id: user, password: pw } });
-    await SecureStore.setItemAsync(keyOf(r.user_id), r.token);
-    const known = (await kv.get('cust_staff_known')) || {}; known[r.user_id] = { name: r.name, perms: r.perms, h, until: Date.now() + r.days * 86400000 }; await kv.set('cust_staff_known', known);
+    await SecureStore.setItemAsync(keyOf(r.user_id), r.token); await saveCred(credScope(), r.user_id, pw);
+    const known = (await kv.get('cust_staff_known')) || {}; known[r.user_id] = { name: r.name, perms: r.perms, until: Date.now() + r.days * 86400000 }; await kv.set('cust_staff_known', known);
     staff = { user_id: r.user_id, name: r.name, perms: r.perms, tok: r.token }; await kv.set('cust_staff_now', { user_id: r.user_id, name: r.name, perms: r.perms });
     return staff;
   } catch (e) {
     if (!e.offline) throw e;
     const k = ((await kv.get('cust_staff_known')) || {})[user]; const tok = await SecureStore.getItemAsync(keyOf(user));
-    if (!k || !tok || k.h !== h) throw new Error('No network - sign in once online on this HHT first (or wrong password)');
+    if (!k || !tok) throw new Error('No network - sign in once online on this HHT first');
+    if (expired(k)) throw new Error('Sign-in on this HHT has expired - connect to AIS (VPN) and sign in online');
+    let ok = await checkCred(credScope(), user, pw);
+    if (ok === null && k.h && k.h === sha256Hex(user + '|' + pw + '|' + (pair?.c || ''))) {   // signed in on the older app: move to the new check
+      await saveCred(credScope(), user, pw); ok = true;
+    }
+    if (ok === null) throw new Error('No network - sign in once online on this HHT first');
+    if (!ok) throw new Error('Wrong password');
     staff = { user_id: user, name: k.name, perms: k.perms, tok, offline: true }; await kv.set('cust_staff_now', { user_id: user, name: k.name, perms: k.perms });
     return staff;
   }
@@ -214,13 +259,19 @@ export async function receive(picklist_no, scanned) {
   try { const r = await ext('/receive', { method: 'POST', body: item }); incoming(true).catch(() => {}); return { sent: true, result: r }; }
   catch (e) {
     if (!e.offline) throw e;
-    const q = (await kv.get('cust_recv_outbox')) || []; q.push(item); await kv.set('cust_recv_outbox', q);
+    await serial(async () => { const q = (await kv.get('cust_recv_outbox')) || []; q.push(item); await kv.set('cust_recv_outbox', q); });
     return { sent: false };
   }
 }
-export async function sendReceipts() {
+let sendingRecv = null;                 // one run at a time, like sendPending
+export function sendReceipts() {
+  if (!sendingRecv) sendingRecv = sendReceiptsNow().finally(() => { sendingRecv = null; });
+  return sendingRecv;
+}
+async function sendReceiptsNow() {
   const q = (await kv.get('cust_recv_outbox')) || []; if (!q.length) return 0;
-  const left = []; let n = 0;
-  for (const it of q) { try { await ext('/receive', { method: 'POST', body: it }); n++; } catch (e) { left.push(it); if (e.offline) { left.push(...q.slice(q.indexOf(it) + 1)); break; } } }
-  await kv.set('cust_recv_outbox', left); return n;
+  const done = new Set();
+  for (const it of q) { try { await ext('/receive', { method: 'POST', body: it }); done.add(it.client_ref); } catch (e) { if (e.offline) break; } }
+  await serial(async () => { const cur = (await kv.get('cust_recv_outbox')) || []; await kv.set('cust_recv_outbox', cur.filter((x) => !done.has(x.client_ref))); });
+  return done.size;
 }

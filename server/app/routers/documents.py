@@ -152,7 +152,7 @@ def cancel_picklist(no: str, request: Request, p: Principal = Depends(current_us
         raise HTTPException(400, f"Cannot cancel at {k.status}" + (" - SO already in EBS, cancel there first" if k.so_number else ""))
     for line in db.query(models.PickListLine).filter_by(picklist_no=no).all():
         pal = db.get(models.Pallet, line.pallet_no)
-        if pal and pal.status == "ALLOCATED":
+        if pal and pal.status == "ALLOCATED" and pal.picklist_no == no:
             services.move(db, pal, "HELD" if pal.home_plant != k.plant_code else "AVAILABLE", event_type="PICKLIST_CANCEL",
                           user_id=p.user_id, plant=k.plant_code, ref=no, force=True)
     for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all():
@@ -528,6 +528,8 @@ def gate_out_scan(body: GateOutIn, request: Request, p: Principal = Depends(hht(
                                          models.PickList.status != "LINKED").order_by(models.PickList.created_at.desc()).first()
     if not k:
         raise HTTPException(404, f"No load found for {sc} - HOLD VEHICLE")
+    if q and q.get("legacy") and not services.legacy_ok(k.created_at):
+        raise HTTPException(400, "GCS QR check code invalid - not printed by AssetTrack - HOLD VEHICLE")
     if q and q.get("vehicle") and k.vehicle_no and q["vehicle"] != k.vehicle_no:
         raise HTTPException(400, f"QR vehicle {q['vehicle']} differs from the load ({k.vehicle_no}) - HOLD VEHICLE")
     return gate_out(k.picklist_no, GateOutIn(scanned=k.gcs_no or k.challan_no, manual_override=body.manual_override, supervisor_pin=body.supervisor_pin, remarks=body.remarks), request, p, db)
@@ -551,7 +553,20 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
             raise HTTPException(400, "Scanned QR does not match this pick list's GCS/challan - hold vehicle")
         if not body.supervisor_pin or not verify_supervisor_pin(db, k.plant_code, body.supervisor_pin):
             raise HTTPException(403, "Supervisor PIN required for manual override")
-    for l in db.query(models.PickListLine).filter_by(picklist_no=no).all():
+    lines = db.query(models.PickListLine).filter_by(picklist_no=no).all()
+    wrong = []
+    for l in lines:
+        pal = db.get(models.Pallet, l.pallet_no)
+        if not pal or pal.status != "ALLOCATED" or pal.picklist_no != no:
+            wrong.append(f"{l.pallet_no} ({pal.status if pal else 'unknown'}{' ' + pal.picklist_no if pal and pal.picklist_no and pal.picklist_no != no else ''})")
+    if wrong:
+        raise HTTPException(400, f"{len(wrong)} pallet(s) on this load are no longer on it: {', '.join(wrong[:5])} - HOLD VEHICLE, check with logistics")
+    # one OUT gate only: the load is claimed in one step (a second gate scanning the same GCS at the same moment gets 'already')
+    got = db.query(models.PickList).filter_by(picklist_no=no, status="APPROVED").update({"status": "DISPATCHED"}, synchronize_session=False)
+    if not got:
+        db.rollback()
+        raise HTTPException(400, "Vehicle already gated out")
+    for l in lines:
         pal = db.get(models.Pallet, l.pallet_no)
         if k.dispatch_type == "EMPTY_RETURN":
             services.move(db, pal, "IN_TRANSIT", event_type="GATE_OUT_EMPTY_RETURN", user_id=p.user_id, plant=None, ref=k.challan_no, force=True)
@@ -559,7 +574,11 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
             lpnsvc.set_load(db, pal, "EMPTY"); lpnsvc.set_zone(pal, None)
             continue
         dest = k.to_plant if k.dispatch_type == "STOCK_TRANSFER" else k.customer_code
-        services.move(db, pal, "AT_CUSTOMER", event_type="GATE_OUT", user_id=p.user_id, plant=None, customer=dest, ref=k.challan_no)
+        try:
+            services.move(db, pal, "AT_CUSTOMER", event_type="GATE_OUT", user_id=p.user_id, plant=None, customer=dest, ref=k.challan_no)
+        except services.RuleError as ex:
+            db.rollback()
+            raise HTTPException(400, f"{ex} - HOLD VEHICLE")
         lpnsvc.set_zone(pal, None)
         if k.dispatch_type in lpnsvc.PART_TYPES:
             lpns = db.query(models.PickListLpn).filter_by(picklist_no=no, pallet_no=pal.pallet_no).all()
@@ -642,6 +661,10 @@ def create_slip(body: SlipIn, request: Request, p: Principal = Depends(current_u
         raise HTTPException(400, "Customer not mapped to this plant")
     no = body.slip_no or services.doc_number(db, p.plant, "RTS")
     if db.get(models.ReturnSlip, no):
+        old = db.get(models.ReturnSlip, no)
+        if body.slip_no and old.plant_code == p.plant and old.customer_code == body.customer_code and old.mode == mode:
+            ge = db.query(models.GateEntry).filter_by(plant_code=p.plant, ref_no=old.slip_no).first()
+            return row(old) | {"duplicate": True, "gate_entry": ge.entry_no if ge else None}
         raise HTTPException(400, "Slip number exists")
     sl = models.ReturnSlip(slip_no=no, plant_code=p.plant, customer_code=cust.code, mode=mode, vehicle_no=body.vehicle_no,
                            customer_challan_no=body.customer_challan_no, driver_name=body.driver_name, driver_mobile=body.driver_mobile,
@@ -784,6 +807,7 @@ def doc_compare(db, sl) -> dict | None:
 class GateInIn(BaseModel):
     qr: str | None = None           # full scanned QR (AIS1|RS|...) - check code and vehicle verified
     vehicle_no: str | None = None   # actual vehicle at gate (optional cross-check)
+    supervisor_pin: str | None = None   # Option A slip whose QR cannot be scanned (torn / smudged): supervisor lets it in
 
 
 @router.get("/gate-entries")
@@ -827,6 +851,14 @@ def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principa
         raise HTTPException(404, "Slip not found - create Mode B slip")
     if q and not q.get("signed") and sl.source == "EXT_API" and (body.qr or "").startswith("AIS1|"):
         raise HTTPException(400, "Customer label without check code - not issued by AssetTrack - HOLD VEHICLE")
+    if sl.mode == "A" and sl.source in ("CUST_HHT", "EXT_API", "GATE_RO") and not (q and q.get("signed")):
+        if not (body and body.supervisor_pin and verify_supervisor_pin(db, sl.plant_code, body.supervisor_pin)):
+            raise HTTPException(400, "Option A slip: scan the QR printed on the slip (check code) - HOLD VEHICLE, or supervisor PIN")
+        audit(db, p, "GATE_IN_NO_QR_PIN", "slip", sl.slip_no, None, {"scanned": no}, request)
+    if q and q.get("legacy") and not services.legacy_ok(sl.created_at):
+        raise HTTPException(400, "QR check code invalid - label altered or not issued by AssetTrack - HOLD VEHICLE")
+    if q and q.get("vehicle") and sl.vehicle_no and q["vehicle"] != sl.vehicle_no:
+        raise HTTPException(400, f"QR vehicle {q['vehicle']} differs from the slip ({sl.vehicle_no}) - HOLD VEHICLE")
     if q and q.get("slip_no") and q.get("plant") and (q["plant"] != sl.plant_code or q.get("customer") != sl.customer_code):
         raise HTTPException(400, "QR does not match the slip record - HOLD VEHICLE")
     if q and q.get("vehicle") and body.vehicle_no and q["vehicle"] != body.vehicle_no.upper().replace(" ", ""):
@@ -921,7 +953,9 @@ def _close_challan(db, p, ge, body, request):
         raise HTTPException(400, "Already closed")
     k = db.query(models.PickList).filter_by(challan_no=ge.ref_no).first()
     on = [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()] if k else []
-    got = [x for x in on if (pal := db.get(models.Pallet, x)) and pal.location_plant == p.plant and pal.status in ("AVAILABLE", "DAMAGED") and pal.zone == "YARD"]
+    st = bool(k and k.dispatch_type == "STOCK_TRANSFER")
+    got = [x for x in on if (pal := db.get(models.Pallet, x)) and pal.location_plant == p.plant and
+           ((pal.status in ("AVAILABLE", "DAMAGED") and pal.zone == "YARD") or (st and pal.status in ("IN_WIP", "HELD", "AVAILABLE", "ALLOCATED")))]
     short = [x for x in on if x not in got]
     if short and not (body.supervisor_pin and verify_supervisor_pin(db, p.plant, body.supervisor_pin)):
         raise HTTPException(403, f"{len(short)} pallet(s) on the challan not received - supervisor PIN to close")
@@ -947,6 +981,11 @@ def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(
     p.require_plant(sl.plant_code)
     if sl.status == "CLOSED":
         raise HTTPException(400, "Already closed")
+    prev = sl.status
+    if not db.query(models.ReturnSlip).filter(models.ReturnSlip.slip_no == no, models.ReturnSlip.status != "CLOSED").update({"status": "CLOSING"}, synchronize_session=False):
+        db.rollback()
+        raise HTTPException(400, "Already closed")
+    db.refresh(sl); sl.status = prev                       # write lock held; real status kept until the close is complete
     lines = db.query(models.ReturnSlipLine).filter_by(slip_no=no).all()
     short = [l for l in lines if l.declared and not l.received]
     exc = [l for l in lines if l.exception and not l.resolved]
@@ -961,11 +1000,11 @@ def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(
     if sl.mode == "B2" and not json.loads(sl.doc_photos or "[]") and not pin_ok:
         raise HTTPException(403, "Option B photo proof is not on the server yet - let the gate HHT sync, or supervisor PIN to close without it")
     if sl.mode == "B2":                    # Option B: count made at the gate is checked against the pallets scanned at the yard
-        got = sum(1 for l in lines if l.received)
+        got = sum(1 for l in lines if l.received and l.exception != "ALREADY_IN")
         if got != (sl.declared_qty or 0) and not pin_ok:
             raise HTTPException(403, f"Option B count {sl.declared_qty} but {got} pallet(s) scanned at the yard - supervisor PIN to close with the difference")
     if open_exc:
-        if not body.supervisor_pin or not verify_supervisor_pin(db, sl.plant_code, body.supervisor_pin):
+        if not pin_ok:
             raise HTTPException(403, f"{len(open_exc)} open exception(s): supervisor PIN required to close")
     received = sum(1 for l in lines if l.received)
     sl.status = "CLOSED"; sl.closed_at = utcnow()

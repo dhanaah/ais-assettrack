@@ -240,7 +240,8 @@ def validate(body: ValidateIn, c: models.Customer = Depends(customer_auth), db: 
         if not pal:
             out.append({"scanned": t, "ok": False, "reason": "unknown tag"})
         elif pal.customer_code != c.code or pal.status != "AT_CUSTOMER":
-            out.append({"scanned": t, "ok": False, "pallet_no": pal.pallet_no, "reason": f"ledger shows {pal.status} {pal.customer_code or ''}".strip()})
+            why = "not at your site in AIS records" if pal.customer_code and pal.customer_code != c.code else f"ledger shows {pal.status}"
+            out.append({"scanned": t, "ok": False, "pallet_no": pal.pallet_no, "reason": why})
         else:
             out.append({"scanned": t, "ok": True, "pallet_no": pal.pallet_no, "type": pal.pallet_type})
     return {"results": out, "ok_count": sum(1 for r in out if r["ok"])}
@@ -288,13 +289,13 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
         else:
             pno = pal.pallet_no
             from .. import lpn as lpnsvc
-            miss = lpnsvc.check_return_slip(db, pal, c.plant_code, no, c.code, user_id=f"EXT:{c.code}")
+            miss = lpnsvc.check_return_slip(db, pal, c.plant_code, no, c.code, user_id=f"EXT:{c.code}") if _may_autocorrect(db, pal, c) else None
             if miss:                             # returned but the dispatch was never scanned: correct the ledger
                 warnings.append(miss)
                 services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_MISSED_DISPATCH", user_id=f"EXT:{c.code}", ref=no, customer=c.code, force=True)
                 lpnsvc.set_load(db, pal, "EMPTY")
             elif pal.customer_code != c.code or pal.status != "AT_CUSTOMER":
-                warnings.append(f"{pno}: ledger shows {pal.status} {pal.customer_code or ''}".strip())
+                warnings.append(f"{pno}: not at your site in AIS records" if pal.customer_code and pal.customer_code != c.code else f"{pno}: ledger shows {pal.status}")
             else:
                 services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_EXT", user_id=f"EXT:{c.code}", ref=no, customer=c.code)
         if pno in seen:
@@ -308,14 +309,52 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
     return _slip_out(db, sl) | {"warnings": warnings}
 
 
+def _may_autocorrect(db, pal, c) -> bool:
+    """A customer slip may correct the ledger (dispatch never scanned) only for this plant's pallet that was on a load
+    for this customer - never another plant's or another customer's pallet."""
+    if pal.home_plant != c.plant_code or pal.location_plant not in (None, c.plant_code):
+        return False
+    if pal.status == "ALLOCATED":
+        pk = db.get(models.PickList, pal.picklist_no) if pal.picklist_no else None
+        return bool(pk and pk.customer_code == c.code)
+    return pal.status == "AVAILABLE"
+
+
+def _short_ref(pno: str) -> str | None:
+    import re
+    m = re.match(r"^AIS-[A-Z0-9]+-([A-Z0-9]+)-(\d+)-\d+$", pno or "")
+    return f"{m.group(1)}-{m.group(2)}" if m else None
+
+
 def _merge_offline(db, sl, body, c, request):
     """Slip printed offline, opened at the AIS gate from its QR before the HHT could send it: keep the gate record and
     add what the HHT knows (pallets, DC, driver)."""
+    if sl.customer_code != c.code or sl.plant_code != c.plant_code:
+        raise HTTPException(400, "Slip belongs to another customer")
     warnings = []
+    if sl.status == "CLOSED":              # already received and closed at the yard: details only, the pallet list is final
+        sl.customer_challan_no = sl.customer_challan_no or body.customer_challan_no; sl.driver_name = sl.driver_name or body.driver_name
+        sl.driver_mobile = sl.driver_mobile or body.driver_mobile
+        have = {l.pallet_no for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no).all()}
+        extra = []
+        for scv in body.pallets:
+            tag, pal = services.resolve_tag(db, scv)
+            pno = pal.pallet_no if pal else scv
+            if pno not in have and _short_ref(pno) not in have and pno not in extra:
+                extra.append(pno)
+        if extra:
+            warnings.append(f"slip already closed at AIS - {len(extra)} pallet(s) on the HHT list not on the closed slip: {', '.join(extra[:10])}")
+        db.add(models.AuditLog(user_id=f"EXT:{c.code}", plant_code=c.plant_code, action="RETURN_SLIP_OFFLINE_MERGE_CLOSED", entity="slip", entity_id=sl.slip_no,
+                               new_value=body.model_dump_json(), ip=request.client.host if request.client else None))
+        db.commit()
+        return _slip_out(db, sl) | {"warnings": warnings, "duplicate": True}
     have = {l.pallet_no: l for l in db.query(models.ReturnSlipLine).filter_by(slip_no=sl.slip_no).all()}
     for scv in body.pallets:
         tag, pal = services.resolve_tag(db, scv)
         pno = pal.pallet_no if pal else scv
+        sr = _short_ref(pno) if pal else None
+        if pno not in have and sr and sr in have:          # gate opened it with the short reference: same pallet, use its full number
+            line = have.pop(sr); line.pallet_no = pno[:30]; have[pno] = line
         if pno in have:
             have[pno].declared = True
             continue
@@ -323,7 +362,7 @@ def _merge_offline(db, sl, body, c, request):
             services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_EXT", user_id=f"EXT:{c.code}", ref=sl.slip_no, customer=c.code)
         elif not pal:
             warnings.append(f"{scv}: unknown tag, listed as declared")
-        db.add(models.ReturnSlipLine(slip_no=sl.slip_no, pallet_no=pno, declared=True)); have[pno] = True
+        line = models.ReturnSlipLine(slip_no=sl.slip_no, pallet_no=pno[:30], declared=True); db.add(line); have[pno] = line
     sl.customer_challan_no = sl.customer_challan_no or body.customer_challan_no; sl.driver_name = sl.driver_name or body.driver_name
     sl.driver_mobile = sl.driver_mobile or body.driver_mobile; sl.remarks = f"ref:{body.client_ref}" if body.client_ref else sl.remarks
     sl.declared_qty = max(sl.declared_qty or 0, len(have))
@@ -355,11 +394,9 @@ def slip_label(slip_no: str, t: str, db: Session = Depends(get_db)):
     """Customer prints this (browser -> Print) and sticks it on the vehicle / hands it to the driver."""
     from fastapi.responses import HTMLResponse
     import hmac
-    if not services.label_token_ok(slip_no, t):
-        raise HTTPException(403, "Invalid label link")
     sl = db.get(models.ReturnSlip, slip_no)
-    if not sl:
-        raise HTTPException(404, "Slip not found")
+    if not sl or not services.label_token_ok(slip_no, t, sl.created_at):
+        raise HTTPException(403, "Invalid label link")
     return HTMLResponse(slip_label_html(db, sl))
 
 

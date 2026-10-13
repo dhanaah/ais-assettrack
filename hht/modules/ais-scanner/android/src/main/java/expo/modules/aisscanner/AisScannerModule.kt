@@ -37,19 +37,23 @@ class AisScannerModule : Module() {
       val r = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
           if (intent == null) return
-          var data: String? = null
-          for (k in keys) {
-            val v = intent.extras?.get(k) ?: continue
-            data = when (v) {
-              is String -> v
-              is ByteArray -> String(v, Charsets.UTF_8)
-              else -> v.toString()
+          // the receiver is exported (vendor scanner services send from their own app): a malformed broadcast from
+          // another app (e.g. an extra that cannot be unparcelled) must never crash AssetTrack - ignore it
+          try {
+            var data: String? = null
+            for (k in keys) {
+              val v = intent.extras?.get(k) ?: continue
+              data = when (v) {
+                is String -> v
+                is ByteArray -> String(v, Charsets.UTF_8)
+                else -> v.toString()
+              }
+              if (!data.isNullOrBlank()) break
             }
-            if (!data.isNullOrBlank()) break
-          }
-          if (data.isNullOrBlank()) return
-          val type = intent.getStringExtra("com.symbol.datawedge.label_type") ?: intent.getStringExtra("barcodeType") ?: ""
-          sendEvent("onScan", mapOf("data" to data.trim(), "type" to type, "action" to (intent.action ?: "")))
+            if (data.isNullOrBlank()) return
+            val type = intent.getStringExtra("com.symbol.datawedge.label_type") ?: intent.getStringExtra("barcodeType") ?: ""
+            sendEvent("onScan", mapOf("data" to data.trim(), "type" to type, "action" to (intent.action ?: "")))
+          } catch (_: Exception) {}
         }
       }
       val f = IntentFilter()

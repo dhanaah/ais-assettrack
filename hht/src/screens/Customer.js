@@ -2,7 +2,7 @@
 //  * Receive delivery - scan each pallet while unloading an AIS vehicle (works offline, sent later)
 //  * Return slip (Option A) - scan the empty pallets -> slip with AIS-signed QR -> portable printer. Talks to AIS directly on the AIS network, through the internet address otherwise (see custapi).
 // Developed by DT
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -35,11 +35,13 @@ export function QrView({ text, size = 220 }) {
 
 /** Connection to AIS: green pill when online; red / amber card with "Connect VPN" (opens FortiClient) when not. */
 function NetCard({ route, pend, onRecheck, toast, style }) {
-  const [vpn, setVpn] = useState(vpnActive());
+  const [vpn, setVpn] = useState(vpnActive);
   useEffect(() => { setVpn(vpnActive()); }, [route]);
+  const vpnCheck = useCallback(() => setVpn(vpnActive()), []); useOnResume(vpnCheck, 1500);   // route may stay "none" while the VPN came up
+  const recheck = () => { setVpn(vpnActive()); onRecheck && onRecheck(); };
   if (route === undefined) return (<View style={[S.row, { alignSelf: 'flex-start', marginHorizontal: 14, marginTop: 10, backgroundColor: C.input, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }, style]}>
     <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#94a3b8' }} /><Text style={{ fontWeight: '700', color: C.fg }}>Checking…</Text></View>);
-  if (route) return (<TouchableOpacity onPress={onRecheck} style={[{ backgroundColor: '#16a34a', paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }, style]}>
+  if (route) return (<TouchableOpacity onPress={recheck} style={[{ backgroundColor: '#16a34a', paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }, style]}>
     <Ionicons name={vpn ? 'lock-closed-outline' : route.kind === 'LAN' ? 'business-outline' : 'globe-outline'} size={14} color="#fff" />
     <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12.5 }}>Online{vpn ? ' · via VPN' : ''}{pend ? ` · ${pend} waiting` : ''} · tap to recheck</Text></TouchableOpacity>);
   const open = async () => { const r = await openVpnApp();
@@ -53,14 +55,14 @@ function NetCard({ route, pend, onRecheck, toast, style }) {
     <View style={[S.row, { gap: 8 }]}>
       <TouchableOpacity onPress={open} style={{ flex: 1, backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
         <Ionicons name="lock-closed" size={15} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700' }}>{amber ? 'Open VPN' : 'Connect VPN'}</Text></TouchableOpacity>
-      <TouchableOpacity onPress={onRecheck} style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: 10, paddingVertical: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+      <TouchableOpacity onPress={recheck} style={{ flex: 1, backgroundColor: '#e2e8f0', borderRadius: 10, paddingVertical: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
         <Ionicons name="refresh" size={15} color="#0f172a" /><Text style={{ color: '#0f172a', fontWeight: '700' }}>Recheck</Text></TouchableOpacity></View></View>);
 }
 /** Recheck when the operator comes back to AssetTrack (e.g. after connecting FortiClient). */
-function useOnResume(fn) {
-  useEffect(() => { let st = AppState.currentState;
-    const sub = AppState.addEventListener('change', (n) => { if (st.match(/inactive|background/) && n === 'active') fn(); st = n; });
-    return () => sub.remove(); }, [fn]);
+function useOnResume(fn, delay = 0) {
+  useEffect(() => { let st = AppState.currentState; let t = null;
+    const sub = AppState.addEventListener('change', (n) => { if (/inactive|background/.test(String(st)) && n === 'active') { clearTimeout(t); t = setTimeout(fn, delay); } st = n; });
+    return () => { clearTimeout(t); sub.remove(); }; }, [fn, delay]);
 }
 
 // ---------------------------------------------------------------- pairing (from the Login screen)
@@ -96,7 +98,7 @@ export function PairDevice({ onBack, onPaired }) {
 // ---------------------------------------------------------------- customer app
 export default function CustomerApp({ deviceId, onUnpaired, onTheme, onUi }) {
   const [screen, setScreen] = useState('home'); const pair = getPairing(); const [staff, setStaff] = useState(undefined);
-  useEffect(() => { loadStaff().then((x) => setStaff(x || null)); }, []);
+  useEffect(() => { loadStaff().then((x) => setStaff(x || null)).catch(() => setStaff(null)); }, []);
   const back = () => setScreen('home');
   if (staff === undefined) return null;
   if (!staff) {
@@ -122,7 +124,7 @@ function CustHome({ pair, nav }) {
     try { setMe(await refreshMe()); const h = await ext('/holding'); setHeld(h); } catch (e) { if (e.status === 401) toast(e.message, 'err'); }
   }, []);
   useEffect(() => { refresh(true); const t = setInterval(() => refresh(false), 60000); return () => clearInterval(t); }, []);
-  const resume = useCallback(() => setTimeout(() => refresh(true), 1500), [refresh]); useOnResume(resume);   // VPN takes a moment after FortiClient
+  const resume = useCallback(() => refresh(true), [refresh]); useOnResume(resume, 1500);   // VPN takes a moment after FortiClient
   const overdue = held ? held.pallets.filter((p) => p.overdue).length : 0;
   const tiles = [...(staffCan('CUST_RECEIVE') ? [['receive', 'Receive delivery', 'Scan each pallet while unloading', ['#f59e0b', '#c2410c'], 'download-outline']] : []),
     ...(staffCan('CUST_RETURN') ? [['new', 'Return empty pallets', 'Scan pallets, print return slip', ['#a855f7', '#7e22ce'], 'document-text-outline']] : []),
@@ -147,11 +149,14 @@ function CustHome({ pair, nav }) {
 function NewSlip({ onBack, onDone }) {
   const [list, setList] = useState([]); const [veh, setVeh] = useState(''); const [dc, setDc] = useState(''); const [drv, setDrv] = useState(''); const [mob, setMob] = useState('');
   const [busy, setBusy] = useState(false); const [done, setDone] = useState(null); const [msg, toast] = useToast(); const pair = getPairing();
+  const listRef = useRef(list); listRef.current = list;          // latest list (pallets scanned while the confirm box is open)
   const onScan = async (code) => {
     const q = parsePalletQr(code); const shown = q?.pallet_no || code.trim();
-    if (list.some((x) => x.shown === shown)) { feedback('warn'); return toast(`${shown} already on this slip`, 'warn'); }
+    if (listRef.current.some((x) => x.shown === shown)) { feedback('warn'); return toast(`${shown} already on this slip`, 'warn'); }
+    // no route to AIS right now: do not wait for the ledger check - the slip works without it
+    if (!getRoute()) { const row = { scanned: code.trim(), shown, state: 'unchecked' }; listRef.current = [row, ...listRef.current]; setList((l) => [row, ...l]); feedback('ok'); return; }
     const row = { scanned: code.trim(), shown, state: 'checking' };
-    setList((l) => [row, ...l]);
+    listRef.current = [row, ...listRef.current]; setList((l) => [row, ...l]);
     try {
       const r = await ext('/validate', { method: 'POST', body: { tags: [code.trim()] }, timeout: 8000 }); const v = r.results[0];
       setList((l) => l.map((x) => x.shown === shown ? { ...x, state: v.ok ? 'ok' : 'warn', pallet_no: v.pallet_no || shown, reason: v.reason } : x));
@@ -166,7 +171,7 @@ function NewSlip({ onBack, onDone }) {
     if (!ok) return;
     setBusy(true);
     try {
-      const r = await createSlip({ pallets: list.map((x) => x.scanned).reverse(), vehicle_no: veh.trim(), customer_challan_no: dc.trim(), customer_challan_date: new Date().toISOString(), driver_name: drv.trim() || null, driver_mobile: mob.trim() || null });
+      const r = await createSlip({ pallets: listRef.current.map((x) => x.scanned).reverse(), vehicle_no: veh.trim(), customer_challan_no: dc.trim(), customer_challan_date: new Date().toISOString(), driver_name: drv.trim() || null, driver_mobile: mob.trim() || null });
       if (r.sent) { feedback('done'); setDone(r.slip); doPrint(r.slip); }
       else if (r.slip) { feedback('done'); setDone(r.slip); doPrint(r.slip); }          // no network: printed with this HHT's own signed QR
       else { feedback('warn'); Alert.alert('Saved on this HHT', 'There is no network to AIS and this HHT has not got its offline signing key yet (connect once). The slip is sent automatically when online; print it from "Our return slips" then.', [{ text: 'OK', onPress: onDone }]); }
@@ -245,8 +250,8 @@ function CustSettings({ onBack, onSetup, onLogout, deviceId, onUnpaired, onTheme
         <Text style={S.mute}>Customer {pair?.c} · AIS plant {pair?.p} · device "{pair?.d}"</Text>
         <Text style={[S.mute, { marginTop: 8 }]}>Internet address (from AIS IT)</Text>
         <TextInput style={S.input} value={wan} onChangeText={setWan} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder={pair?.wan ? 'set ✓ - type to change' : 'from AIS IT'} />
-        <Btn title="Save address" secondary icon="save-outline" onPress={async () => { await setInternetAddress(wan); try { await findRoute(true); toast('Online', 'done'); } catch (e) { toast(e.message, 'warn'); } }} />
-        <Btn title="Remove pairing" secondary icon="unlink-outline" onPress={() => Alert.alert('Remove pairing', 'This HHT will stop working for return slips until AIS pairs it again. Waiting slips stay on the HHT.', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { await unpair(); onUnpaired(); } }])} /></View>} />
+        <Btn title="Save address" secondary icon="save-outline" onPress={async () => { try { await setInternetAddress(wan); } catch (e) { return toast(e.message, 'err'); } try { await findRoute(true); toast('Online', 'done'); } catch (e) { toast(e.message, 'warn'); } }} />
+        <Btn title="Remove pairing" secondary icon="unlink-outline" onPress={() => Alert.alert('Remove pairing', 'This HHT will stop working for return slips until AIS pairs it again. Slips still waiting must be sent first.', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { try { await unpair(); onUnpaired(); } catch (e) { feedback('err'); Alert.alert('Cannot remove pairing yet', e.message); } } }])} /></View>} />
     <Toast msg={msg} /></View>);
 }
 
@@ -255,7 +260,7 @@ function StaffLogin({ onDone, onSetup }) {
   const pair = getPairing(); const [u, setU] = useState(''); const [p, setP] = useState(''); const [busy, setBusy] = useState(false); const [route, setRoute] = useState(undefined); const [msg, toast] = useToast();
   const recheck = useCallback(() => { setRoute(undefined); findRoute(true).then(setRoute).catch(() => setRoute(null)); }, []);
   useEffect(() => { recheck(); }, []);
-  const resume = useCallback(() => setTimeout(recheck, 1500), [recheck]); useOnResume(resume);
+  useOnResume(recheck, 1500);
   const go = async () => { if (!u.trim() || !p) return toast('Enter user ID and password', 'warn'); setBusy(true);
     try { const r = await staffLogin(u, p); toast(r.offline ? 'Signed in (no network)' : 'Signed in', 'done'); onDone(r); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
   return (<Screen><Header logo sub={`${pair?.n || pair?.c || ''} · customer HHT`} /><Page>
@@ -274,15 +279,16 @@ function Receive({ onBack }) {
   const [list, setList] = useState([]); const [sel, setSel] = useState(null); const [scans, setScans] = useState([]); const [busy, setBusy] = useState(false); const [done, setDone] = useState(null); const [msg, toast] = useToast();
   const load = async (refresh = true) => { try { setList(await incoming(refresh)); } catch (e) { toast(e.message, 'err'); } };
   useEffect(() => { load(false).then(() => load(true)); }, []);
+  const scansRef = useRef(scans); scansRef.current = scans;      // latest scans for back-to-back scanner reads
   const pick = (d) => { setSel(d); setScans([]); setDone(null); };
   const onGcs = (code) => { const q = String(code).split('|'); const no = code.startsWith('AIS1|GCS|') ? q[2] : code.trim().toUpperCase();
     const d = list.find((x) => x.gcs_no === no || x.challan_no === no); if (!d) return toast(`No AIS delivery ${no} for you (pull down to refresh)`, 'warn'); pick(d); };
   const expected = sel ? sel.pallets.map((x) => x.pallet_no) : [];
   const onScan = (code) => {
     const pn = parsePalletQr(code)?.pallet_no || String(code).trim().toUpperCase();
-    if (scans.some((x) => x.pn === pn)) { feedback('warn'); return toast('Already scanned', 'warn'); }
+    if (scansRef.current.some((x) => x.pn === pn)) { feedback('warn'); return toast('Already scanned', 'warn'); }
     const on = expected.includes(pn); feedback(on ? 'ok' : 'warn'); if (!on) toast(`${pn} is not on this delivery - kept as extra`, 'warn');
-    setScans((s) => [{ code, pn, on }, ...s]);
+    const row = { code, pn, on }; scansRef.current = [row, ...scansRef.current]; setScans((s) => [row, ...s]);
   };
   const finish = async () => {
     if (!scans.length) return toast('Scan the pallets first', 'err');

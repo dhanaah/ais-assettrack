@@ -2,7 +2,7 @@
 // Runs every 60 s when online and immediately after each scan when online. Developed by DT
 import NetInfo from '@react-native-community/netinfo';
 import { api, APP_VERSION, hasToken } from './api';
-import { eventResult, pendingEvents, markEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
+import { eventResult, pendingEvents, markEvent, failEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
 
 export const state = { online: false, net: false, server: null, syncing: false, pending: 0, lastSync: null, lastError: null, serverVersion: null };
 const listeners = new Set();
@@ -35,9 +35,20 @@ export async function syncNow({ full = false } = {}) {
     // 1b photos of customer documents waiting for their slip (Option B)
     try { await require('./docscan').sendPhotos(); } catch (e) { }
     // 2 push events in batches of 100
-    let batch;
+    let batch; const suspects = new Map();            // events the server could not take (error answer) -> message
+    const wire = (e) => ({ event_id: e.event_id, device_id: deviceId, event_type: e.event_type, payload: JSON.parse(e.payload), local_ts: e.local_ts, offline: !!e.offline, app_version: APP_VERSION });
     while ((batch = await pendingEvents(100)).length) {
-      const r = await api('/sync/push', { method: 'POST', body: { events: batch.map(e => ({ event_id: e.event_id, device_id: deviceId, event_type: e.event_type, payload: JSON.parse(e.payload), local_ts: e.local_ts, offline: !!e.offline, app_version: APP_VERSION })) }, timeout: 30000 });
+      let r;
+      try { r = await api('/sync/push', { method: 'POST', body: { events: batch.map(wire) }, timeout: 30000 }); }
+      catch (e) {
+        if (e.offline || [401, 403, 426].includes(e.status)) throw e;      // no network / login / plant / old app: whole sync waits as before
+        // the server refused the batch: one bad event must not hold up the rest - send them one by one
+        for (const ev of batch) {
+          try { const r1 = await api('/sync/push', { method: 'POST', body: { events: [wire(ev)] } }); for (const x of r1.results) await markEvent(x.event_id, x.status, x.result); }
+          catch (e1) { if (e1.offline || [401, 403, 426].includes(e1.status)) throw e1; suspects.set(ev.event_id, e1.message || 'Server error'); }
+        }
+        break;                                        // events still refused are tried again at the next sync
+      }
       for (const x of r.results) await markEvent(x.event_id, x.status, x.result);
       if (batch.length < 100) break;
     }
@@ -50,6 +61,10 @@ export async function syncNow({ full = false } = {}) {
     // 3 heartbeat + pull delta
     const pend = await pendingCount();
     await api('/sync/push', { method: 'POST', body: { events: [{ event_id: cryptoId(), device_id: deviceId, event_type: 'HEARTBEAT', payload: { pending: pend }, local_ts: new Date().toISOString(), app_version: APP_VERSION }] } });
+    // the heartbeat went through, so the server is healthy: a refused event counts one try; after 5 it is FAILED
+    // (shown in Pending & Sync › Recent events) and no longer sent
+    let failed = 0;
+    for (const [id, m] of suspects) if (await failEvent(id, m, 5)) { failed++; logActivity('EVENT_FAILED', id, m); }
     const since = full ? null : await kv.get('last_pull');
     const data = await api('/sync/pull' + (since ? '?since=' + encodeURIComponent(since) : ''), { timeout: 60000 });
     await applyPull(data);
@@ -57,6 +72,7 @@ export async function syncNow({ full = false } = {}) {
     await purgeOld(); await purgeActivity();
     await logActivity('SYNC', null, `pushed ok, pending ${state.pending}`);
     state.server = true; state.online = true;
+    if (suspects.size) state.lastError = `${suspects.size} event(s) refused by the server${failed ? ` (${failed} now FAILED)` : ' - will retry'} - see Recent events`;
   } catch (e) {
     state.lastError = e.message; logActivity('SYNC_ERROR', null, e.message); if (e.offline) { state.server = false; state.online = false; } else { state.server = true; state.online = true; }
     if (e.status === 401) state.lastError = 'LOGIN';

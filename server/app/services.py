@@ -31,14 +31,22 @@ TRANSITIONS = {
 
 
 def next_seq(db: Session, key: str) -> int:
-    row = db.get(models.Sequence, key, with_for_update=True) if db.bind.dialect.name != "sqlite" else db.get(models.Sequence, key)
-    if not row:
-        row = models.Sequence(key=key, value=0)
-        db.add(row)
-        db.flush()
-    row.value += 1
-    db.flush()
-    return row.value
+    """Atomic: one UPDATE ... RETURNING takes the write lock first, so two requests at the same moment never get the
+    same number (the second waits until the first commits)."""
+    from sqlalchemy import update, insert
+    from sqlalchemy.exc import IntegrityError
+    t = models.Sequence.__table__
+    for _ in range(3):
+        v = db.execute(update(t).where(t.c.key == key).values(value=t.c.value + 1).returning(t.c.value)).scalar()
+        if v is not None:
+            return int(v)
+        try:
+            with db.begin_nested():
+                db.execute(insert(t).values(key=key, value=1))
+            return 1
+        except IntegrityError:
+            continue                     # created by another request just now: take the next number
+    raise RuleError(f"Could not take the next number for {key}")
 
 
 def doc_number(db: Session, plant: str, kind: str, device: str | None = None) -> str:
@@ -253,12 +261,20 @@ def _sig(body: str, secret: str | None = None) -> str:
     return hmac.new((secret or config.JWT_SECRET).encode(), body.encode(), hashlib.sha256).hexdigest()[:8].upper()
 
 
-def _sig_ok(body: str, sig: str) -> bool:
-    """Current secret, else the legacy built-in one (labels printed before the secret was made still scan)."""
+def _sig_ok(body: str, sig: str) -> bool | str:
+    """True for the current secret; "legacy" for the old built-in one (public on GitHub) - the caller accepts that only
+    for a record created before config.LEGACY_CUTOFF (labels printed long ago still scan, new forgeries do not)."""
     from . import config
     import hmac
     s = (sig or "").upper()
-    return hmac.compare_digest(s, _sig(body)) or hmac.compare_digest(s, _sig(body, config.LEGACY_SECRET))
+    if hmac.compare_digest(s, _sig(body)):
+        return True
+    return "legacy" if hmac.compare_digest(s, _sig(body, config.LEGACY_SECRET)) else False
+
+
+def legacy_ok(created) -> bool:
+    from . import config
+    return bool(created) and created < config.LEGACY_CUTOFF
 
 
 def slip_qr(sl, signed: bool = True) -> str:
@@ -271,11 +287,11 @@ def label_token(slip_no: str, secret: str | None = None) -> str:
     return _sig("LABEL|" + slip_no, secret) + _sig("LABEL2|" + slip_no, secret)
 
 
-def label_token_ok(slip_no: str, t: str | None) -> bool:
+def label_token_ok(slip_no: str, t: str | None, created=None) -> bool:
     import hmac
     from . import config
     t = t or ""
-    return hmac.compare_digest(t, label_token(slip_no)) or hmac.compare_digest(t, label_token(slip_no, config.LEGACY_SECRET))
+    return hmac.compare_digest(t, label_token(slip_no)) or (legacy_ok(created) and hmac.compare_digest(t, label_token(slip_no, config.LEGACY_SECRET)))
 
 
 def device_sign_key(device_id) -> str:
@@ -311,7 +327,7 @@ def parse_slip_qr(code: str) -> dict:
         body, sig = "|".join(parts[:8]), parts[8]
         ok = sig != "-" and _sig_ok(body, sig)
         return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": int(parts[6] or 0),
-                "signed": sig != "-", "valid": ok or sig == "-", "error": None if (ok or sig == "-") else "QR check code invalid - label altered or not issued by AssetTrack"}
+                "signed": sig != "-", "legacy": ok == "legacy", "valid": ok or sig == "-", "error": None if (ok or sig == "-") else "QR check code invalid - label altered or not issued by AssetTrack"}
     if s.startswith("RTS|"):
         return {"slip_no": s.split("|")[1], "signed": False, "valid": True, "error": None}
     return {"slip_no": s, "signed": False, "valid": True, "error": None}

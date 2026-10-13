@@ -2,6 +2,7 @@
 // no keystrokes). Zebra DataWedge gets its own AssetTrack profile automatically (keystroke output OFF). Urovo,
 // Newland, iData and Chainway default broadcasts are understood too; another brand can be set in Setup › Scanner.
 // The screen that is open receives the scan (last opened scan area first). Developed by DT
+import { AppState } from 'react-native';
 import { requireOptionalNativeModule, EventEmitter } from 'expo-modules-core';
 import { kv } from './db';
 
@@ -28,10 +29,12 @@ export async function startScanner() {
   const actions = PRESETS.map((p) => p.action); const keys = PRESETS.map((p) => p.key);
   if (custom?.action) { actions.push(custom.action); if (custom.key) keys.push(custom.key); }
   try {
-    Native.start(actions, [...new Set(keys)]);
+    if (Native.start(actions, [...new Set(keys)]) === false) { STATUS.started = false; return false; }
     const dev = deviceName().toLowerCase();
     if (dev.includes('zebra') || dev.includes('symbol')) { Native.configureZebra('AIS AssetTrack', ZEBRA_ACTION); STATUS.zebra = true; }
     if (!sub) sub = new EventEmitter(Native).addListener('onScan', (e) => {
+      // scans made while AssetTrack is in the background belong to the app in front (e.g. MSCA) - never act on them here
+      if (AppState.currentState !== 'active') return;
       const code = String(e?.data || '').trim(); if (!code) return;
       STATUS.last = { code, at: new Date() };
       const h = handlers[handlers.length - 1]; if (h) h(code);

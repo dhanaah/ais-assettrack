@@ -2,7 +2,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { kv } from './db';
 
-export const APP_VERSION = '2.16.0';
+export const APP_VERSION = '2.17.0';
 let token = null, baseUrl = null, deviceHeader = 'HHT', plantSel = null;   // plantSel: plant chosen at sign-in (X-Plant)
 export const setPlant = async (code) => { plantSel = code || null; await kv.set('sel_plant', plantSel); };
 export const getPlant = () => plantSel;
@@ -81,12 +81,17 @@ async function apiAt(url, path, { method = 'GET', body, timeout = 15000, auth = 
 }
 
 export async function login(user_id, password, device_id) {
-  const r = await api('/auth/login', { method: 'POST', body: { user_id, password, device_id, app_version: APP_VERSION }, auth: false });
-  await setToken(r.token);
-  await kv.set('me', r);
-  return r;
+  // nothing is saved here: the Login screen saves token + user only after the plant check passed (see saveLogin)
+  return api('/auth/login', { method: 'POST', body: { user_id, password, device_id, app_version: APP_VERSION }, auth: false });
 }
-export const me = async () => kv.get('me');
+/** Keep the session: token only in SecureStore, the user record (without token) in kv. */
+export const noToken = (r) => { const { token: _t, ...rest } = r || {}; return rest; };
+export async function saveLogin(r, plant) { await setToken(r.token); const m = { ...noToken(r), plant }; await kv.set('me', m); return m; }
+export const me = async () => {
+  const m = await kv.get('me');
+  if (m && m.token) { const clean = noToken(m); await kv.set('me', clean); return clean; }   // older app versions kept the token here
+  return m;
+};
 
 /** Multipart upload (photos): fields + one file {uri, name, type}. Tries the active server address only. */
 export async function apiUpload(path, fields = {}, file = null, timeout = 60000) {

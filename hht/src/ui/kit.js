@@ -94,10 +94,21 @@ function ScanModeSwitch({ mode }) {
 export function ScanInput({ onScan, placeholder = 'Scan tag / QR', autoFocus = true, disabled }) {
   const mode = useScanMode(); const camMode = mode === 'camera';
   const [cam, setCam] = useState(false); const [last, setLast] = useState(null); const busy = useRef(false);
+  // scans that arrive while the previous one is still being checked wait in line (first in, first out) - none is dropped
+  const queue = useRef([]); const live = useRef(true); const onScanRef = useRef(onScan); onScanRef.current = onScan;
+  useEffect(() => { live.current = true; return () => { live.current = false; queue.current = []; }; }, []);
   const submit = async (val) => {
-    const s = String(val ?? '').trim(); if (!s || busy.current || disabled) return;
-    busy.current = true; setLast({ s: s.length > 34 ? s.slice(0, 32) + '…' : s, t: new Date() });
-    try { await onScan(s); } finally { busy.current = false; }
+    const s = String(val ?? '').trim(); if (!s || disabled) return;
+    if (queue.current.length >= 50) return;                        // runaway guard
+    queue.current.push(s); if (busy.current) return;
+    busy.current = true;
+    try {
+      while (queue.current.length && live.current) {
+        const x = queue.current.shift(); setLast({ s: x.length > 34 ? x.slice(0, 32) + '…' : x, t: new Date() });
+        try { await onScanRef.current(x); } catch (e) { }
+        await new Promise((r) => setTimeout(r, 0));               // let the screen re-render (latest onScan / state) before the next one
+      }
+    } finally { busy.current = false; }
   };
   const ref = useRef(submit); ref.current = submit;
   useEffect(() => { if (camMode || disabled) return undefined; return onHardwareScan((code) => ref.current(code)); }, [camMode, disabled]);

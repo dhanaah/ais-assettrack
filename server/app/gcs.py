@@ -626,7 +626,7 @@ def parse_gcs_qr(code: str) -> dict | None:
     body, sig = "|".join(parts[:8]), parts[8]
     ok = services._sig_ok(body, sig)
     return {"gcs_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "pallets": int(parts[6] or 0),
-            "valid": ok, "error": None if ok else "GCS QR check code invalid - not printed by AssetTrack"}
+            "valid": bool(ok), "legacy": ok == "legacy", "error": None if ok else "GCS QR check code invalid - not printed by AssetTrack"}
 
 
 # ---------------------------------------------------------------- invoice lines with loaded quantity
