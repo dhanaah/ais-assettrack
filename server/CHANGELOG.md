@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.25.0 - 2026-10-13 (HHT unchanged 2.19.0)
+- Web application: **Neon** theme (approved sample). Button **◐ Neon** in the top bar switches (◐ Glass switches back); each browser remembers its choice. Near-black glass cards with violet edge and glow, purple header, selected menu with glowing left bar, glowing buttons and inputs. Chart and status colours unchanged.
+
 ## HHT 2.19.0 - 2026-10-13 (server unchanged 1.24.0)
 - New theme **Neon (dark)** in Settings › Theme (approved sample): near-black glass cards with a faint violet edge and soft violet glow, purple header, glowing violet buttons and selected options. Status colours (OK / warning / error) unchanged. Layout unchanged.
 
