@@ -24,13 +24,14 @@ const GROUPS = [
   { key: 'yout', title: 'Yard-Out', sub: 'Empty pallets leaving the yard', icon: 'log-out-outline', grad: ['#14b8a6', '#0f766e'], items: [
     ['mvprod', 'Empty pallets to Production', 'Pallet Yard → Production', 'INTERNAL_MOVE', 'construct-outline'],
     ['yardret', 'Empty pallets to other plants', 'Load on the empty-return challan', 'EMPTY_RETURN', 'return-up-back-outline', 'yardret'] ] },
-  { key: 'mov', title: 'Internal Move · Material', sub: 'Loaded pallets · part cards only', icon: 'swap-horizontal-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
-    ['receipt', 'Other-plant material', 'At FGWH · part cards on the gated challan', 'PLANT_RECEIPT', 'download-outline'],
-    ['mvfg', 'Production → FGWH', 'Scan the part cards', 'INTERNAL_MOVE', 'arrow-forward-outline'],
-    ['mvpack', 'FGWH → Packing', 'Scan the part cards', 'INTERNAL_MOVE', 'cube-outline'] ] },
-  { key: 'gout', title: 'Dispatch & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
-    ['dock', 'Vehicle Loading (GCS)', 'Customer dispatch · stock transfer', 'DOCK_SCAN', 'car-outline', 'dock'],
-    ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'],
+  { key: 'mov', title: 'FGWH · Material', sub: 'Loaded pallets · scan the pallet card only', icon: 'swap-horizontal-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
+    ['receipt', 'Other-plant material', 'At FGWH · on the challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline'],
+    ['mvfg', 'Production → FGWH', 'Pallet card', 'INTERNAL_MOVE', 'arrow-forward-outline'],
+    ['mvpack', 'FGWH → Packing', 'Pallet card', 'INTERNAL_MOVE', 'cube-outline'],
+    ['dock', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dock'],
+    ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'] ] },
+  { key: 'gout', title: 'Security · Dispatch & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
+    ['load', 'Vehicle loading', 'Scan each pallet QR into the vehicle', 'DOCK_SCAN', 'car-outline'],
     ['gateout', 'OUT Gate', 'Customer dispatch · material & empty pallets to other plants', 'OUT_GATE_SCAN', 'exit-outline'] ] },
   { key: 'oth', title: 'Others', sub: 'Look up, alerts, sync', icon: 'apps-outline', grad: ['#64748b', '#334155'], items: [
     ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, 'search-outline'],
