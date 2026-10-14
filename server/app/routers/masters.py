@@ -60,7 +60,10 @@ def upsert_plant(body: PlantIn, request: Request, p: Principal = Depends(need("G
     old = row(obj) if obj else None
     if not obj:
         obj = models.Plant(code=code); db.add(obj)
-    for k, v in body.model_dump(exclude={"code"}).items():
+        vals = body.model_dump(exclude={"code"})
+    else:                     # edit: change only what the form sends - Excel-only fields (address, notes, sub-inventories...) stay
+        vals = body.model_dump(exclude={"code"}, exclude_unset=True)
+    for k, v in vals.items():
         setattr(obj, k, v)
     audit(db, p, "PLANT_UPSERT", "plant", code, old, body.model_dump(), request)
     db.commit()

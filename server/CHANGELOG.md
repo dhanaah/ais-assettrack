@@ -1,4 +1,13 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.27.2 - 2026-10-14 (HHT unchanged 2.21.1)
+- **First login:** the "Set a new password" screen opens by itself right after the first admin login (current password, new password twice); nothing else opens before it is saved. Then the Dashboard shows "Start here: add your first plant".
+- **Built-in Ctrl+F5:** the web page is never kept by the browser, and an open page reloads itself when the server is updated to a new version.
+- **Plants - add / Excel upload rechecked:**
+  - The Excel template now has Tag From / Tag To, WMS Stale After, EBS Org Id, GCS Copies and Challan Copies (as in the form).
+  - Uploading the template with only the grey SAMPLE rows now says clearly "nothing saved - type your own codes", instead of looking like nothing happened.
+  - Wrong values are reported on their row and not saved: Challan Source (APP / ORACLE), GCS Print Mode (OFF / WINDOWS / RAW9100), Challan Copies (1-3).
+  - Editing a plant on the web no longer clears fields that came from Excel (address, sub-inventories, notes). The form now also has Address.
+
 ## Server 1.27.1 - 2026-10-14 (HHT unchanged 2.21.1)
 - **Add plant** (approved sample): **+ Add plant** button on Masters › Plants opens the plant form with the cursor in Code and the usual defaults filled in; Edit opens the same form filled in; Save adds the plant and closes the form. While no plant exists the form is open and a message says to add the first plant.
 - New server: the Dashboard shows **"Start here: add your first plant"** with a + Add plant button (or, before the admin password is changed, a Change password button). It disappears once a plant exists.

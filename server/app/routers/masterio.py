@@ -22,12 +22,15 @@ SPECS = {
         ("GSTIN", "gstin", "str", False, "33AAACA0000A1Z1", "27AAACA0000A1Z1"),
         ("Address", "address", "str", False, "Plot F 76-81, Sipcot, Irungattukottai", "Gat 312, Varale, Talegaon"),
         ("Pallet Prefix", "pallet_prefix", "str", False, "CHN", "PUN"),
+        ("Tag From", "tag_from", "int", False, 10001, 20001), ("Tag To", "tag_to", "int", False, 19999, 29999),
         ("Challan Source (APP/ORACLE)", "challan_source", "str", False, "APP", "ORACLE"),
         ("App Challan Series", "app_challan_series", "str", False, "CHN/", ""),
         ("Hold Days", "holding_days_default", "int", False, 30, 30),
+        ("WMS Stale After (h)", "wms_stale_hours", "int", False, 4, 4), ("EBS Org Id", "ebs_org_id", "str", False, "", ""),
         ("GCS FTP Folder", "gcs_folder", "str", False, "/GCS/CHN", "/GCS/PUN"),
         ("GCS Printer", "gcs_printer", "str", False, "\\\\PRINTSRV\\FGWH-LASER", ""),
         ("GCS Print Mode (OFF/WINDOWS/RAW9100)", "gcs_print_mode", "str", False, "WINDOWS", "OFF"),
+        ("GCS Copies", "gcs_copies", "int", False, 1, 1), ("Challan Copies (1-3)", "challan_copies", "int", False, 3, 3),
         ("Default Pallet HSN", "pallet_hsn", "str", False, "7326", "7326"),
         ("Active (Y/N)", "active", "bool", False, "Y", "Y")]},
     "customers": {"model": models.Customer, "key": ["code", "plant_code"], "title": "Customers", "cols": [
@@ -61,6 +64,8 @@ SPECS = {
         ("Purchase Date (dd-mmm-yy)", "purchase_date", "date", False, "01-Apr-26", "15-May-26"), ("Notes", "notes", "str", False, "", "")]},
 }
 PERM = "GLOBAL_MASTERS"
+# allowed values (upper case) per field - a wrong value is reported on its row, never saved
+CHOICES = {"challan_source": ("APP", "ORACLE"), "gcs_print_mode": ("OFF", "WINDOWS", "RAW9100"), "challan_copies": (1, 2, 3)}
 
 
 def _spec(kind):
@@ -204,9 +209,13 @@ async def upload(kind: str, request: Request, file: UploadFile = File(...), p: P
             miss = [col[0] for col in sp["cols"] if col[3] and rec.get(col[1]) in (None, "")]
             if miss:
                 raise ValueError("missing " + ", ".join(miss))
-            for k in ("code", "plant_code", "home_plant", "pallet_type"):
+            for k in ("code", "plant_code", "home_plant", "pallet_type", "challan_source", "gcs_print_mode"):
                 if rec.get(k):
                     rec[k] = str(rec[k]).upper()
+            for k, ok in CHOICES.items():
+                if rec.get(k) not in (None, "") and rec[k] not in ok:
+                    hdr = next(c[0] for c in sp["cols"] if c[1] == k) if any(c[1] == k for c in sp["cols"]) else k
+                    raise ValueError(f"{hdr}: '{rec[k]}' - use {' / '.join(map(str, ok))}")
             keyv = {k: rec.get(k) for k in sp["key"]}
             if p.plant and "plant_code" in rec and rec["plant_code"] != p.plant:
                 raise ValueError(f"plant {rec['plant_code']} - you can only load {p.plant}")

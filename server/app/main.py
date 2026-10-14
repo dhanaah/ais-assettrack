@@ -102,7 +102,10 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(static_dir / "index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})   # never an old page after an update
+    # never an old page after an update: no browser copy, and the page knows its server version (it reloads itself on a newer one)
+    from fastapi.responses import HTMLResponse
+    html = (static_dir / "index.html").read_text(encoding="utf-8").replace("%%APP_VERSION%%", config.APP_VERSION)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
 
 
 @app.get("/hht-setup", include_in_schema=False)
