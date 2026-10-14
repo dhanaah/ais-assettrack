@@ -82,8 +82,8 @@ export function VehicleLoad({ onBack }) {
     let all = lists.length ? lists : await api('/loading').catch(() => []);
     let f = all.find((x) => x.gcs_no === sc || x.challan_no === sc || x.picklist_no === sc);
     if (!f && !code.startsWith('CHL|')) {    // a GCS not opened yet: open it from the GCS inbox (made by the Dispatch Planning Bench)
-      try { await api('/picklists/gcs-open', { method: 'POST', body: { gcs_no: code.trim() } }); all = await api('/loading'); setLists(all);
-        f = all.find((x) => x.gcs_no === sc || x.picklist_no === sc) || all.find((x) => code.includes(x.gcs_no || '#')); }
+      try { const o = await api('/picklists/gcs-open', { method: 'POST', body: { gcs_no: code.trim() } }); all = await api('/loading'); setLists(all);
+        f = all.find((x) => x.picklist_no === o.picklist_no); }
       catch (e) { return toast(e.message, 'err'); }
     }
     if (!f) return toast(`No vehicle being loaded for ${sc}`, 'err'); setK(f);
@@ -111,9 +111,9 @@ export function VehicleLoad({ onBack }) {
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
   const left = k.pallets.filter((p) => !p.loaded);
   return (<Screen><Header title={`Loading ${k.vehicle_no || ''}`} sub={`GCS ${k.gcs_no || '-'} · ${k.loaded} of ${k.total || '?'} loaded`} onBack={() => { setK(null); load(); }} /><Page>
-    {k.status === 'OPEN' ? <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View> : null}
+    {!['DISPATCHED', 'CANCELLED', 'CLOSED'].includes(k.status) ? <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View> : null}
     {k.can_finish ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
-    {k.status !== 'OPEN' && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
+    {!k.can_finish && k.loaded > 0 && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
     {left.map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}
     {k.pallets.filter((p) => p.loaded).map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="DONE" label="LOADED" />} />)}
   </Page><Toast msg={msg} /></Screen>);

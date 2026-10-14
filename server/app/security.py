@@ -40,8 +40,8 @@ NEW_PERMS = {"WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "PDI_CHECK", "INTER
 # so nobody loses access when a function is split into its own permission. Admin removals afterwards are kept.
 IMPLIED_1_26 = {"YARD_SCAN": ["YARD_IN_PLANT"], "INTERNAL_MOVE": ["YARD_TO_PACKING"], "PLANT_RECEIPT": ["PACK_RECEIPT"],
                 "DOCK_SCAN": ["PACK_DISPATCH"], "PDI_CHECK": ["PACK_PDI"], "OUT_GATE_SCAN": ["VEHICLE_LOAD"]}   # loading = Security, never the preparer
-IMPLIED_1_27 = {"INTERNAL_MOVE": ["MOVE_TO_DISPATCH", "MOVE_FG_TO_PRODUCTION"], "MOVE_TO_PACKING": ["MOVE_TO_DISPATCH"],
-                "MOVE_TO_FGWH": ["MOVE_FG_TO_PRODUCTION"]}      # 1.27: FGWH -> Main Dispatch, FGWH -> Production (return)
+IMPLIED_1_27 = {"INTERNAL_MOVE": ["MOVE_TO_DISPATCH", "MOVE_FG_TO_PRODUCTION"],
+                "DOCK_SCAN": ["MOVE_TO_DISPATCH", "MOVE_FG_TO_PRODUCTION"]}   # 1.27: FGWH people only (not Production) get the FGWH moves
 UPGRADES = [("perm_upgrade_1_26", IMPLIED_1_26), ("perm_upgrade_1_27", IMPLIED_1_27)]
 ROLE_SEED = {
     "SEC_IN":  ("Security - IN Gate", "PLANT", ["RETURN_SLIP_B", "IN_GATE_SCAN", "REPORTS_PLANT"]),
@@ -49,7 +49,7 @@ ROLE_SEED = {
     "SEC_OUT": ("Security - Logistics / OUT Gate", "PLANT", ["VEHICLE_LOAD", "OUT_GATE_SCAN", "REPORTS_PLANT"]),
     "YARD":    ("Pallet Yard In-charge", "PLANT", ["YARD_SCAN", "YARD_IN_PLANT", "MOVE_TO_YARD", "MOVE_TO_PRODUCTION", "YARD_TO_PACKING", "RECONCILE_CLOSE", "DAMAGE_MARK", "TAG_REPLACE_REQUEST", "EMPTY_RETURN", "INTERNAL_MOVE", "REPORTS_PLANT"]),
     "FGWH":    ("FG Warehouse", "PLANT", ["PICKLIST_CREATE", "DOCK_SCAN", "CHALLAN_REQUEST", "WMS_UPLOAD", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT", "MOVE_TO_FGWH", "MOVE_TO_DISPATCH", "MOVE_TO_PACKING", "MOVE_FG_TO_PRODUCTION", "REPORTS_PLANT"]),
-    "PROD":    ("Production", "PLANT", ["MOVE_TO_FGWH", "MOVE_TO_PACKING", "REPORTS_PLANT"]),
+    "PROD":    ("Production", "PLANT", ["MOVE_TO_FGWH", "REPORTS_PLANT"]),      # Production -> FGWH only (FGWH is the centre)
     "PACK":    ("Packing Section", "PLANT", ["MOVE_TO_YARD", "PLANT_RECEIPT", "PACK_RECEIPT", "PACK_DISPATCH", "REPORTS_PLANT"]),
     "QA":      ("QA / PDI", "PLANT", ["PDI_CHECK", "PACK_PDI", "DAMAGE_MARK", "REPORTS_PLANT"]),
     "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "TRANSPORTER_MASTER", "REPORTS_PLANT"]),

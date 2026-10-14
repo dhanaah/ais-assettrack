@@ -80,6 +80,8 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                 pal = db.get(models.Pallet, l.pallet_no) if l and l.pallet_no else None
             if not pal:
                 raise services.RuleError(f"Unknown pallet / LPN {pl['scanned']}")
+            if (pal.zone or "") == "FGWH" and to == "PRODUCTION":     # the real route decides the permission, not the load sent
+                p.require_any("INTERNAL_MOVE", "MOVE_FG_TO_PRODUCTION")
             msg, alerts = lpnsvc.internal_move(db, pal, pl["to_zone"], plant, load=pl.get("load"), user_id=p.user_id,
                                                device_id=e.device_id, event_id=e.event_id, remarks=pl.get("remarks"))
             return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))

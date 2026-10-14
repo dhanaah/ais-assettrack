@@ -292,7 +292,10 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
     if k.load_point == "YARD":
         p.require_any("EMPTY_RETURN", "DOCK_SCAN")
     else:
-        p.require_any("DOCK_SCAN", "VEHICLE_LOAD")      # Security 'Finish loading' at FGWH / Packing
+        if lpnsvc.is_gcs(k):
+            p.require_any("DOCK_SCAN", "VEHICLE_LOAD")  # Security 'Finish loading' of a GCS at FGWH / Packing
+        else:
+            p.require("DOCK_SCAN")
     if k.status not in ("OPEN", "SO_PENDING"):
         raise HTTPException(400, f"Pick list is {k.status}")
     scanned = db.query(models.PickListLine).filter_by(picklist_no=no).count()
@@ -615,7 +618,7 @@ def _loading_row(db, k):
     expected = len(exp) or (k.qty if not lpnsvc.is_gcs(k) and not lpnsvc.is_bench(k) else 0) or None
     return {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "challan_no": k.challan_no, "vehicle_no": k.vehicle_no, "customer_code": k.customer_code,
             "to_plant": k.to_plant, "dispatch_type": k.dispatch_type, "status": k.status, "total": max(len(pals), expected or 0), "loaded": loaded,
-            "expected": expected, "can_finish": k.status == "OPEN" and loaded > 0, "pallets": pals}
+            "expected": expected, "can_finish": lpnsvc.is_gcs(k) and k.status == "OPEN" and loaded > 0, "pallets": pals}
 
 
 @router.get("/loading")
@@ -627,7 +630,7 @@ def loading_list(p: Principal = Depends(hht("VEHICLE_LOAD")), db: Session = Depe
         if k.load_point == "YARD":
             continue
         r = _loading_row(db, k)
-        if r["total"] or k.status == "OPEN":          # GCS / pick list waiting for its first pallet is listed too
+        if r["total"] or (k.status == "OPEN" and lpnsvc.is_gcs(k)):          # GCS / pick list waiting for its first pallet is listed too
             out.append(r)
     return out
 
@@ -653,7 +656,12 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
         raise HTTPException(400, f"Unknown pallet QR {body.scanned[:40]} - keep it off the vehicle")
     l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
     alerts = []
-    if not l and k.status == "OPEN" and k.dispatch_type in lpnsvc.PART_TYPES and k.load_point != "YARD":
+    if not l and k.status == "OPEN" and lpnsvc.is_gcs(k) and k.dispatch_type in lpnsvc.PART_TYPES and k.load_point != "YARD":
+        exp = {g.pallet_no for g in db.query(models.GcsLpn).filter_by(picklist_no=no).all() if g.pallet_no}
+        if exp and pal.pallet_no not in exp:      # the GCS file names its pallets: anything else stays off this vehicle
+            other = (db.query(models.GcsLpn, models.PickList).join(models.PickList, models.PickList.picklist_no == models.GcsLpn.picklist_no)
+                     .filter(models.GcsLpn.pallet_no == pal.pallet_no, models.PickList.status == "OPEN").first())
+            raise HTTPException(400, f"Pallet {services.short_ref(pal.pallet_no)} is NOT in GCS {k.gcs_no}" + (f" - it belongs to GCS {other[1].gcs_no}" if other else "") + " - keep it off the vehicle")
         try:
             _m, alerts = lpnsvc.dock_scan(db, k, body.scanned.strip(), k.plant_code, user_id=p.user_id, device_id=None)
         except lpnsvc.RuleError as e:

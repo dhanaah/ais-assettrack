@@ -239,6 +239,38 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P012"})
     check(r.status_code == 400, "no loading after dispatch")
 
+    print("9. review fixes: GCS file decides pallets and cards, Security never prepares APP lists, returned pallets stay off")
+    with SessionLocal() as db:
+        for i, cards in ((13, ("PC-13",)), (14, ("PC-14", "PC-99")), (15, ("PC-15",)), (16, ("PC-16",))):
+            db.add(models.Pallet(pallet_no=f"CHN-P{i:03d}", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED"))
+            for cd in cards:
+                db.add(models.Lpn(lpn_no=cd, plant_code="CHN", part_no="WS-1", qty=10, status="AVAILABLE", pallet_no=f"CHN-P{i:03d}"))
+        db.add(models.PickList(picklist_no="CHN-GCS-13", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=0, status="OPEN", gcs_no="GCS-13", source="GCS"))
+        db.add(models.PickList(picklist_no="CHN-APP-1", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=2, status="OPEN", part_no="WS-1", part_qty=20))
+        db.flush()
+        db.add(models.GcsLpn(picklist_no="CHN-GCS-13", lpn_no="PC-14", pallet_no="CHN-P014", part_no="WS-1", qty=10))
+        u = models.User(user_id="prodmove", full_name="prodmove", plant_code="CHN", password_hash=hash_pw("x"), must_change_pw=False)
+        u.perms_override = "MOVE_TO_PRODUCTION"; db.add(u); db.commit()
+    r = c.post("/api/v1/picklists/CHN-GCS-13/load", headers=SL, json={"scanned": "CHN-P013"})
+    check(r.status_code == 400 and "NOT in GCS" in r.text, "pallet not named in the GCS file: refused (not just a warning)")
+    r = c.post("/api/v1/picklists/CHN-GCS-13/load", headers=SL, json={"scanned": "CHN-P014"})
+    check(r.status_code == 400 and "PC-99" in r.text, "pallet carrying a part card not in the GCS: STOP")
+    with SessionLocal() as db:
+        check(db.get(models.Lpn, "PC-14").status == "AVAILABLE" and db.get(models.Pallet, "CHN-P014").status == "AVAILABLE", "refused load leaves nothing allocated / picked")
+    r = c.post("/api/v1/picklists/CHN-APP-1/load", headers=SL, json={"scanned": "CHN-P016"})
+    check(r.status_code == 400 and "not prepared" in r.text, "Security does not prepare an app pick list (no GCS)")
+    r = c.post("/api/v1/picklists/CHN-APP-1/confirm", headers=SL)
+    check(r.status_code == 403, "Security cannot confirm an app pick list (before PDI)")
+    PM = tok(c, "prodmove")
+    r = ev(c, PM, "PALLET_MOVE", {"scanned": "CHN-P015", "to_zone": "PRODUCTION", "load": "EMPTY", "remarks": "DAMAGE"})
+    check(r["status"] == "REJECTED", f"FGWH -> Production needs MOVE_FG_TO_PRODUCTION whatever load is sent ({r['status']})")
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "CHN-P015", "to_zone": "PRODUCTION", "load": "EMPTY", "remarks": "REJECTION"})
+    with SessionLocal() as db:
+        x = db.get(models.Pallet, "CHN-P015")
+        check(x.zone == "PRODUCTION" and x.load_state == "LOADED", f"return to Production stays LOADED ({x.zone} {x.load_state})")
+    r = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": "CHN-APP-1", "scanned": "PC-15", "strict": 1})
+    check(r["status"] == "REJECTED" and "returned to Production" in r["result"], "returned pallet cannot be dispatched until back in FGWH")
+
 print()
 print("ALL PROCESS RULE CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)

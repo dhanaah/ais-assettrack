@@ -147,7 +147,7 @@ def internal_move(db: Session, pal: models.Pallet, to_zone: str, plant: str, *, 
         why = (remarks or "").upper().replace("-", "_").replace(" ", "_")
         if not any(r in why for r in RETURN_REASONS):
             raise RuleError("FGWH -> Production: give the reason - Rejection, Damage or Lot-out")
-        load = load or "LOADED"
+        load = "LOADED"                          # a return of finished goods: the parts stay on the pallet
     if (frm, to_zone) not in MOVES:
         r = _route(frm, to_zone)
         if r:
@@ -490,9 +490,20 @@ def picked_qty(db: Session, pk_no: str) -> int:
         models.PickListLpn.picklist_no == pk_no, models.PickListLpn.pdi_result.is_(None) | (models.PickListLpn.pdi_result == "OK")).scalar() or 0)
 
 
+def returned_to_production(db, pal) -> bool:
+    """Pallet sent FGWH -> Production (rejection / damage / lot-out) and not moved back to FGWH since."""
+    if pal.zone != "PRODUCTION":
+        return False
+    h = (db.query(models.PalletHistory).filter(models.PalletHistory.pallet_no == pal.pallet_no, models.PalletHistory.event_type.like("MOVE\\_%", escape="\\"))
+         .order_by(models.PalletHistory.id.desc()).first())
+    return bool(h and h.event_type == "MOVE_FGWH_PRODUCTION")
+
+
 def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
     if pal.status == "ALLOCATED" and pal.picklist_no == pk.picklist_no:
         return
+    if returned_to_production(db, pal):
+        raise RuleError(f"{pal.pallet_no} was returned to Production (rejection / damage / lot-out) - move it back to FGWH first, keep it off the vehicle")
     a = check_dock(db, pal, plant, user_id=user_id, device_id=device_id, ref=pk.picklist_no)
     if a:
         alerts.append(a)
@@ -641,6 +652,11 @@ def dock_scan(db: Session, pk: models.PickList, scanned: str, plant: str, *, pal
     # pallet scanned -> fetch its LPNs
     lq = db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED"]))
     lp = [x for x in lq.all() if not (x.reserved_for and x.reserved_for != pk.picklist_no and str(x.reserved_for).startswith("GCS-"))] if is_gcs(pk) else (lq.filter(models.Lpn.reserved_for == pk.picklist_no) if is_bench(pk) else lq.filter(models.Lpn.part_no == pk.part_no)).all()
+    if is_gcs(pk) and lp:                # cards on the pallet that the GCS file does not list = not PDI passed / invoiced for this vehicle
+        exp_l = {g.lpn_no for g in db.query(models.GcsLpn).filter_by(picklist_no=pk.picklist_no).all()}
+        extra = [x.lpn_no for x in lp if exp_l and x.lpn_no not in exp_l]
+        if extra:
+            raise RuleError(f"Pallet {services.short_ref(pal.pallet_no)} carries part card(s) {', '.join(extra[:5])} NOT in GCS {pk.gcs_no} - not PDI passed for this vehicle. STOP")
     if not lp and is_gcs(pk):            # loading by pallet tag only: part cards may be scanned later or not at all
         _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts)
         set_load(db, pal, "LOADED", f"GCS {pk.gcs_no}")

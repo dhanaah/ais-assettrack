@@ -72,7 +72,8 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
   const [open, setOpen] = useState({});
   useEffect(() => { kv.get('home_open').then((o) => o && setOpen(o)).catch(() => {}); }, []);
   const toggle = (k) => setOpen((o) => { const x = { ...o, [k]: !o[k] }; kv.set('home_open', x).catch(() => {}); return x; });
-  const group = (g) => <ButtonGroup key={g.key} g={g} items={g.items.filter(allowed)} n={n} nav={nav} open={!!open[g.key]} onToggle={() => toggle(g.key)} />;
+  const only = GROUPS.filter((g) => g.key !== 'oth' && g.items.some(allowed)).length === 1;     // a user with one group sees it open
+  const group = (g) => <ButtonGroup key={g.key} g={g} items={g.items.filter(allowed)} n={n} nav={nav} open={only || !!open[g.key]} onToggle={only ? undefined : () => toggle(g.key)} />;
   return (<Screen>
     <Header logo below={<UserChip me={me} onLogout={onLogout} />} />
     <TouchableOpacity onPress={() => nav('pending')} style={{ backgroundColor: col, paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '92%' }}>

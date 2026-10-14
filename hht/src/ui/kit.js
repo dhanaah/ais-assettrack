@@ -264,7 +264,7 @@ export function ButtonGroup({ g, items, n = {}, nav, open = true, onToggle }) { 
   const tint = (hex, k) => { const h = hex.replace('#', ''); const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
     return '#' + c.map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join(''); };
   const btn = (it, wide, k) => { const badge = it[5] ? n[it[5]] : 0;
-    return (<GroupBtn key={it[0]} k={k} wide={wide} onPress={() => nav(it[0])} style={{ flex: 1, borderRadius: 18, overflow: 'hidden', minHeight: Math.round(96 * T.scale), shadowColor: g.grad[1], shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+    return (<GroupBtn key={it[0]} k={k} wide={wide} onPress={() => nav(it[0])} style={{ flexGrow: 1, borderRadius: 18, overflow: 'hidden', minHeight: Math.round(96 * T.scale), shadowColor: g.grad[1], shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
       <LinearGradient colors={[tint(g.grad[0], 0.35), g.grad[0], g.grad[1]]} locations={[0, 0.45, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, padding: Math.round(12 * T.scale), justifyContent: 'space-between' }}>
         <View style={{ position: 'absolute', right: -14, bottom: -16, opacity: 0.2 }} pointerEvents="none"><Ionicons name={it[4]} size={Math.round(78 * T.scale)} color="#fff" /></View>
         <View style={{ position: 'absolute', top: -30, left: -30, width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(255,255,255,0.12)' }} pointerEvents="none" />
@@ -275,7 +275,8 @@ export function ButtonGroup({ g, items, n = {}, nav, open = true, onToggle }) { 
           <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: Math.round(11 * T.scale), marginTop: 2 }} numberOfLines={2}>{it[2]}</Text></View>
       </LinearGradient></GroupBtn>); };
   // open / close: the card resizes smoothly, the arrow turns, the buttons rise in one after another
-  const toggle = () => { LayoutAnimation.configureNext(LayoutAnimation.create(260, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)); onToggle(); };
+  // resize only (no create / delete animation): safe on Android while the buttons run their own rise-in animation
+  const toggle = () => { LayoutAnimation.configureNext({ duration: 240, update: { type: LayoutAnimation.Types.easeInEaseOut } }); onToggle(); };
   return (<View style={[S.card, { paddingVertical: 10 }]}>
     <TouchableOpacity activeOpacity={onToggle ? 0.7 : 1} onPress={onToggle ? toggle : undefined} disabled={!onToggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: open ? 6 : 0 }}>
       <LinearGradient colors={g.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={g.icon} size={17} color="#fff" /></LinearGradient>

@@ -9,10 +9,11 @@
 
 **Rules (server and HHT):**
 - FGWH is the centre: Production → FGWH → Main Dispatch / Packing. **No direct Production → Main Dispatch / Packing, and no Main Dispatch ↔ Packing.**
-- FGWH → Production only with a reason (Rejection / Damage / Lot-out), recorded on the move.
+- FGWH → Production only with a reason (Rejection / Damage / Lot-out), recorded on the move; the pallet stays LOADED and **cannot be dispatched until it is moved back to FGWH**.
 - **Vehicle loading without preparation:** Security scans the GCS (opened from the GCS inbox if new), then each pallet QR. The pallet is checked against the GCS file (pallet of another GCS = wrong vehicle, refused) and allocated with its part cards. **Finish loading** makes the challan and prints the gate pass; if fewer pallets than the GCS lists are loaded, Security is asked to confirm. The OUT gate still takes the challan only.
+- Loading is checked against the GCS file: a pallet the GCS does not name, or a pallet carrying a part card the GCS does not list (not PDI passed for this vehicle), is **refused - keep it off**. Security loads GCS vehicles only; app pick lists (no GCS) still need FGWH and PDI. Pick lists already prepared before this version can still be loaded.
 
-**User access (server):** new MOVE_TO_DISPATCH, MOVE_FG_TO_PRODUCTION. VEHICLE_LOAD can now open a GCS and finish loading. At the first start, users of the old move permissions get the matching new ones once.
+**User access (server):** new MOVE_TO_DISPATCH, MOVE_FG_TO_PRODUCTION. VEHICLE_LOAD can now open a GCS and finish its loading. At the first start, FGWH users (all internal moves or dispatch preparation) get the new FGWH moves once; Production users do not. New Production role: Production → FGWH only.
 
 ## Server 1.26.0 + HHT 2.20.0 - 2026-10-14 - functions grouped by area, process rules, one permission per button
 **HHT home (approved samples):** functions are grouped as buttons (gradient fill, picture in the corner), in the order a pallet moves:
