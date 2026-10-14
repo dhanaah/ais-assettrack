@@ -75,7 +75,8 @@ with TestClient(app, raise_server_exceptions=False) as c:
         perms = lambda code: {x.perm for x in db.get(models.Role, code).permissions}
         check({"YARD_IN_PLANT", "YARD_TO_PACKING"} <= perms("YARD"), "Yard role has the new Yard-In / Yard-Out permissions")
         check("VEHICLE_LOAD" in perms("SEC_OUT") and "PACK_PDI" in perms("QA") and {"PACK_RECEIPT", "PACK_DISPATCH"} <= perms("PACK"), "Security / QA / Packing roles have their new permissions")
-        check(db.get(models.Setting, "perm_upgrade_1_26") is not None, "one-time upgrade recorded (admin removals are kept afterwards)")
+        check(db.get(models.Setting, "perm_upgrade_1_26") is not None and db.get(models.Setting, "perm_upgrade_1_27") is not None, "one-time upgrades recorded (admin removals are kept afterwards)")
+        check({"MOVE_TO_DISPATCH", "MOVE_FG_TO_PRODUCTION"} <= perms("FGWH"), "FGWH role has FGWH -> Main Dispatch and FGWH -> Production")
     pg = c.get("/api/v1/perm-groups", headers={"Authorization": tok(c, "master")["Authorization"]})
     check(pg.status_code == 200 and any("Security · Gate-In" in k for k in (pg.json() if isinstance(pg.json(), dict) else {x.get("group", ""): 1 for x in pg.json()})), "web permission groups follow the HHT groups")
 
@@ -96,7 +97,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r = ev(c, H, "PALLET_SCAN_YARD", {"scanned": "PC-5"})
     check(r["status"] == "REJECTED" and "pallet QR" in r["result"], "pallet card at the Yard refused")
 
-    print("4. moves: empty = pallet QR, loaded = pallet card, no FGWH <-> Packing")
+    print("4. moves: empty = pallet QR, loaded = pallet card, FGWH is the centre (Main Dispatch / Packing / back to Production)")
     r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-6", "to_zone": "PRODUCTION", "strict": 1})
     check(r["status"] == "REJECTED" and "pallet QR" in r["result"], "empty move with a pallet card refused")
     r = ev(c, H, "PALLET_MOVE", {"scanned": "CHN-P001", "to_zone": "PRODUCTION", "strict": 1})
@@ -113,10 +114,24 @@ with TestClient(app, raise_server_exceptions=False) as c:
     check(r["status"] == "REJECTED" and "pallet card" in r["result"], "loaded move with the pallet QR refused")
     r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-5", "to_zone": "FGWH", "strict": 1})
     check(r["status"] in ("APPLIED", "EXCEPTION"), f"Production -> FGWH by pallet card: {r['result'][:50]}")
-    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-5", "to_zone": "PACKING", "strict": 1})
-    check(r["status"] == "REJECTED" and "No movement between FGWH" in r["result"], "FGWH -> Packing refused")
     r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-6", "to_zone": "PACKING", "strict": 1})
-    check(r["status"] in ("APPLIED", "EXCEPTION"), f"Production -> Packing by pallet card: {r['result'][:50]}")
+    check(r["status"] == "REJECTED" and "FGWH first" in r["result"], "Production -> Packing refused - FGWH is the centre")
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-6", "to_zone": "DISPATCH", "strict": 1})
+    check(r["status"] == "REJECTED" and "FGWH first" in r["result"], "Production -> Main Dispatch refused - FGWH is the centre")
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-6", "to_zone": "FGWH", "strict": 1})
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-5", "to_zone": "DISPATCH", "strict": 1})
+    check(r["status"] in ("APPLIED", "EXCEPTION"), f"FGWH -> Main Dispatch by pallet card: {r['result'][:50]}")
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-5", "to_zone": "PACKING", "strict": 1})
+    check(r["status"] == "REJECTED" and "Main Dispatch and Packing" in r["result"], "Main Dispatch -> Packing refused")
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-6", "to_zone": "PRODUCTION", "load": "LOADED", "strict": 1})
+    check(r["status"] == "REJECTED" and "reason" in r["result"], "FGWH -> Production without a reason refused")
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-6", "to_zone": "PRODUCTION", "load": "LOADED", "remarks": "REJECTION", "strict": 1})
+    check(r["status"] in ("APPLIED", "EXCEPTION"), f"FGWH -> Production (rejection) by pallet card: {r['result'][:50]}")
+    with SessionLocal() as db:
+        check(db.get(models.Pallet, "CHN-P006").zone == "PRODUCTION" and db.get(models.Pallet, "CHN-P006").load_state == "LOADED", "returned pallet at Production, still LOADED")
+        x = db.get(models.Pallet, "CHN-P006"); x.zone = "FGWH"; db.commit()
+    r = ev(c, H, "PALLET_MOVE", {"scanned": "PC-6", "to_zone": "PACKING", "strict": 1})
+    check(r["status"] in ("APPLIED", "EXCEPTION"), f"FGWH -> Packing by pallet card: {r['result'][:50]}")
 
     print("5. other-plant material at FGWH / Packing: pallet card on a challan endorsed at the IN gate")
     r = ev(c, H, "PLANT_RECEIPT", {"scanned": "PUN-P001", "zone": "FGWH", "strict": 1})
@@ -129,8 +144,8 @@ with TestClient(app, raise_server_exceptions=False) as c:
     check(any(s["slip_no"] == "ST-1" and s["mode"] == "CHM" for s in pull["slips"]), "material challan sent to FGWH / Packing (not the Yard list)")
     r = ev(c, H, "PLANT_RECEIPT", {"scanned": "PUN-C1", "zone": "FGWH", "ref": "ST-1", "strict": 1})
     check(r["status"] in ("APPLIED", "EXCEPTION"), f"received at FGWH by pallet card: {r['result'][:60]}")
-    r = ev(c, H, "PLANT_RECEIPT", {"scanned": "PUN-C2", "zone": "PACKING", "ref": "ST-1", "strict": 1})
-    check(r["status"] in ("APPLIED", "EXCEPTION"), f"received at Packing by pallet card: {r['result'][:60]}")
+    r = ev(c, H, "PLANT_RECEIPT", {"scanned": "PUN-C2", "zone": "FGWH", "ref": "ST-1", "strict": 1})
+    check(r["status"] in ("APPLIED", "EXCEPTION"), f"second card received at FGWH: {r['result'][:60]}")
 
     print("6. dispatch preparation = pallet card; Security loads by pallet QR; OUT gate = challan only")
     with SessionLocal() as db:

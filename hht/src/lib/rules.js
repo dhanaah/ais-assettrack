@@ -2,7 +2,7 @@
 import { resolveTag, getPicklist, localScans, localScanExists, kv, getLpn, lpnsOnPallet, lpnScans, parsePalletQr, gcsCardCount, gcsCardsOnPallet } from './db';
 
 const PART_TYPES = ['CUSTOMER', 'STOCK_TRANSFER'];
-const DISPATCH_ZONES = ['FGWH', 'PACKING'];
+const DISPATCH_ZONES = ['FGWH', 'DISPATCH', 'PACKING'];
 
 // Pallet check shared by part / pallet-only lists. Missed-scan cases (pallet still AT_CUSTOMER, wrong zone) are allowed
 // here with a warning - the server records them and auto-corrects, so production is never stopped.
@@ -91,7 +91,9 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
   return { ok: true, pallet, lpns, warn, picked: picked + add };
 }
 
-const ROUTES = { PRODUCTION: ['YARD'], FGWH: ['PRODUCTION'], PACKING: ['PRODUCTION', 'YARD'], YARD: ['PACKING', 'PRODUCTION', 'FGWH'] };
+// FGWH is the centre: Production -> FGWH -> Main Dispatch / Packing; FGWH -> Production = return (rejection / damage / lot-out)
+const ROUTES = { PRODUCTION: ['YARD', 'FGWH'], FGWH: ['PRODUCTION'], DISPATCH: ['FGWH'], PACKING: ['FGWH', 'YARD'], YARD: ['PACKING', 'PRODUCTION', 'FGWH', 'DISPATCH'] };
+const NO_MOVE = { 'PRODUCTION>DISPATCH': 'Production -> Main Dispatch is not allowed - finished goods go to FGWH first', 'PRODUCTION>PACKING': 'Production -> Packing is not allowed - finished goods go to FGWH first', 'DISPATCH>PACKING': 'No movement between Main Dispatch and Packing', 'PACKING>DISPATCH': 'No movement between Main Dispatch and Packing' };
 /** Pallet card (part card / LPN label on the pallet) known on this HHT. Developed by DT */
 export const isCard = async (code) => !!(await getLpn(code)) || (String(code).includes('.') && !!(await getLpn(String(code).split('.').pop().toUpperCase())));
 /** Pallet QR / tag known on this HHT (or a pallet QR label). */
@@ -107,7 +109,7 @@ export async function validateMove(scanned, toZone) {
   const warn = [];
   const from = pallet.zone || 'YARD';
   if (from === toZone) return { ok: false, msg: `${pallet.pallet_no} already in ${toZone}`, dup: true };
-  if ((from === 'FGWH' && toZone === 'PACKING') || (from === 'PACKING' && toZone === 'FGWH')) return { ok: false, msg: 'No movement between FGWH (Main Dispatch) and Packing - both dispatch to customers' };
+  if (NO_MOVE[`${from}>${toZone}`] && !(from === 'PRODUCTION' && toZone === 'PACKING' && pallet.load === 'EMPTY')) return { ok: false, msg: NO_MOVE[`${from}>${toZone}`] };
   if (!ROUTES[toZone].includes(from)) warn.push(`${pallet.pallet_no} shown in ${from} - skipped step will be recorded`);
   if (toZone === 'YARD' && pallet.load === 'LOADED') warn.push('Yard = empty only: pallet will be marked EMPTY');
   return { ok: true, pallet, warn };

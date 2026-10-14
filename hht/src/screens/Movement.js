@@ -15,6 +15,7 @@ const ROUTES = [
   ['YARD', 'Empty pallets back to Yard', 'From Production / FGWH / Packing · scan the pallet QR', 'YARD', 'EMPTY', 'QR'],
   ['FGWH', 'Production → FGWH', 'Loaded with finished goods · scan the pallet card', 'FGWH', 'LOADED', 'CARD'],
   ['DISPATCH', 'FGWH → Main Dispatch', 'Loaded pallets · scan the pallet card', 'DISPATCH', 'LOADED', 'CARD'],
+  ['PRODUCTION_R', 'FGWH → Production', 'Rejection · Damage · Lot-out · scan the pallet card', 'PRODUCTION', 'LOADED', 'CARD', true],
   ['PACKING', 'FGWH → Packing', 'Loaded pallets · scan the pallet card', 'PACKING', 'LOADED', 'CARD'],
 ];
 
@@ -24,14 +25,16 @@ const AlertBox = ({ text, onClose }) => text ? (
 
 export function Move({ onBack, preset }) {     // preset: open one route straight from the home button
   const [route, setRoute] = useState(preset ? ROUTES.find((r) => r[0] === preset) || null : null); const [done, setDone] = useState([]); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
+  const [reason, setReason] = useState(null);       // FGWH -> Production: why the goods go back
   const onScan = async (code) => {
     const zone = route[3], load = route[4];
+    if (route[6] && !reason) return toast('Choose the reason first - Rejection, Damage or Lot-out', 'warn');
     if (route[5] === 'QR' && await isCard(code)) return toast('Empty pallet move: scan the pallet QR, not the pallet card', 'err');
     if (route[5] === 'CARD' && !(await isCard(code))) return toast(await isPalletQr(code) ? 'Loaded pallet move: scan the pallet card, not the pallet QR' : 'Pallet card not known - sync / upload the WMS stock', 'err');
     const v = await validateMove(code, zone);
     if (!v.ok) return toast(v.msg, v.dup ? 'warn' : 'err');
     await setPalletLocal(v.pallet.pallet_no, { zone, load, status: zone === 'PRODUCTION' && v.pallet.status === 'HELD' ? 'IN_WIP' : (zone === 'YARD' && v.pallet.status === 'IN_WIP' ? 'HELD' : v.pallet.status) });
-    const id = await enqueue('PALLET_MOVE', { scanned: code, to_zone: zone, load, strict: 1 }, !sync.online);
+    const id = await enqueue('PALLET_MOVE', { scanned: code, to_zone: zone, load, strict: 1, ...(route[6] ? { remarks: reason } : {}) }, !sync.online);
     logActivity('PALLET_MOVE', v.pallet.pallet_no, zone);
     setDone(d => [{ p: v.pallet.pallet_no, load, t: fTimeS(new Date()) }, ...d].slice(0, 50));
     toast(`${v.pallet.pallet_no} → ${zone} (${load})`, v.warn.length ? 'warn' : 'ok');
@@ -47,7 +50,8 @@ export function Move({ onBack, preset }) {     // preset: open one route straigh
   return (<Screen><Header title={route[1]} sub={route[2]} onBack={preset ? onBack : () => setRoute(null)} /><Page>
     <Glass style={{ alignItems: 'center' }}><Ring value={String(done.length)} label="moved this session" color={C.ok} size={84} /></Glass>
     <AlertBox text={alert} onClose={() => setAlert(null)} />
-    <View style={S.card}><ScanInput onScan={onScan} placeholder={route[5] === 'QR' ? 'Scan the pallet QR' : 'Scan the pallet card'} /></View>
+    {route[6] ? <Segmented options={[['REJECTION', 'Rejection', C.warn], ['DAMAGE', 'Damage', C.amber], ['LOT_OUT', 'Lot-out', C.accent]]} value={reason} onChange={setReason} /> : null}
+    <View style={S.card}><ScanInput onScan={onScan} placeholder={route[6] && !reason ? 'Choose the reason, then scan the pallet card' : route[5] === 'QR' ? 'Scan the pallet QR' : 'Scan the pallet card'} /></View>
     {done.length === 0 ? <Empty icon="scan-outline" text="Scan the first pallet" hint="Each pallet moved in this session is listed here." /> : null}
     {done.map((d, i) => <ListRow key={i} index={done.length - i} title={d.p} sub={d.t} right={<Pill s={d.load} />} />)}
   </Page><Toast msg={msg} /></Screen>);

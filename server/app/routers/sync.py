@@ -66,8 +66,9 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                                            device_id=e.device_id, event_id=e.event_id)
             return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
         if t == "PALLET_MOVE":
-            to = str(pl.get("to_zone", "")).upper(); empty = to in ("PRODUCTION", "YARD") or str(pl.get("load") or "").upper() == "EMPTY"
-            p.require_any("INTERNAL_MOVE", "YARD_TO_PACKING" if (to == "PACKING" and empty) else "MOVE_TO_" + to)
+            to = str(pl.get("to_zone", "")).upper(); ld = str(pl.get("load") or "").upper()
+            empty = ld == "EMPTY" if ld else to in ("PRODUCTION", "YARD")
+            p.require_any("INTERNAL_MOVE", "YARD_TO_PACKING" if (to == "PACKING" and empty) else "MOVE_FG_TO_PRODUCTION" if (to == "PRODUCTION" and not empty) else "MOVE_TO_" + to)
             if pl.get("strict"):                        # HHT 2.20+: Yard routes = pallet QR, FGWH / Packing routes = pallet card
                 if empty and lpnsvc.is_card(db, pl["scanned"]):
                     raise services.RuleError("Empty pallet move: scan the pallet QR, not the pallet card")

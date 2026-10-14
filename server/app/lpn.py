@@ -13,14 +13,23 @@ PART_TYPES = ("CUSTOMER", "STOCK_TRANSFER")
 IN_PROCESS = ("PICKED", "PDI_OK")                 # owned by AssetTrack; WMS upload never changes these
 SCAN_POINT_ROLE = {"DOCK_SCAN": "FGWH", "OUT_GATE": "SEC_OUT", "RETURN_SLIP": "SEC_IN", "YARD_IN": "YARD", "PDI": "QA",
                    "MOVE_YARD_PRODUCTION": "YARD", "MOVE_PRODUCTION_FGWH": "FGWH", "MOVE_PRODUCTION_PACKING": "FGWH",
-                   "MOVE_FGWH_PACKING": "FGWH", "MOVE_PACKING_YARD": "YARD"}
+                   "MOVE_FGWH_PACKING": "FGWH", "MOVE_FGWH_DISPATCH": "FGWH", "MOVE_FGWH_PRODUCTION": "FGWH", "MOVE_PACKING_YARD": "YARD",
+                   "MOVE_DISPATCH_YARD": "YARD"}
 
 # ---------------------------------------------------------------- in-plant zones
-ZONES = ("YARD", "PRODUCTION", "FGWH", "PACKING")
-MOVES = {("YARD", "PRODUCTION"), ("PRODUCTION", "FGWH"), ("PRODUCTION", "PACKING"), ("PACKING", "YARD"),
-         ("YARD", "PACKING"), ("PRODUCTION", "YARD"), ("FGWH", "YARD")}      # empty pallets Yard -> Packing; emptied pallets back to the Yard
-MOVE_LOAD = {"PRODUCTION": "EMPTY", "FGWH": "LOADED", "PACKING": "LOADED", "YARD": "EMPTY"}   # default load after arriving
-DISPATCH_ZONES = ("FGWH", "PACKING")
+# FGWH is the centre for all finished goods: Production -> FGWH -> Main Dispatch (DISPATCH) / Packing -> customer.
+# FGWH -> Production only to send FG back (rejection / damage / lot-out). Empty pallets: Yard <-> Production, Yard -> Packing,
+# and every area back to the Yard.
+ZONES = ("YARD", "PRODUCTION", "FGWH", "DISPATCH", "PACKING")
+MOVES = {("YARD", "PRODUCTION"), ("PRODUCTION", "FGWH"), ("FGWH", "DISPATCH"), ("FGWH", "PACKING"), ("FGWH", "PRODUCTION"),
+         ("YARD", "PACKING"), ("PACKING", "YARD"), ("DISPATCH", "YARD"), ("PRODUCTION", "YARD"), ("FGWH", "YARD")}
+NO_MOVE = {("PRODUCTION", "DISPATCH"): "Production -> Main Dispatch is not allowed - finished goods go to FGWH first",
+           ("PRODUCTION", "PACKING"): "Production -> Packing is not allowed - finished goods go to FGWH first",
+           ("DISPATCH", "PACKING"): "No movement between Main Dispatch and Packing - both ship to customers",
+           ("PACKING", "DISPATCH"): "No movement between Main Dispatch and Packing - both ship to customers"}
+RETURN_REASONS = ("REJECTION", "DAMAGE", "LOT_OUT")   # FGWH -> Production
+MOVE_LOAD = {"PRODUCTION": "EMPTY", "FGWH": "LOADED", "DISPATCH": "LOADED", "PACKING": "LOADED", "YARD": "EMPTY"}   # default load after arriving
+DISPATCH_ZONES = ("FGWH", "DISPATCH", "PACKING")
 BENCH = "DISPATCH_BENCH"                       # pick lists pulled from the Dispatch Planning Bench (all customers)
 
 
@@ -132,8 +141,13 @@ def internal_move(db: Session, pal: models.Pallet, to_zone: str, plant: str, *, 
     frm = pal.zone or "YARD"
     if frm == to_zone:
         return f"{pal.pallet_no} already in {to_zone}", alerts
-    if {frm, to_zone} == {"FGWH", "PACKING"}:
-        raise RuleError("No movement between FGWH (Main Dispatch) and Packing - both dispatch to customers")
+    if (frm, to_zone) in NO_MOVE and not (frm == "PRODUCTION" and to_zone == "PACKING" and (load or "").upper() == "EMPTY"):
+        raise RuleError(NO_MOVE[(frm, to_zone)])
+    if frm == "FGWH" and to_zone == "PRODUCTION":
+        why = (remarks or "").upper().replace("-", "_").replace(" ", "_")
+        if not any(r in why for r in RETURN_REASONS):
+            raise RuleError("FGWH -> Production: give the reason - Rejection, Damage or Lot-out")
+        load = load or "LOADED"
     if (frm, to_zone) not in MOVES:
         r = _route(frm, to_zone)
         if r:

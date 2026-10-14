@@ -20,7 +20,7 @@ const GROUPS = [
   { key: 'yin', title: 'Yard-In', sub: 'Empty pallets only · scan the pallet QR', icon: 'layers-outline', grad: ['#10b981', '#047857'], items: [
     ['yard', 'Customer returns', 'Slips A / B endorsed at Gate-In', 'YARD_SCAN', 'people-outline', 'slipsCust'],
     ['yardchl', 'Empty pallets from other plants', 'Plant challan endorsed at Gate-In', 'YARD_IN_PLANT', 'business-outline', 'slipsChl'],
-    ['mvyard', 'Empty pallets back to Yard', 'From Production / FGWH / Packing', ['MOVE_TO_YARD', MV], 'arrow-undo-outline'],
+    ['mvyard', 'Empty pallets back to Yard', 'From Production / FGWH / Main Dispatch / Packing', ['MOVE_TO_YARD', MV], 'arrow-undo-outline'],
     ['damage', 'Damage / Tag issue', 'Mark damaged, request a new tag', 'DAMAGE_MARK', 'warning-outline'] ] },
   { key: 'yout', title: 'Yard-Out', sub: 'Empty pallets leaving the yard · scan the pallet QR', icon: 'log-out-outline', grad: ['#14b8a6', '#0f766e'], items: [
     ['mvprod', 'Empty pallets to Production', 'Pallet Yard → Production', ['MOVE_TO_PRODUCTION', MV], 'construct-outline'],
@@ -29,8 +29,9 @@ const GROUPS = [
   { key: 'fg', title: 'FGWH · Central FG', sub: 'All finished goods pass through FGWH · pallet card', icon: 'business-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
     ['mvfg', 'Production → FGWH', 'Loaded pallets from the line', ['MOVE_TO_FGWH', MV], 'arrow-forward-outline'],
     ['receipt', 'Other-plant material', 'At FGWH · challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline', 'chm'],
-    ['mvmain', 'FGWH → Main Dispatch', 'Pallet card', ['MOVE_TO_DISPATCH', MV], 'arrow-redo-outline'],
-    ['mvpk', 'FGWH → Packing', 'Pallet card', ['MOVE_TO_PACKING', MV], 'arrow-redo-outline'] ] },
+    ['mvmain', 'FGWH → Main Dispatch', 'Pallet card', ['MOVE_TO_DISPATCH', MV], 'car-outline'],
+    ['mvpk', 'FGWH → Packing', 'Pallet card', ['MOVE_TO_PACKING', MV], 'arrow-redo-outline'],
+    ['mvfgback', 'FGWH → Production', 'Rejection · Damage · Lot-out', ['MOVE_FG_TO_PRODUCTION', MV], 'arrow-undo-outline'] ] },
   { key: 'md', title: 'Main Dispatch', sub: 'Ships parts to customers · pallet card', icon: 'car-outline', grad: ['#0ea5e9', '#0369a1'], items: [
     ['dock', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dock'],
     ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'] ] },
