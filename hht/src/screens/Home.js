@@ -29,17 +29,12 @@ const GROUPS = [
   { key: 'fg', title: 'FGWH · Central FG', sub: 'All finished goods pass through FGWH · pallet card', icon: 'business-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
     ['mvfg', 'Production → FGWH', 'Loaded pallets from the line', ['MOVE_TO_FGWH', MV], 'arrow-forward-outline'],
     ['receipt', 'Other-plant material', 'At FGWH · challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline', 'chm'],
-    ['mvmain', 'FGWH → Main Dispatch', 'Pallet card', ['MOVE_TO_DISPATCH', MV], 'car-outline'],
     ['mvpk', 'FGWH → Packing', 'Pallet card', ['MOVE_TO_PACKING', MV], 'arrow-redo-outline'],
     ['mvfgback', 'FGWH → Production', 'Rejection · Damage · Lot-out', ['MOVE_FG_TO_PRODUCTION', MV], 'arrow-undo-outline'] ] },
-  { key: 'md', title: 'Main Dispatch', sub: 'Ships parts to customers · pallet card', icon: 'car-outline', grad: ['#0ea5e9', '#0369a1'], items: [
-    ['dock', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dock'],
-    ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'] ] },
-  { key: 'pk', title: 'Packing · Dispatch', sub: 'Ships parts to customers · pallet card', icon: 'cube-outline', grad: ['#ec4899', '#be185d'], items: [
-    ['dockP', 'Dispatch preparation', 'Pallet cards against the GCS', 'PACK_DISPATCH', 'clipboard-outline', 'dock'],
-    ['pdiP', 'PDI Check', 'Pallet card OK / reject → EBS', 'PACK_PDI', 'shield-checkmark-outline', 'pdi'] ] },
+  { key: 'pdi', title: 'PDI Check', sub: 'Main Dispatch & Packing Dispatch · pallet card', icon: 'shield-checkmark-outline', grad: ['#0ea5e9', '#0369a1'], items: [
+    ['pdi', 'PDI Check', 'Main Dispatch & Packing · OK / reject → EBS', ['PDI_CHECK', 'PACK_PDI'], 'shield-checkmark-outline', 'pdi'] ] },
   { key: 'gout', title: 'Security · Loading & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
-    ['load', 'Vehicle loading', 'Each pallet QR into the vehicle · FGWH / Packing', 'VEHICLE_LOAD', 'car-outline'],
+    ['load', 'Vehicle loading', 'GCS from the Bench · pallet QR', 'VEHICLE_LOAD', 'car-outline', 'dock'],
     ['gateout', 'OUT Gate', 'Challan QR only · Yard empties · FGWH & Packing material', 'OUT_GATE_SCAN', 'exit-outline'] ] },
   { key: 'oth', title: 'Others', sub: 'Look up, alerts, sync', icon: 'apps-outline', grad: ['#64748b', '#334155'], items: [
     ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, 'search-outline'],
@@ -72,8 +67,12 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
   useEffect(() => { if (sync.online) checkUpdate().then(u => u && u.newer && setUpd(u)); }, [sync.online]);
   const col = !sync.online ? C.warn : sync.pending ? C.amber : C.ok;
   const srv = (getActiveServer() || '').replace(/^https?:\/\//, '');
-  const allowed = (it) => (!it[3] || [].concat(it[3]).some((x) => perms.includes(x))) && !(benchMode && (it[0] === 'pdi' || it[0] === 'pdiP'));
-  const group = (g) => <ButtonGroup key={g.key} g={g} items={g.items.filter(allowed)} n={n} nav={nav} />;
+  const allowed = (it) => (!it[3] || [].concat(it[3]).some((x) => perms.includes(x))) && !(benchMode && it[0] === 'pdi');
+  // groups open and close by tapping the heading; what is open is remembered on this HHT
+  const [open, setOpen] = useState({});
+  useEffect(() => { kv.get('home_open').then((o) => o && setOpen(o)).catch(() => {}); }, []);
+  const toggle = (k) => setOpen((o) => { const x = { ...o, [k]: !o[k] }; kv.set('home_open', x).catch(() => {}); return x; });
+  const group = (g) => <ButtonGroup key={g.key} g={g} items={g.items.filter(allowed)} n={n} nav={nav} open={!!open[g.key]} onToggle={() => toggle(g.key)} />;
   return (<Screen>
     <Header logo below={<UserChip me={me} onLogout={onLogout} />} />
     <TouchableOpacity onPress={() => nav('pending')} style={{ backgroundColor: col, paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '92%' }}>

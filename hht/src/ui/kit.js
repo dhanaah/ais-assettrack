@@ -236,7 +236,7 @@ export const Screen = ({ children }) => <View style={{ flex: 1 }}><Backdrop />{c
 
 /** Home screens: one group card (coloured heading + "N waiting") with its functions as gradient buttons, two per row
  *  (an odd last button spans the row). g = { key, title, sub, icon, grad }, items = [key, title, sub, perm, icon, badgeKey]. */
-export function ButtonGroup({ g, items, n = {}, nav }) {
+export function ButtonGroup({ g, items, n = {}, nav, open = true, onToggle }) {   // onToggle: heading opens / closes the group
   if (!items.length) return null;
   const waiting = items.reduce((a, it) => a + (it[5] && it[0] !== 'pending' ? (n[it[5]] || 0) : 0), 0);
   // button: gradient from a light tint to the deep group colour, a large picture (icon) in the bottom-right corner
@@ -254,10 +254,11 @@ export function ButtonGroup({ g, items, n = {}, nav }) {
           <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: Math.round(11 * T.scale), marginTop: 2 }} numberOfLines={2}>{it[2]}</Text></View>
       </LinearGradient></TouchableOpacity>); };
   return (<View style={[S.card, { paddingVertical: 10 }]}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 6 }}>
+    <TouchableOpacity activeOpacity={onToggle ? 0.7 : 1} onPress={onToggle} disabled={!onToggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: open ? 6 : 0 }}>
       <LinearGradient colors={g.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={g.icon} size={17} color="#fff" /></LinearGradient>
       <View style={{ flex: 1 }}><Text style={{ fontWeight: '800', fontSize: Math.round(15.5 * T.scale), color: C.fg, letterSpacing: 0.3 }}>{g.title.toUpperCase()}</Text><Text style={[S.mute, { fontSize: 11 }]}>{g.sub}</Text></View>
       {waiting ? <Text style={{ color: g.grad[0], fontWeight: '800', fontSize: 12 }}>{waiting} waiting</Text> : null}
-    </View>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginTop: 4 }}>{items.map((it, k) => btn(it, items.length % 2 === 1 && k === items.length - 1))}</View></View>);
+      {onToggle ? <View style={{ alignItems: 'center' }}><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={20} color={C.mute} />{!open ? <Text style={{ fontSize: 10, color: C.mute }}>{items.length}</Text> : null}</View> : null}
+    </TouchableOpacity>
+    {open ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginTop: 4 }}>{items.map((it, k) => btn(it, items.length % 2 === 1 && k === items.length - 1))}</View> : null}</View>);
 }
