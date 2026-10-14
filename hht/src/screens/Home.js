@@ -1,4 +1,5 @@
-// Home: live status strip, what is waiting (counts from the local cache), quick lookup, tiles by access right. Developed by DT
+// Home: live status strip, what is waiting (counts from the local cache), quick lookup, functions grouped by area (Gate-In,
+// Yard-In, Internal Move, Yard-Out / Dispatch, Gate-Out, Others) and by access right. Developed by DT
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { S, C, Page, Header, Footer, Screen, ScanInput, T, UserChip } from '../ui/kit';
@@ -9,20 +10,29 @@ import { checkUpdate, openUpdate } from '../lib/update';
 import { getActiveServer } from '../lib/api';
 import { fTime } from '../lib/when';
 
-const TILES = [
-  ['dock', 'Vehicle Loading (GCS)', 'Scan pallets / part cards against the GCS', 'DOCK_SCAN', ['#0ea5e9', '#2563eb'], 'cube-outline', 'dock'],
-  ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', ['#14b8a6', '#0f766e'], 'shield-checkmark-outline', 'pdi'],
-  ['move', 'Internal Movement', 'Yard · Production · FGWH · Packing', 'INTERNAL_MOVE', ['#22c55e', '#15803d'], 'swap-horizontal-outline'],
-  ['receipt', 'Other-plant Receipt', 'Loaded pallets at FGWH / Packing', 'PLANT_RECEIPT', ['#8b5cf6', '#6d28d9'], 'download-outline'],
-  ['yardret', 'Empty Pallet Return', "Other plants' pallets at Yard → challan", 'EMPTY_RETURN', ['#84cc16', '#4d7c0f'], 'return-up-back-outline', 'yardret'],
-  ['gateout', 'OUT Gate', 'Scan GCS / challan QR', 'OUT_GATE_SCAN', ['#6366f1', '#4338ca'], 'exit-outline'],
-  ['slip', 'Return Slip (Option B)', 'IN gate: number of pallets', 'RETURN_SLIP_B', ['#a855f7', '#7e22ce'], 'document-text-outline'],
-  ['gatein', 'IN Gate', 'Return slip QR / plant challan', 'IN_GATE_SCAN', ['#c026d3', '#a21caf'], 'enter-outline'],
-  ['yard', 'Yard In-ward Scan', 'Receive pallets, reconcile', 'YARD_SCAN', ['#10b981', '#047857'], 'layers-outline', 'slips'],
-  ['damage', 'Damage / Tag issue', 'Mark damaged, request tag', 'DAMAGE_MARK', ['#f59e0b', '#d97706'], 'warning-outline'],
-  ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, ['#64748b', '#334155'], 'search-outline'],
-  ['misses', 'Missed Scans', 'Open scan alerts', null, ['#ef4444', '#b91c1c'], 'alert-circle-outline'],
-  ['pending', 'Pending & Sync', 'Outbox, last sync, errors', null, ['#ec4899', '#be185d'], 'cloud-upload-outline', 'pending'],
+// Functions grouped by where the work happens, in the order a pallet moves: Gate-In -> Yard-In -> Internal move ->
+// Yard-Out / dispatch -> Gate-Out, then Others. [key, title, sub, permission, icon, badge key]. Same screens as before.
+const GROUPS = [
+  { key: 'gin', title: 'Gate-In', sub: 'Vehicles coming in', icon: 'enter-outline', grad: ['#c026d3', '#a21caf'], items: [
+    ['gatein', 'IN Gate', 'Return slip QR · other-plant challan QR', 'IN_GATE_SCAN', 'enter-outline'],
+    ['slip', 'Return Slip (Option B)', 'Customer without slip: count + document photo', 'RETURN_SLIP_B', 'document-text-outline'] ] },
+  { key: 'yin', title: 'Yard-In', sub: 'Empty pallets received at the pallet yard', icon: 'layers-outline', grad: ['#10b981', '#047857'], items: [
+    ['yard', 'Customer returns', 'Return slips Option A / B - scan & reconcile', 'YARD_SCAN', 'people-outline', 'slipsCust'],
+    ['yardchl', 'Empty pallets from other plants', 'Our pallets back on an AIS plant challan', 'YARD_SCAN', 'business-outline', 'slipsChl'],
+    ['damage', 'Damage / Tag issue', 'Mark damaged, request a new tag', 'DAMAGE_MARK', 'warning-outline'] ] },
+  { key: 'mov', title: 'Internal Move', sub: 'Inside the plant', icon: 'swap-horizontal-outline', grad: ['#22c55e', '#15803d'], items: [
+    ['move', 'Internal Movement', 'Yard · Production · FGWH · Packing', 'INTERNAL_MOVE', 'swap-horizontal-outline'],
+    ['receipt', 'Other-plant Receipt (loaded)', 'Loaded pallets from other plants at FGWH / Packing', 'PLANT_RECEIPT', 'download-outline'] ] },
+  { key: 'yout', title: 'Yard-Out / Dispatch', sub: 'Loading vehicles', icon: 'cube-outline', grad: ['#0ea5e9', '#2563eb'], items: [
+    ['dock', 'Vehicle Loading (GCS)', 'Scan pallets / part cards against the GCS', 'DOCK_SCAN', 'cube-outline', 'dock'],
+    ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'],
+    ['yardret', 'Empty pallets to other plants', "Other plants' pallets from the Yard → challan", 'EMPTY_RETURN', 'return-up-back-outline', 'yardret'] ] },
+  { key: 'gout', title: 'Gate-Out', sub: 'Vehicles going out', icon: 'exit-outline', grad: ['#6366f1', '#4338ca'], items: [
+    ['gateout', 'OUT Gate', 'Scan GCS / challan QR', 'OUT_GATE_SCAN', 'exit-outline'] ] },
+  { key: 'oth', title: 'Others', sub: 'Look up, alerts, sync', icon: 'apps-outline', grad: ['#64748b', '#334155'], items: [
+    ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, 'search-outline'],
+    ['misses', 'Missed Scans', 'Open scan alerts', null, 'alert-circle-outline'],
+    ['pending', 'Pending & Sync', 'Outbox, last sync, errors', null, 'cloud-upload-outline', 'pending'] ] },
 ];
 
 async function counts() {
@@ -33,7 +43,8 @@ async function counts() {
     dock: await one("SELECT COUNT(*) c FROM picklists WHERE status='OPEN' AND (load_point IS NULL OR load_point<>'YARD')"),
     yardret: await one("SELECT COUNT(*) c FROM picklists WHERE status='OPEN' AND load_point='YARD'"),
     pdi: await one("SELECT COUNT(*) c FROM picklists WHERE status='PDI_PENDING'"),
-    slips: await one("SELECT COUNT(*) c FROM slips WHERE status<>'CLOSED'"),
+    slipsCust: await one("SELECT COUNT(*) c FROM slips WHERE status<>'CLOSED' AND mode<>'CHL'"),
+    slipsChl: await one("SELECT COUNT(*) c FROM slips WHERE status<>'CLOSED' AND mode='CHL'"),
     pending: await one("SELECT COUNT(*) c FROM outbox WHERE status='PENDING'"),
     rejected: await one("SELECT COUNT(*) c FROM outbox WHERE status='REJECTED' AND created_at>=?", t0),
     scansToday: await one("SELECT COUNT(*) c FROM outbox WHERE created_at>=? AND event_type<>'HEARTBEAT'", t0),
@@ -48,15 +59,22 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
   useEffect(() => { if (sync.online) checkUpdate().then(u => u && u.newer && setUpd(u)); }, [sync.online]);
   const col = !sync.online ? C.warn : sync.pending ? C.amber : C.ok;
   const srv = (getActiveServer() || '').replace(/^https?:\/\//, '');
-  const tile = (t) => {
-    const badge = t[6] ? n[t[6]] : 0;
-    return (<TouchableOpacity key={t[0]} onPress={() => nav(t[0])} activeOpacity={0.8} style={[S.card, { width: '47.5%', marginBottom: 0, minHeight: Math.round(118 * T.scale) }]}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <LinearGradient colors={t[4]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8, shadowColor: t[4][1], shadowOpacity: 0.4, shadowRadius: 8, elevation: 3 }}><Ionicons name={t[5]} size={22} color="#fff" /></LinearGradient>
-        {badge ? <View style={{ backgroundColor: t[0] === 'pending' ? C.amber : C.accent, borderRadius: 999, minWidth: 26, height: 26, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>{badge}</Text></View> : null}
+  const allowed = (it) => (!it[3] || perms.includes(it[3])) && !(benchMode && it[0] === 'pdi');
+  const row = (it, g, last) => { const badge = it[5] ? n[it[5]] : 0;
+    return (<TouchableOpacity key={it[0]} onPress={() => nav(it[0])} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: Math.round(11 * T.scale), borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
+      <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: g.grad[0] + '22' }}><Ionicons name={it[4]} size={20} color={g.grad[0]} /></View>
+      <View style={{ flex: 1 }}><Text style={{ fontWeight: '700', fontSize: Math.round(14.5 * T.scale), color: C.fg }}>{it[1]}</Text><Text style={[S.mute, { fontSize: Math.round(11.5 * T.scale), marginTop: 1 }]} numberOfLines={2}>{it[2]}</Text></View>
+      {badge ? <View style={{ backgroundColor: it[0] === 'pending' ? C.amber : g.grad[0], borderRadius: 999, minWidth: 26, height: 24, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontWeight: '800', fontSize: 12.5 }}>{badge}</Text></View> : null}
+      <Ionicons name="chevron-forward" size={18} color={C.mute} /></TouchableOpacity>); };
+  const group = (g) => { const items = g.items.filter(allowed); if (!items.length) return null;
+    const waiting = items.reduce((a, it) => a + (it[5] && it[0] !== 'pending' ? (n[it[5]] || 0) : 0), 0);
+    return (<View key={g.key} style={[S.card, { paddingVertical: 10 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 6 }}>
+        <LinearGradient colors={g.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={g.icon} size={17} color="#fff" /></LinearGradient>
+        <View style={{ flex: 1 }}><Text style={{ fontWeight: '800', fontSize: Math.round(15.5 * T.scale), color: C.fg, letterSpacing: 0.3 }}>{g.title.toUpperCase()}</Text><Text style={[S.mute, { fontSize: 11 }]}>{g.sub}</Text></View>
+        {waiting ? <Text style={{ color: g.grad[0], fontWeight: '800', fontSize: 12 }}>{waiting} waiting</Text> : null}
       </View>
-      <Text style={{ fontWeight: '700', fontSize: Math.round(14 * T.scale), color: C.fg }}>{t[1]}</Text><Text style={[S.mute, { marginTop: 3, fontSize: Math.round(11.5 * T.scale) }]}>{t[2]}</Text></TouchableOpacity>);
-  };
+      {items.map((it, k) => row(it, g, k === items.length - 1))}</View>); };
   return (<Screen>
     <Header logo below={<UserChip me={me} onLogout={onLogout} />} />
     <TouchableOpacity onPress={() => nav('pending')} style={{ backgroundColor: col, paddingVertical: 7, paddingHorizontal: 14, marginHorizontal: 14, marginTop: 10, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '92%' }}>
@@ -68,7 +86,7 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
           <View key={l} style={{ alignItems: 'center' }}><Text style={{ fontSize: Math.round(22 * T.scale), fontWeight: '800', color: c }}>{v}</Text><Text style={[S.mute, { fontSize: 11 }]}>{l}</Text></View>))}
       </View>
       <View style={[S.card, { paddingVertical: 10 }]}><Text style={[S.mute, { marginBottom: 4 }]}>Quick lookup - scan any pallet, tag or LPN</Text><ScanInput autoFocus={false} placeholder="Scan to look up" onScan={(code) => onLookup && onLookup(code)} /></View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>{TILES.filter(t => (!t[3] || perms.includes(t[3])) && !(benchMode && t[0] === 'pdi')).map(tile)}</View>
+      {GROUPS.map(group)}
       <TouchableOpacity onPress={() => nav('settings')} style={{ marginTop: 16 }}><Text style={[S.mute, { textAlign: 'center' }]}>Settings · Printer · Sound · Full resync</Text></TouchableOpacity>
       <Footer />
     </Page></Screen>);

@@ -14,9 +14,10 @@ import { api } from '../lib/api';
 import { state as sync, syncNow } from '../lib/sync';
 import { DocPhotos } from '../ui/docs';
 
-export default function Yard({ onBack }) {
+export default function Yard({ onBack, filter }) {   // filter: 'CUST' customer return slips, 'CHL' other-plant challans, none = all
   const [slips, setSlips] = useState([]); const [slip, setSlip] = useState(null); const [scans, setScans] = useState([]); const [accept, setAccept] = useState(false); const [damaged, setDamaged] = useState(false); const [pin, setPin] = useState(''); const [msg, toast] = useToast();
-  useEffect(() => { listSlips().then(setSlips); kv.get('plant').then(p => setAccept(!!p?.accept_other_plant_default)); }, []);
+  const pick = (l) => (l || []).filter((s) => !filter || (filter === 'CHL' ? s.mode === 'CHL' : s.mode !== 'CHL'));
+  useEffect(() => { listSlips().then((l) => setSlips(pick(l))); kv.get('plant').then(p => setAccept(!!p?.accept_other_plant_default)); }, []);
   const [docs, setDocs] = useState({}); const [showDoc, setShowDoc] = useState(false);
   useEffect(() => { kv.get('slip_docs').then(d => setDocs(d || {})); }, [slips]);
   const open = async (s) => { setSlip(s); setScans(await localScans(s.slip_no)); setDocs((await kv.get('slip_docs')) || {}); };
@@ -24,7 +25,7 @@ export default function Yard({ onBack }) {
   const onSlipScan = async (code) => {
     const no = code.startsWith('AIS1|RS|') || code.startsWith('AIS1|RO|') ? code.split('|')[2] : code.startsWith('RTS|') || code.startsWith('CHL|') ? code.split('|')[1] : code.trim();
     let s = await getSlip(no);
-    if (!s && sync.online) { await syncNow().catch(() => {}); s = await getSlip(no); setSlips(await listSlips()); }
+    if (!s && sync.online) { await syncNow().catch(() => {}); s = await getSlip(no); setSlips(pick(await listSlips())); }
     if (!s) return toast(`${no} not found - is it registered at the IN gate? (closed slips / challans are not listed)`, 'err');
     setDocSeen(false); open(s); toast(s.mode === 'CHL' ? `Challan from ${s.customer} - ${s.qty} pallet(s): scan each pallet` : s.mode === 'A' || s.mode === 'B1' ? `Option A slip - ${s.qty} pallet(s) listed: scan each pallet` : `Option B slip - count ${s.qty}: view the customer document, then scan each pallet`, 'ok');
   };
@@ -50,10 +51,11 @@ export default function Yard({ onBack }) {
     catch (e) { toast(e.message, 'err'); }
   };
 
-  if (!slip) return (<Screen><Header title="Yard In-ward Scan" sub="Scan slip QR or pick from list" onBack={onBack} /><Page>
-    <View style={S.card}><ScanInput onScan={onSlipScan} placeholder="Scan return slip QR" /></View>
+  if (!slip) return (<Screen><Header title={filter === 'CHL' ? 'Empty pallets from other plants' : filter === 'CUST' ? 'Customer returns' : 'Yard In-ward Scan'} sub={filter === 'CHL' ? 'Scan the challan QR or pick from the list' : 'Scan slip QR or pick from list'} onBack={onBack} /><Page>
+    <View style={S.card}><ScanInput onScan={onSlipScan} placeholder={filter === 'CHL' ? "Scan the other-plant challan QR" : "Scan return slip QR"} /></View>
     {slips.map(s => <TouchableOpacity key={s.slip_no} style={S.card} onPress={() => { setDocSeen(false); open(s); }}><View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{s.slip_no}</Text><Pill s={s.status} /></View><Text style={S.mute}>Customer {s.customer} · {s.mode === 'CHL' ? `Other-plant challan · ${s.qty} pallet(s) from ${s.customer}` : s.mode === 'A' || s.mode === 'B1' ? `Option A · ${s.qty} pallet(s) listed` : `Option B · count ${s.qty} + document photo`}</Text></TouchableOpacity>)}
-    <Btn title="Refresh" secondary icon="refresh" onPress={async () => { await syncNow(); setSlips(await listSlips()); }} /></Page><Toast msg={msg} /></Screen>);
+    {!slips.length ? <Text style={[S.mute, { textAlign: 'center', marginVertical: 12 }]}>{filter === 'CHL' ? 'No other-plant challan waiting - the IN gate registers it first (scan the challan QR at IN Gate).' : 'No return slip waiting.'}</Text> : null}
+    <Btn title="Refresh" secondary icon="refresh" onPress={async () => { await syncNow(); setSlips(pick(await listSlips())); }} /></Page><Toast msg={msg} /></Screen>);
 
   const steps = qtyOnly
     ? [['1', 'View customer document', doc?.photos ? (docSeen ? 'done' : 'tap the document bar') : 'photo not uploaded yet'], ['2', 'Scan each pallet', `${scans.length} of ${doc?.total || slip.qty}`], ['3', 'Count & close', scans.length === slip.qty ? 'count matches' : 'difference needs PIN']]
