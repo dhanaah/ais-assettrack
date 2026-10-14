@@ -30,7 +30,10 @@ const GROUPS = [
     ['mvfg', 'Production → FGWH', 'Loaded pallets from the line', ['MOVE_TO_FGWH', MV], 'arrow-forward-outline'],
     ['receipt', 'Other-plant material', 'At FGWH · challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline', 'chm'],
     ['mvpk', 'FGWH → Packing', 'Pallet card', ['MOVE_TO_PACKING', MV], 'arrow-redo-outline'],
-    ['mvfgback', 'FGWH → Production', 'Rejection · Damage · Lot-out', ['MOVE_FG_TO_PRODUCTION', MV], 'arrow-undo-outline'] ] },
+    ['mvfgback', 'FGWH → Production', 'Rejection · Damage · Lot-out', ['MOVE_FG_TO_PRODUCTION', MV], 'arrow-undo-outline'],
+    ['dock', 'Dispatch preparation', 'App pick lists without a GCS · pallet card', 'DOCK_SCAN', 'clipboard-outline', 'dock'] ] },
+  { key: 'pack', title: 'Packing Section', sub: 'Receives parts · scan the part card only', icon: 'cube-outline', grad: ['#f59e0b', '#c2410c'], items: [
+    ['receiptP', 'Other-plant material', 'At Packing · part card · challan endorsed at Gate-In', 'PACK_RECEIPT', 'download-outline', 'chm'] ] },
   { key: 'pdi', title: 'PDI Check', sub: 'Main Dispatch & Packing Dispatch · pallet card', icon: 'shield-checkmark-outline', grad: ['#0ea5e9', '#0369a1'], items: [
     ['pdi', 'PDI Check', 'Main Dispatch & Packing · OK / reject → EBS', ['PDI_CHECK', 'PACK_PDI'], 'shield-checkmark-outline', 'pdi'] ] },
   { key: 'gout', title: 'Security · Loading & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
