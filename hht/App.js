@@ -6,7 +6,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import * as Application from 'expo-application';
 import * as Clipboard from 'expo-clipboard';
 import { openDb, kv, logActivity, pendingCount } from './src/lib/db';
-import { applyTheme, T, S, C, Btn, Screen, Page, Header, AisLogo, loadScanMode, setNet, FOOT } from './src/ui/kit';
+import { applyTheme, T, S, C, Btn, Screen, Page, Header, AisLogo, loadScanMode, setNet, FOOT, Enter } from './src/ui/kit';
 import { loadSession, setToken, me as getMe, hasToken, setApiDevice, APP_VERSION } from './src/lib/api';
 import { state as syncState, subscribe, syncNow, startAutoSync, stopAutoSync, setDeviceId, refreshPending } from './src/lib/sync';
 import { initFeedback } from './src/lib/feedback';
@@ -98,6 +98,6 @@ export default function App() {
     pending: <Pending onBack={back} />, setup: <Setup onBack={() => setScreen('settings')} />, settings: <Settings onBack={back} onSetup={() => go('setup')} deviceId={deviceId} onTheme={(k) => { setThemeKey(k); refreshUi(); }} onUi={(opts) => { if (opts.idle_min != null) idleMin.current = opts.idle_min; refreshUi(); }} />,
   };
   return (<View style={{ flex: 1 }} onTouchStart={() => { lastTouch.current = Date.now(); }}>
-    <React.Fragment key={themeKey + ':' + uiKey}><StatusBar style="light" /><Guard screen={screen} onHome={back}>{screens[screen] || screens.home}</Guard></React.Fragment>
+    <React.Fragment key={themeKey + ':' + uiKey}><StatusBar style="light" /><Guard screen={screen} onHome={back}><Enter key={screen} from={screen === 'home' ? 'below' : 'right'}>{screens[screen] || screens.home}</Enter></Guard></React.Fragment>
   </View>);
 }

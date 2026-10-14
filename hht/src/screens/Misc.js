@@ -1,6 +1,6 @@
 // Gate IN, Gate OUT, Damage/Tag, Lookup, Pending & Sync, Settings. Developed by DT
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
 import { Screen, applyTheme, T, useScanMode, setScanMode } from '../ui/kit';
@@ -79,25 +79,41 @@ export function VehicleLoad({ onBack }) {
   useEffect(() => { load(); }, []);
   const pick = async (code) => {      // scan the GCS / challan QR to open the vehicle
     const sc = code.startsWith('CHL|') ? code.split('|')[1] : code.startsWith('AIS1|GCS|') ? code.split('|')[2] : code.trim();
-    const all = lists.length ? lists : await api('/loading').catch(() => []);
-    const f = all.find((x) => x.gcs_no === sc || x.challan_no === sc || x.picklist_no === sc);
+    let all = lists.length ? lists : await api('/loading').catch(() => []);
+    let f = all.find((x) => x.gcs_no === sc || x.challan_no === sc || x.picklist_no === sc);
+    if (!f && !code.startsWith('CHL|')) {    // a GCS not opened yet: open it from the GCS inbox (made by the Dispatch Planning Bench)
+      try { await api('/picklists/gcs-open', { method: 'POST', body: { gcs_no: code.trim() } }); all = await api('/loading'); setLists(all);
+        f = all.find((x) => x.gcs_no === sc || x.picklist_no === sc) || all.find((x) => code.includes(x.gcs_no || '#')); }
+      catch (e) { return toast(e.message, 'err'); }
+    }
     if (!f) return toast(`No vehicle being loaded for ${sc}`, 'err'); setK(f);
+  };
+  const finish = () => {              // Finish loading: closes the GCS, makes the challan + prints the gate pass for the OUT gate
+    const short = k.expected && k.loaded < k.expected;
+    const go = async () => { setBusy(true);
+      try { const r = await api(`/picklists/${encodeURIComponent(k.picklist_no)}/confirm`, { method: 'POST' }); feedback('ok');
+        toast(`Loading finished · challan ${r.challan_no || 'pending'}${r.gcs_print ? ' · ' + r.gcs_print : ''}`, 'done'); logActivity('VEHICLE_LOAD_DONE', k.picklist_no, r.challan_no);
+        setK(null); load(); }
+      catch (e) { feedback('err'); toast(e.message, 'err'); } finally { setBusy(false); } };
+    Alert.alert('Finish loading?', short ? `Only ${k.loaded} of ${k.expected} pallet(s) on the GCS are loaded. Finish anyway?` : `${k.loaded} pallet(s) loaded. The challan is made and the vehicle goes to the OUT gate.`,
+      [{ text: 'Cancel', style: 'cancel' }, { text: 'Finish', style: short ? 'destructive' : 'default', onPress: go }]);
   };
   const onScan = async (code) => {
     if (!needOnline(toast)) return; if (busy) return; setBusy(true);
     try { const r = await api(`/picklists/${encodeURIComponent(k.picklist_no)}/load`, { method: 'POST', body: { scanned: code } }); setK(r);
-      feedback(r.duplicate ? 'warn' : 'ok'); toast(r.duplicate ? `${r.short} already loaded` : `${r.short} loaded · ${r.loaded} of ${r.total}`, r.duplicate ? 'warn' : 'done'); logActivity('VEHICLE_LOAD', k.picklist_no, r.pallet_no); }
+      feedback(r.duplicate ? 'warn' : 'ok'); toast(r.duplicate ? `${r.short} already loaded` : `${r.short} loaded · ${r.loaded} of ${r.total || '?'}${r.alerts?.length ? ' · ' + r.alerts[0] : ''}`, r.duplicate || r.alerts?.length ? 'warn' : 'done'); logActivity('VEHICLE_LOAD', k.picklist_no, r.pallet_no); }
     catch (e) { feedback('err'); toast(e.message, 'err'); } finally { setBusy(false); }
   };
   if (!k) return (<Screen><Header title="Vehicle loading" sub="Security · scan each pallet QR into the vehicle" onBack={onBack} /><Page onRefresh={load}>
     <View style={S.card}><Text style={S.mute}>Scan the GCS or challan QR of the vehicle, or pick it below</Text><ScanInput autoFocus={false} onScan={pick} placeholder="Scan GCS / challan QR" /></View>
-    {lists.length === 0 ? <Empty icon="car-outline" text="No vehicle being loaded" hint="FGWH / Packing prepare the pallets on the GCS first." /> : null}
-    {lists.map((x) => <ListRow key={x.picklist_no} title={`${x.vehicle_no || '—'} · ${x.customer_code || x.to_plant || ''}`} sub={`GCS ${x.gcs_no || '-'} · challan ${x.challan_no || 'pending'}`} right={<Pill s={x.loaded === x.total ? 'DONE' : 'PENDING'} label={`${x.loaded}/${x.total}`} />} onPress={() => setK(x)} />)}
+    {lists.length === 0 ? <Empty icon="car-outline" text="No vehicle being loaded" hint="Scan the GCS made by the Dispatch Planning Bench to start loading." /> : null}
+    {lists.map((x) => <ListRow key={x.picklist_no} title={`${x.vehicle_no || '—'} · ${x.customer_code || x.to_plant || ''}`} sub={`GCS ${x.gcs_no || '-'} · challan ${x.challan_no || 'pending'}`} right={<Pill s={x.total && x.loaded >= x.total ? 'DONE' : 'PENDING'} label={`${x.loaded}/${x.total || '?'}`} />} onPress={() => setK(x)} />)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
   const left = k.pallets.filter((p) => !p.loaded);
-  return (<Screen><Header title={`Loading ${k.vehicle_no || ''}`} sub={`GCS ${k.gcs_no || '-'} · ${k.loaded} of ${k.total} loaded`} onBack={() => { setK(null); load(); }} /><Page>
-    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View>
-    {left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.total} pallet(s) loaded - send the vehicle to the OUT gate</Text> : <Text style={S.h2}>To load ({left.length})</Text>}
+  return (<Screen><Header title={`Loading ${k.vehicle_no || ''}`} sub={`GCS ${k.gcs_no || '-'} · ${k.loaded} of ${k.total || '?'} loaded`} onBack={() => { setK(null); load(); }} /><Page>
+    {k.status === 'OPEN' ? <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View> : null}
+    {k.can_finish ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
+    {k.status !== 'OPEN' && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
     {left.map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}
     {k.pallets.filter((p) => p.loaded).map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="DONE" label="LOADED" />} />)}
   </Page><Toast msg={msg} /></Screen>);

@@ -246,7 +246,7 @@ class GcsOpenIn(BaseModel):
 def gcs_open(body: GcsOpenIn, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
     """HHT: scan / type the GCS number at the vehicle. Returns the loading sheet (from the FTP inbox) or opens one from the
     details typed by the operator when the file has not arrived yet."""
-    p.require_any("DOCK_SCAN", "PACK_DISPATCH")
+    p.require_any("DOCK_SCAN", "PACK_DISPATCH", "VEHICLE_LOAD")   # Security opens the GCS at the vehicle (no Dispatch preparation)
     from .. import gcs as gcssvc
     if not p.plant:
         raise HTTPException(400, "Plant user required")
@@ -292,7 +292,7 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
     if k.load_point == "YARD":
         p.require_any("EMPTY_RETURN", "DOCK_SCAN")
     else:
-        p.require("DOCK_SCAN")
+        p.require_any("DOCK_SCAN", "VEHICLE_LOAD")      # Security 'Finish loading' at FGWH / Packing
     if k.status not in ("OPEN", "SO_PENDING"):
         raise HTTPException(400, f"Pick list is {k.status}")
     scanned = db.query(models.PickListLine).filter_by(picklist_no=no).count()
@@ -605,10 +605,17 @@ def needs_loading(db, k) -> bool:
 
 
 def _loading_row(db, k):
+    """Pallets on the vehicle plus, for a GCS, the pallets the GCS file names that are not loaded yet."""
     lines = db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).order_by(models.PickListLine.scanned_at).all()
+    pals = [{"pallet_no": l.pallet_no, "short": services.short_ref(l.pallet_no), "loaded": bool(l.loaded_at)} for l in lines]
+    have = {l.pallet_no for l in lines}
+    exp = sorted({g.pallet_no for g in db.query(models.GcsLpn).filter_by(picklist_no=k.picklist_no).all() if g.pallet_no})
+    pals += [{"pallet_no": x, "short": services.short_ref(x), "loaded": False} for x in exp if x not in have]
+    loaded = sum(1 for x in pals if x["loaded"])
+    expected = len(exp) or (k.qty if not lpnsvc.is_gcs(k) and not lpnsvc.is_bench(k) else 0) or None
     return {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "challan_no": k.challan_no, "vehicle_no": k.vehicle_no, "customer_code": k.customer_code,
-            "to_plant": k.to_plant, "dispatch_type": k.dispatch_type, "status": k.status, "total": len(lines), "loaded": sum(1 for l in lines if l.loaded_at),
-            "pallets": [{"pallet_no": l.pallet_no, "short": services.short_ref(l.pallet_no), "loaded": bool(l.loaded_at)} for l in lines]}
+            "to_plant": k.to_plant, "dispatch_type": k.dispatch_type, "status": k.status, "total": max(len(pals), expected or 0), "loaded": loaded,
+            "expected": expected, "can_finish": k.status == "OPEN" and loaded > 0, "pallets": pals}
 
 
 @router.get("/loading")
@@ -620,7 +627,7 @@ def loading_list(p: Principal = Depends(hht("VEHICLE_LOAD")), db: Session = Depe
         if k.load_point == "YARD":
             continue
         r = _loading_row(db, k)
-        if r["total"]:
+        if r["total"] or k.status == "OPEN":          # GCS / pick list waiting for its first pallet is listed too
             out.append(r)
     return out
 
@@ -631,7 +638,8 @@ class LoadIn(BaseModel):
 
 @router.post("/picklists/{no}/load")
 def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(hht("VEHICLE_LOAD")), db: Session = Depends(get_db)):
-    """Security scans the pallet QR as the pallet goes into the vehicle. Only pallets prepared on this GCS are accepted."""
+    """Security scans the pallet QR as the pallet goes into the vehicle. There is no Dispatch preparation: while the load is
+    OPEN the pallet is checked against the GCS (pallets and part cards in the GCS file) and allocated here with its part cards."""
     k = db.get(models.PickList, no)
     if not k:
         raise HTTPException(404, "Not found")
@@ -644,6 +652,15 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
     if not pal:
         raise HTTPException(400, f"Unknown pallet QR {body.scanned[:40]} - keep it off the vehicle")
     l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
+    alerts = []
+    if not l and k.status == "OPEN" and k.dispatch_type in lpnsvc.PART_TYPES and k.load_point != "YARD":
+        try:
+            _m, alerts = lpnsvc.dock_scan(db, k, body.scanned.strip(), k.plant_code, user_id=p.user_id, device_id=None)
+        except lpnsvc.RuleError as e:
+            db.rollback()
+            raise HTTPException(400, f"{e} - keep it off the vehicle")
+        db.flush()
+        l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
     if not l:
         other = (db.query(models.PickListLine, models.PickList).join(models.PickList, models.PickList.picklist_no == models.PickListLine.picklist_no)
                  .filter(models.PickListLine.pallet_no == pal.pallet_no, models.PickList.status.notin_(["DISPATCHED", "CANCELLED", "CLOSED"])).first())
@@ -654,7 +671,7 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
         audit(db, p, "VEHICLE_LOAD", "picklist", no, None, {"pallet": pal.pallet_no}, request)
         db.commit()
     r = _loading_row(db, k)
-    return r | {"pallet_no": pal.pallet_no, "short": services.short_ref(pal.pallet_no), "duplicate": dup}
+    return r | {"pallet_no": pal.pallet_no, "short": services.short_ref(pal.pallet_no), "duplicate": dup, "alerts": [a for a in alerts if a]}
 
 
 # ---------------------------------------------------------------- return slips

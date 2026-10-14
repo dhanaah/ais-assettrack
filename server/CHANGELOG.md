@@ -1,4 +1,19 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.27.0 + HHT 2.21.0 - 2026-10-14 - FGWH is the centre for all FG, collapsible groups, loading without preparation
+**HHT home (approved sample):**
+- Groups are **collapsible**: tap a heading to show its buttons, tap again to hide. All start closed; each HHT remembers what was left open. A closed heading still shows "N waiting" and how many buttons it holds.
+- **Transitions:** a group opens and closes smoothly with a turning arrow, its buttons rise in one after another, a button squeezes slightly when pressed, and every screen slides in when opened (also on the customer HHT).
+- **FGWH · Central FG** (pallet card): Production → FGWH · Other-plant material · FGWH → Packing · **FGWH → Production** (new - reason Rejection / Damage / Lot-out required).
+- **PDI Check:** one button for Main Dispatch and Packing Dispatch (PDI_CHECK or PACK_PDI).
+- **Dispatch preparation removed** (Main and Packing), and **FGWH → Main Dispatch removed** - the Dispatch Planning Bench handles it.
+
+**Rules (server and HHT):**
+- FGWH is the centre: Production → FGWH → Main Dispatch / Packing. **No direct Production → Main Dispatch / Packing, and no Main Dispatch ↔ Packing.**
+- FGWH → Production only with a reason (Rejection / Damage / Lot-out), recorded on the move.
+- **Vehicle loading without preparation:** Security scans the GCS (opened from the GCS inbox if new), then each pallet QR. The pallet is checked against the GCS file (pallet of another GCS = wrong vehicle, refused) and allocated with its part cards. **Finish loading** makes the challan and prints the gate pass; if fewer pallets than the GCS lists are loaded, Security is asked to confirm. The OUT gate still takes the challan only.
+
+**User access (server):** new MOVE_TO_DISPATCH, MOVE_FG_TO_PRODUCTION. VEHICLE_LOAD can now open a GCS and finish loading. At the first start, users of the old move permissions get the matching new ones once.
+
 ## Server 1.26.0 + HHT 2.20.0 - 2026-10-14 - functions grouped by area, process rules, one permission per button
 **HHT home (approved samples):** functions are grouped as buttons (gradient fill, picture in the corner), in the order a pallet moves:
 - **Security · Gate-In:** IN Gate (slip A QR, other-plant challan - material or empty) · Return Slip (Option B).

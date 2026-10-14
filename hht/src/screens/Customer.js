@@ -7,7 +7,7 @@ import { View, Text, TextInput, TouchableOpacity, Alert, AppState } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import qrcode from 'qrcode-generator';
-import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer, ButtonGroup } from '../ui/kit';
+import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer, ButtonGroup, Enter } from '../ui/kit';
 import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline, loadStaff, staffLogin, staffLogout, getStaff, staffCan, incoming, receive, sendReceipts } from '../lib/custapi';
 import { VehiclePicker } from '../ui/vehicle';
 import Setup from './Setup';
@@ -105,13 +105,13 @@ export default function CustomerApp({ deviceId, onUnpaired, onTheme, onUi }) {
     if (screen === 'setup') return <Setup customer onBack={() => setScreen('home')} />;
     return <StaffLogin onDone={(x) => { setStaff(x); setScreen('home'); }} onSetup={() => setScreen('setup')} />;
   }
-  if (screen === 'receive') return <Receive onBack={back} />;
-  if (screen === 'new') return <NewSlip onBack={back} onDone={() => setScreen('slips')} />;
-  if (screen === 'holding') return <Holding onBack={back} />;
-  if (screen === 'slips') return <Slips onBack={back} />;
-  if (screen === 'setup') return <Setup customer onBack={() => setScreen('settings')} />;
-  if (screen === 'settings') return <CustSettings onBack={back} onSetup={() => setScreen('setup')} onLogout={async () => { await staffLogout(); setStaff(null); setScreen('home'); }} deviceId={deviceId} onUnpaired={onUnpaired} onTheme={onTheme} onUi={onUi} />;
-  return <CustHome pair={pair} nav={setScreen} />;
+  if (screen === 'receive') return <Enter key="receive"><Receive onBack={back} /></Enter>;
+  if (screen === 'new') return <Enter key="new"><NewSlip onBack={back} onDone={() => setScreen('slips')} /></Enter>;
+  if (screen === 'holding') return <Enter key="holding"><Holding onBack={back} /></Enter>;
+  if (screen === 'slips') return <Enter key="slips"><Slips onBack={back} /></Enter>;
+  if (screen === 'setup') return <Enter key="setup"><Setup customer onBack={() => setScreen('settings')} /></Enter>;
+  if (screen === 'settings') return <Enter key="settings"><CustSettings onBack={back} onSetup={() => setScreen('setup')} onLogout={async () => { await staffLogout(); setStaff(null); setScreen('home'); }} deviceId={deviceId} onUnpaired={onUnpaired} onTheme={onTheme} onUi={onUi} /></Enter>;
+  return <Enter key="home" from="below"><CustHome pair={pair} nav={setScreen} /></Enter>;
 }
 
 function CustHome({ pair, nav }) {

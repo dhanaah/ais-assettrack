@@ -1,6 +1,6 @@
 // Small UI kit + ScanInput (hardware scanner wedge + camera). Developed by DT
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Modal, Vibration, ScrollView, Image, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Modal, Vibration, ScrollView, Image, RefreshControl, ActivityIndicator, Animated, Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,25 @@ import { kv } from '../lib/db';
 import { onHardwareScan, scannerAvailable } from '../lib/scanner';
 
 export const C = { ...THEMES.glass.C };
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
+const ND = Platform.OS !== 'web';   // native driver for transforms / opacity on the device
+
+/** Screen entry: each screen fades in and slides a little from the right (or from below for home). */
+export function Enter({ children, from = 'right' }) {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => { Animated.timing(a, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: ND }).start(); }, []);
+  const t = from === 'right' ? [{ translateX: a.interpolate({ inputRange: [0, 1], outputRange: [36, 0] }) }] : [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }];
+  return <Animated.View style={{ flex: 1, opacity: a, transform: t }}>{children}</Animated.View>;
+}
+
+/** Group button: rises and fades in (staggered by its position), squeezes slightly while pressed. */
+function GroupBtn({ k, wide, onPress, style, children }) {
+  const a = useRef(new Animated.Value(0)).current; const p = useRef(new Animated.Value(1)).current;
+  useEffect(() => { Animated.spring(a, { toValue: 1, delay: 40 + k * 55, friction: 7, tension: 70, useNativeDriver: ND }).start(); }, []);
+  const press = (v) => Animated.spring(p, { toValue: v, friction: 5, tension: 160, useNativeDriver: ND }).start();
+  return (<Animated.View style={{ width: wide ? '100%' : '48.5%', opacity: a, transform: [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [22, 0] }) }, { scale: Animated.multiply(p, a.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] })) }] }}>
+    <TouchableOpacity onPress={onPress} onPressIn={() => press(0.95)} onPressOut={() => press(1)} activeOpacity={0.9} style={style}>{children}</TouchableOpacity></Animated.View>);
+}
 export const GRAD = { ...THEMES.glass.GRAD };
 export const T = { key: 'glass', dark: false, blur: 40, blurTint: 'light', scale: 1, glow: null };
 const sc = (n) => Math.round(n * T.scale);
@@ -237,13 +256,15 @@ export const Screen = ({ children }) => <View style={{ flex: 1 }}><Backdrop />{c
 /** Home screens: one group card (coloured heading + "N waiting") with its functions as gradient buttons, two per row
  *  (an odd last button spans the row). g = { key, title, sub, icon, grad }, items = [key, title, sub, perm, icon, badgeKey]. */
 export function ButtonGroup({ g, items, n = {}, nav, open = true, onToggle }) {   // onToggle: heading opens / closes the group
+  const rot = useRef(new Animated.Value(open ? 1 : 0)).current;
+  useEffect(() => { Animated.timing(rot, { toValue: open ? 1 : 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: ND }).start(); }, [open]);
   if (!items.length) return null;
   const waiting = items.reduce((a, it) => a + (it[5] && it[0] !== 'pending' ? (n[it[5]] || 0) : 0), 0);
   // button: gradient from a light tint to the deep group colour, a large picture (icon) in the bottom-right corner
   const tint = (hex, k) => { const h = hex.replace('#', ''); const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
     return '#' + c.map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join(''); };
-  const btn = (it, wide) => { const badge = it[5] ? n[it[5]] : 0;
-    return (<TouchableOpacity key={it[0]} onPress={() => nav(it[0])} activeOpacity={0.8} style={{ width: wide ? '100%' : '48.5%', borderRadius: 18, overflow: 'hidden', minHeight: Math.round(96 * T.scale), shadowColor: g.grad[1], shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+  const btn = (it, wide, k) => { const badge = it[5] ? n[it[5]] : 0;
+    return (<GroupBtn key={it[0]} k={k} wide={wide} onPress={() => nav(it[0])} style={{ flex: 1, borderRadius: 18, overflow: 'hidden', minHeight: Math.round(96 * T.scale), shadowColor: g.grad[1], shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
       <LinearGradient colors={[tint(g.grad[0], 0.35), g.grad[0], g.grad[1]]} locations={[0, 0.45, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, padding: Math.round(12 * T.scale), justifyContent: 'space-between' }}>
         <View style={{ position: 'absolute', right: -14, bottom: -16, opacity: 0.2 }} pointerEvents="none"><Ionicons name={it[4]} size={Math.round(78 * T.scale)} color="#fff" /></View>
         <View style={{ position: 'absolute', top: -30, left: -30, width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(255,255,255,0.12)' }} pointerEvents="none" />
@@ -252,13 +273,15 @@ export function ButtonGroup({ g, items, n = {}, nav, open = true, onToggle }) { 
         </View>
         <View style={{ marginTop: 6, paddingRight: 10 }}><Text style={{ color: '#fff', fontWeight: '800', fontSize: Math.round(14.5 * T.scale), textShadowColor: 'rgba(0,0,0,0.18)', textShadowRadius: 3 }} numberOfLines={3}>{it[1]}</Text>
           <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: Math.round(11 * T.scale), marginTop: 2 }} numberOfLines={2}>{it[2]}</Text></View>
-      </LinearGradient></TouchableOpacity>); };
+      </LinearGradient></GroupBtn>); };
+  // open / close: the card resizes smoothly, the arrow turns, the buttons rise in one after another
+  const toggle = () => { LayoutAnimation.configureNext(LayoutAnimation.create(260, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)); onToggle(); };
   return (<View style={[S.card, { paddingVertical: 10 }]}>
-    <TouchableOpacity activeOpacity={onToggle ? 0.7 : 1} onPress={onToggle} disabled={!onToggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: open ? 6 : 0 }}>
+    <TouchableOpacity activeOpacity={onToggle ? 0.7 : 1} onPress={onToggle ? toggle : undefined} disabled={!onToggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: open ? 6 : 0 }}>
       <LinearGradient colors={g.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={g.icon} size={17} color="#fff" /></LinearGradient>
       <View style={{ flex: 1 }}><Text style={{ fontWeight: '800', fontSize: Math.round(15.5 * T.scale), color: C.fg, letterSpacing: 0.3 }}>{g.title.toUpperCase()}</Text><Text style={[S.mute, { fontSize: 11 }]}>{g.sub}</Text></View>
       {waiting ? <Text style={{ color: g.grad[0], fontWeight: '800', fontSize: 12 }}>{waiting} waiting</Text> : null}
-      {onToggle ? <View style={{ alignItems: 'center' }}><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={20} color={C.mute} />{!open ? <Text style={{ fontSize: 10, color: C.mute }}>{items.length}</Text> : null}</View> : null}
+      {onToggle ? <View style={{ alignItems: 'center' }}><Animated.View style={{ transform: [{ rotate: rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}><Ionicons name="chevron-down" size={20} color={open ? g.grad[0] : C.mute} /></Animated.View>{!open ? <Text style={{ fontSize: 10, color: C.mute }}>{items.length}</Text> : null}</View> : null}
     </TouchableOpacity>
-    {open ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginTop: 4 }}>{items.map((it, k) => btn(it, items.length % 2 === 1 && k === items.length - 1))}</View> : null}</View>);
+    {open ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginTop: 4 }}>{items.map((it, k) => btn(it, items.length % 2 === 1 && k === items.length - 1, k))}</View> : null}</View>);
 }

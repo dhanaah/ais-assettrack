@@ -200,6 +200,45 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r = c.post("/api/v1/picklists/CHN-PL-10/gate-out", headers=H, json={"scanned": "CH-10"})
     check(r.status_code == 200, "gate-out by challan works")
 
+    print("8. no Dispatch preparation: Security opens the GCS, loads by pallet QR (checked against the GCS file), finishes loading")
+    with SessionLocal() as db:
+        for i, card in ((10, "PC-10"), (11, "PC-11"), (12, "PC-12")):
+            db.add(models.Pallet(pallet_no=f"CHN-P{i:03d}", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED"))
+            db.add(models.Lpn(lpn_no=card, plant_code="CHN", part_no="WS-1", qty=10, status="AVAILABLE", pallet_no=f"CHN-P{i:03d}"))
+        for no, gcs, pals in (("CHN-GCS-11", "GCS-11", (10, 11)), ("CHN-GCS-12", "GCS-12", (12,))):
+            db.add(models.PickList(picklist_no=no, plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=0, status="OPEN", gcs_no=gcs,
+                                   source="GCS", vehicle_no="TN09Y1")); db.flush()
+            for i in pals:
+                db.add(models.GcsLpn(picklist_no=no, lpn_no=f"PC-{i}", pallet_no=f"CHN-P{i:03d}", part_no="WS-1", qty=10))
+        u = models.User(user_id="secload", full_name="secload", plant_code="CHN", password_hash=hash_pw("x"), must_change_pw=False)
+        u.perms_override = "VEHICLE_LOAD"; db.add(u); db.commit()
+    SL = tok(c, "secload")
+    r = c.post("/api/v1/picklists/gcs-open", headers=SL, json={"gcs_no": "GCS-11"})
+    check(r.status_code == 200, f"Security (VEHICLE_LOAD only) opens the GCS at the vehicle ({r.status_code})")
+    r = c.get("/api/v1/loading", headers=SL).json()
+    g = next((x for x in r if x["gcs_no"] == "GCS-11"), None)
+    check(g is not None and g["loaded"] == 0 and g["expected"] == 2 and len(g["pallets"]) == 2, "GCS listed before any pallet: 0 of 2 expected")
+    check(g is not None and not g["can_finish"], "cannot finish with nothing loaded")
+    r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "PC-10"})
+    check(r.status_code == 400 and "pallet QR" in r.text, "pallet card refused at vehicle loading")
+    r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P012"})
+    check(r.status_code == 400 and "GCS-12" in r.text, "pallet of another GCS refused: wrong vehicle")
+    r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P010"})
+    check(r.status_code == 200 and r.json()["loaded"] == 1 and not r.json()["duplicate"], f"pallet QR on the GCS: allocated and loaded, no preparation ({r.status_code} {r.text[:80]})")
+    with SessionLocal() as db:
+        check(db.get(models.Lpn, "PC-10").status == "PICKED" and db.get(models.Pallet, "CHN-P010").status == "ALLOCATED", "its part card picked and pallet allocated to the GCS")
+    r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P010"}).json()
+    check(r["duplicate"], "same pallet again: already loaded")
+    r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P011"}).json()
+    check(r["loaded"] == 2 and r["can_finish"], "2 of 2 loaded: finish allowed")
+    r = c.post("/api/v1/picklists/CHN-GCS-11/confirm", headers=SL)
+    check(r.status_code == 200 and r.json()["status"] == "APPROVED" and r.json().get("challan_no"), f"Finish loading by Security: challan made, ready for the OUT gate ({r.status_code} {r.text[:80]})")
+    cno = r.json().get("challan_no") if r.status_code == 200 else ""
+    r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": f"CHL|{cno}|CHN-GCS-11|2"})
+    check(r.status_code == 200 and r.json()["status"] == "DISPATCHED", f"OUT gate scans the challan: dispatched ({r.status_code} {r.text[:80]})")
+    r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P012"})
+    check(r.status_code == 400, "no loading after dispatch")
+
 print()
 print("ALL PROCESS RULE CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)
