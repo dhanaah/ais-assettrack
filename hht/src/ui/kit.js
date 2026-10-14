@@ -239,15 +239,19 @@ export const Screen = ({ children }) => <View style={{ flex: 1 }}><Backdrop />{c
 export function ButtonGroup({ g, items, n = {}, nav }) {
   if (!items.length) return null;
   const waiting = items.reduce((a, it) => a + (it[5] && it[0] !== 'pending' ? (n[it[5]] || 0) : 0), 0);
+  // button: gradient from a light tint to the deep group colour, a large picture (icon) in the bottom-right corner
+  const tint = (hex, k) => { const h = hex.replace('#', ''); const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    return '#' + c.map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0')).join(''); };
   const btn = (it, wide) => { const badge = it[5] ? n[it[5]] : 0;
-    return (<TouchableOpacity key={it[0]} onPress={() => nav(it[0])} activeOpacity={0.8} style={{ width: wide ? '100%' : '48.5%', borderRadius: 16, overflow: 'hidden', minHeight: Math.round(92 * T.scale), shadowColor: g.grad[1], shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
-      <LinearGradient colors={g.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, padding: Math.round(12 * T.scale), justifyContent: 'space-between' }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' }}><Ionicons name={it[4]} size={20} color="#fff" /></View>
+    return (<TouchableOpacity key={it[0]} onPress={() => nav(it[0])} activeOpacity={0.8} style={{ width: wide ? '100%' : '48.5%', borderRadius: 18, overflow: 'hidden', minHeight: Math.round(96 * T.scale), shadowColor: g.grad[1], shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+      <LinearGradient colors={[tint(g.grad[0], 0.35), g.grad[0], g.grad[1]]} locations={[0, 0.45, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, padding: Math.round(12 * T.scale), justifyContent: 'space-between' }}>
+        <View style={{ position: 'absolute', right: -14, bottom: -16, opacity: 0.2 }} pointerEvents="none"><Ionicons name={it[4]} size={Math.round(78 * T.scale)} color="#fff" /></View>
+        <View style={{ position: 'absolute', top: -30, left: -30, width: 90, height: 90, borderRadius: 45, backgroundColor: 'rgba(255,255,255,0.12)' }} pointerEvents="none" />
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', minHeight: 24 }}>
           {badge ? <View style={{ backgroundColor: '#fff', borderRadius: 999, minWidth: 26, height: 24, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: it[0] === 'pending' ? '#b45309' : g.grad[1], fontWeight: '800', fontSize: 12.5 }}>{badge}</Text></View> : null}
         </View>
-        <View style={{ marginTop: 8 }}><Text style={{ color: '#fff', fontWeight: '800', fontSize: Math.round(14 * T.scale) }} numberOfLines={2}>{it[1]}</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: Math.round(11 * T.scale), marginTop: 2 }} numberOfLines={2}>{it[2]}</Text></View>
+        <View style={{ marginTop: 6, paddingRight: 10 }}><Text style={{ color: '#fff', fontWeight: '800', fontSize: Math.round(14.5 * T.scale), textShadowColor: 'rgba(0,0,0,0.18)', textShadowRadius: 3 }} numberOfLines={3}>{it[1]}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: Math.round(11 * T.scale), marginTop: 2 }} numberOfLines={2}>{it[2]}</Text></View>
       </LinearGradient></TouchableOpacity>); };
   return (<View style={[S.card, { paddingVertical: 10 }]}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 6 }}>
