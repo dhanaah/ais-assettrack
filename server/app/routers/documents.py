@@ -666,7 +666,8 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
             _m, alerts = lpnsvc.dock_scan(db, k, body.scanned.strip(), k.plant_code, user_id=p.user_id, device_id=None)
         except lpnsvc.RuleError as e:
             db.rollback()
-            raise HTTPException(400, f"{e} - keep it off the vehicle")
+            m = str(e)
+            raise HTTPException(400, m if "keep it off" in m or "STOP" in m else f"{m} - keep it off the vehicle")
         db.flush()
         l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
     if not l:

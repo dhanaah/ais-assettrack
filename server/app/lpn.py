@@ -143,6 +143,9 @@ def internal_move(db: Session, pal: models.Pallet, to_zone: str, plant: str, *, 
         return f"{pal.pallet_no} already in {to_zone}", alerts
     if (frm, to_zone) in NO_MOVE and not (frm == "PRODUCTION" and to_zone == "PACKING" and (load or "").upper() == "EMPTY"):
         raise RuleError(NO_MOVE[(frm, to_zone)])
+    if frm in ("DISPATCH", "PACKING") and to_zone == "PRODUCTION" and db.query(models.Lpn).filter(
+            models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED", "PDI_OK"])).count():
+        raise RuleError(f"{pal.pallet_no} carries parts - finished goods go back to Production only through FGWH (with a reason)")
     if frm == "FGWH" and to_zone == "PRODUCTION":
         why = (remarks or "").upper().replace("-", "_").replace(" ", "_")
         if not any(r in why for r in RETURN_REASONS):
