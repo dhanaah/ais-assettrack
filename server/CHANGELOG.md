@@ -1,4 +1,8 @@
 # Changelog — AIS AssetTrack Server
+## HHT 2.21.1 - 2026-10-14 (server unchanged 1.27.0)
+- **Dispatch preparation is back** in FGWH · Central FG, for app pick lists without a GCS (permission DOCK_SCAN). GCS loads from the Dispatch Planning Bench still need no preparation.
+- New group **Packing Section**: Other-plant material received at Packing by **part card only** (pallet QR refused), on a challan endorsed at Gate-In (permission PACK_RECEIPT).
+
 ## Server 1.27.0 + HHT 2.21.0 - 2026-10-14 - FGWH is the centre for all FG, collapsible groups, loading without preparation
 **HHT home (approved sample):**
 - Groups are **collapsible**: tap a heading to show its buttons, tap again to hide. All start closed; each HHT remembers what was left open. A closed heading still shows "N waiting" and how many buttons it holds.
