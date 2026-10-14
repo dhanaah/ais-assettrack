@@ -7,11 +7,11 @@ import { View, Text, TextInput, TouchableOpacity, Alert, AppState } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import qrcode from 'qrcode-generator';
-import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer } from '../ui/kit';
+import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer, ButtonGroup } from '../ui/kit';
 import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline, loadStaff, staffLogin, staffLogout, getStaff, staffCan, incoming, receive, sendReceipts } from '../lib/custapi';
 import { VehiclePicker } from '../ui/vehicle';
 import Setup from './Setup';
-import { parsePalletQr } from '../lib/db';
+import { parsePalletQr, kv } from '../lib/db';
 import { printSlip, canPrint, testPrint } from '../lib/printer';
 import { feedback } from '../lib/feedback';
 import { fDT, fDate } from '../lib/when';
@@ -126,11 +126,19 @@ function CustHome({ pair, nav }) {
   useEffect(() => { refresh(true); const t = setInterval(() => refresh(false), 60000); return () => clearInterval(t); }, []);
   const resume = useCallback(() => refresh(true), [refresh]); useOnResume(resume, 1500);   // VPN takes a moment after FortiClient
   const overdue = held ? held.pallets.filter((p) => p.overdue).length : 0;
-  const tiles = [...(staffCan('CUST_RECEIVE') ? [['receive', 'Receive delivery', 'Scan each pallet while unloading', ['#f59e0b', '#c2410c'], 'download-outline']] : []),
-    ...(staffCan('CUST_RETURN') ? [['new', 'Return empty pallets', 'Scan pallets, print return slip', ['#a855f7', '#7e22ce'], 'document-text-outline']] : []),
-    ['holding', 'Pallets with us', held ? `${held.count} pallet(s)${overdue ? ` · ${overdue} overdue` : ''}` : 'AIS pallets at this site', ['#0ea5e9', '#2563eb'], 'cube-outline'],
-    ['slips', 'Our return slips', pend ? `${pend} waiting to send` : 'Status, reprint', ['#22c55e', '#15803d'], 'list-outline'],
-    ['settings', 'Settings', 'Printer, vehicles · sign out', ['#64748b', '#334155'], 'settings-outline']];
+  const [inc, setInc] = useState(0);
+  useEffect(() => { kv.get('cust_incoming').then((l) => setInc((l || []).length)).catch(() => {}); }, [route, held]);
+  const can = (it) => !it[3] || staffCan(it[3]);
+  const CGROUPS = [
+    { key: 'cin', title: 'Inward', sub: 'AIS vehicles unloading at our site', icon: 'download-outline', grad: ['#f59e0b', '#c2410c'], items: [
+      ['receive', 'Receive delivery', 'Scan each pallet while unloading', 'CUST_RECEIVE', 'download-outline', 'inc'] ] },
+    { key: 'cret', title: 'Return to AIS', sub: 'Empty pallets back to AIS · Option A slip', icon: 'return-up-back-outline', grad: ['#a855f7', '#7e22ce'], items: [
+      ['new', 'Return empty pallets', 'Scan pallets, print the signed return slip', 'CUST_RETURN', 'document-text-outline'],
+      ['slips', 'Our return slips', pend ? `${pend} waiting to send` : 'Status, reprint', null, 'list-outline', 'pend'] ] },
+    { key: 'coth', title: 'Others', sub: 'Pallets at our site, settings', icon: 'apps-outline', grad: ['#0ea5e9', '#2563eb'], items: [
+      ['holding', 'Pallets with us', held ? `${held.count} pallet(s)${overdue ? ` · ${overdue} overdue` : ''}` : 'AIS pallets at this site', null, 'cube-outline'],
+      ['settings', 'Settings', 'Printer, vehicles · sign out', null, 'settings-outline'] ] },
+  ];
   return (<Screen><Header logo sub={`${getStaff()?.name || ''} · ${me?.name || pair?.n || ''}`} />
     <NetCard route={route} pend={pend} onRecheck={() => refresh(true)} toast={toast} />
     <Page onRefresh={() => refresh(true)}>
@@ -138,10 +146,7 @@ function CustHome({ pair, nav }) {
         <Ring value={held ? String(held.count) : '—'} label="AIS pallets here" color={C.accent} size={88} />
         <Ring value={held ? String(overdue) : '—'} label="over holding limit" color={overdue ? C.warn : C.ok} size={88} />
       </Glass>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>{tiles.map((t) => (
-        <TouchableOpacity key={t[0]} onPress={() => nav(t[0])} activeOpacity={0.8} style={[S.card, { width: '47.5%', marginBottom: 0, minHeight: Math.round(118 * T.scale) }]}>
-          <LinearGradient colors={t[3]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}><Ionicons name={t[4]} size={22} color="#fff" /></LinearGradient>
-          <Text style={{ fontWeight: '700', fontSize: Math.round(14 * T.scale), color: C.fg }}>{t[1]}</Text><Text style={[S.mute, { marginTop: 3, fontSize: Math.round(11.5 * T.scale) }]}>{t[2]}</Text></TouchableOpacity>))}</View>
+      {CGROUPS.map((g) => <ButtonGroup key={g.key} g={g} items={g.items.filter(can)} n={{ inc, pend }} nav={nav} />)}
       <Text style={{ color: C.mute, opacity: 0.35, fontSize: 10, textAlign: 'center', marginTop: 14 }}>Device "{pair?.d}" · customer {pair?.c}</Text>
       <Footer /></Page><Toast msg={msg} /></Screen>);
 }

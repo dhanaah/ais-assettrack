@@ -233,3 +233,27 @@ export const Backdrop = () => (
   </View>);
 export const Page = ({ children, refreshing, onRefresh }) => <View style={{ flex: 1 }}><Backdrop /><ScrollView style={S.screen} contentContainerStyle={[S.pad, { paddingBottom: sc(40) }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={C.accent} colors={[C.accent]} /> : undefined}>{children}</ScrollView></View>;
 export const Screen = ({ children }) => <View style={{ flex: 1 }}><Backdrop />{children}</View>;
+
+/** Home screens: one group card (coloured heading + "N waiting") with its functions as gradient buttons, two per row
+ *  (an odd last button spans the row). g = { key, title, sub, icon, grad }, items = [key, title, sub, perm, icon, badgeKey]. */
+export function ButtonGroup({ g, items, n = {}, nav }) {
+  if (!items.length) return null;
+  const waiting = items.reduce((a, it) => a + (it[5] && it[0] !== 'pending' ? (n[it[5]] || 0) : 0), 0);
+  const btn = (it, wide) => { const badge = it[5] ? n[it[5]] : 0;
+    return (<TouchableOpacity key={it[0]} onPress={() => nav(it[0])} activeOpacity={0.8} style={{ width: wide ? '100%' : '48.5%', borderRadius: 16, overflow: 'hidden', minHeight: Math.round(92 * T.scale), shadowColor: g.grad[1], shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
+      <LinearGradient colors={g.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, padding: Math.round(12 * T.scale), justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' }}><Ionicons name={it[4]} size={20} color="#fff" /></View>
+          {badge ? <View style={{ backgroundColor: '#fff', borderRadius: 999, minWidth: 26, height: 24, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: it[0] === 'pending' ? '#b45309' : g.grad[1], fontWeight: '800', fontSize: 12.5 }}>{badge}</Text></View> : null}
+        </View>
+        <View style={{ marginTop: 8 }}><Text style={{ color: '#fff', fontWeight: '800', fontSize: Math.round(14 * T.scale) }} numberOfLines={2}>{it[1]}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: Math.round(11 * T.scale), marginTop: 2 }} numberOfLines={2}>{it[2]}</Text></View>
+      </LinearGradient></TouchableOpacity>); };
+  return (<View style={[S.card, { paddingVertical: 10 }]}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 6 }}>
+      <LinearGradient colors={g.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}><Ionicons name={g.icon} size={17} color="#fff" /></LinearGradient>
+      <View style={{ flex: 1 }}><Text style={{ fontWeight: '800', fontSize: Math.round(15.5 * T.scale), color: C.fg, letterSpacing: 0.3 }}>{g.title.toUpperCase()}</Text><Text style={[S.mute, { fontSize: 11 }]}>{g.sub}</Text></View>
+      {waiting ? <Text style={{ color: g.grad[0], fontWeight: '800', fontSize: 12 }}>{waiting} waiting</Text> : null}
+    </View>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginTop: 4 }}>{items.map((it, k) => btn(it, items.length % 2 === 1 && k === items.length - 1))}</View></View>);
+}
