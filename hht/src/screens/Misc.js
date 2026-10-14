@@ -51,24 +51,56 @@ export function GateOut({ onBack }) {
   useEffect(() => { load(); }, []);
   const onScan = async (code) => {
     if (!needOnline(toast)) return;
-    const sc = code.startsWith('CHL|') ? code.split('|')[1] : code.startsWith('AIS1|GCS|') ? code.split('|')[2] : code;
-    const k = lists.find(l => l.gcs_no === sc || l.challan_no === sc);
-    if (!k && !override && !code.startsWith('AIS1|GCS|')) { logActivity('GATE_OUT_MISMATCH', sc, 'vehicle held'); return toast('No approved vehicle matches this QR - HOLD VEHICLE', 'err'); }
+    if (code.startsWith('AIS1|GCS|')) return toast('OUT gate: scan the CHALLAN QR, not the GCS', 'err');
+    const sc = code.startsWith('CHL|') ? code.split('|')[1] : code;
+    const k = lists.find(l => l.challan_no === sc);
+    if (!k && !override) { logActivity('GATE_OUT_MISMATCH', sc, 'vehicle held'); return toast('No approved vehicle with this challan - HOLD VEHICLE', 'err'); }
     try {
-      const r = code.startsWith('AIS1|GCS|') || !k
+      const r = !k
         ? await api('/gate-out/scan', { method: 'POST', body: { scanned: code, manual_override: override, supervisor_pin: override ? pin : null } })
         : await api(`/picklists/${k.picklist_no}/gate-out`, { method: 'POST', body: { scanned: sc, manual_override: override, supervisor_pin: override ? pin : null } });
       toast(`${r.gcs_no || r.picklist_no} DISPATCHED · ${r.qty} pallets · ${r.vehicle_no || ''} → ${r.customer_code}`, 'done'); logActivity(override ? 'GATE_OUT_OVERRIDE' : 'GATE_OUT', r.picklist_no, `${r.qty} pallets`); load(); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
-  return (<Screen><Header title="OUT Gate" sub="Scan the GCS QR printed after loading" onBack={onBack} /><Page onRefresh={load}>
-    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan GCS or challan QR" />
+  return (<Screen><Header title="OUT Gate" sub="Scan the challan QR · customer dispatch, stock transfer, empty pallets" onBack={onBack} /><Page onRefresh={load}>
+    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the challan QR" />
       <SwitchRow label="Manual override (paper challan)" hint="Needs a supervisor PIN; recorded in the audit log" value={override} onChange={setOverride} danger />
       {override ? <TextInput style={[S.input, { marginTop: 6 }]} placeholder="Supervisor PIN" value={pin} onChangeText={setPin} secureTextEntry keyboardType="number-pad" /> : null}</View>
     <Text style={S.h2}>Approved, waiting at gate</Text>
     {lists.length === 0 ? <Empty icon="car-outline" text="No vehicle approved yet" hint="Logistics approves the vehicle on the web after the challan." /> : null}
     {lists.map(k => <ListRow key={k.picklist_no} title={`${k.vehicle_no || '—'} · ${k.customer_code}`} sub={`${k.picklist_no} · challan ${k.challan_no} · GCS ${k.gcs_no || 'pending'} · ${k.qty} pallets`} right={<Pill s={k.dispatch_type || 'PALLET_ONLY'} />} />)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
+}
+
+/** Security: each pallet QR scanned into the vehicle (FGWH / Packing material). The OUT gate holds the vehicle until all are loaded. */
+export function VehicleLoad({ onBack }) {
+  const [msg, toast] = useToast(); const [lists, setLists] = useState([]); const [k, setK] = useState(null); const [busy, setBusy] = useState(false);
+  const load = async () => { try { setLists(await api('/loading')); } catch (e) { toast(e.message, 'err'); } };
+  useEffect(() => { load(); }, []);
+  const pick = async (code) => {      // scan the GCS / challan QR to open the vehicle
+    const sc = code.startsWith('CHL|') ? code.split('|')[1] : code.startsWith('AIS1|GCS|') ? code.split('|')[2] : code.trim();
+    const all = lists.length ? lists : await api('/loading').catch(() => []);
+    const f = all.find((x) => x.gcs_no === sc || x.challan_no === sc || x.picklist_no === sc);
+    if (!f) return toast(`No vehicle being loaded for ${sc}`, 'err'); setK(f);
+  };
+  const onScan = async (code) => {
+    if (!needOnline(toast)) return; if (busy) return; setBusy(true);
+    try { const r = await api(`/picklists/${encodeURIComponent(k.picklist_no)}/load`, { method: 'POST', body: { scanned: code } }); setK(r);
+      feedback(r.duplicate ? 'warn' : 'ok'); toast(r.duplicate ? `${r.short} already loaded` : `${r.short} loaded · ${r.loaded} of ${r.total}`, r.duplicate ? 'warn' : 'done'); logActivity('VEHICLE_LOAD', k.picklist_no, r.pallet_no); }
+    catch (e) { feedback('err'); toast(e.message, 'err'); } finally { setBusy(false); }
+  };
+  if (!k) return (<Screen><Header title="Vehicle loading" sub="Security · scan each pallet QR into the vehicle" onBack={onBack} /><Page onRefresh={load}>
+    <View style={S.card}><Text style={S.mute}>Scan the GCS or challan QR of the vehicle, or pick it below</Text><ScanInput autoFocus={false} onScan={pick} placeholder="Scan GCS / challan QR" /></View>
+    {lists.length === 0 ? <Empty icon="car-outline" text="No vehicle being loaded" hint="FGWH / Packing prepare the pallets on the GCS first." /> : null}
+    {lists.map((x) => <ListRow key={x.picklist_no} title={`${x.vehicle_no || '—'} · ${x.customer_code || x.to_plant || ''}`} sub={`GCS ${x.gcs_no || '-'} · challan ${x.challan_no || 'pending'}`} right={<Pill s={x.loaded === x.total ? 'DONE' : 'PENDING'} label={`${x.loaded}/${x.total}`} />} onPress={() => setK(x)} />)}
+    <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
+  const left = k.pallets.filter((p) => !p.loaded);
+  return (<Screen><Header title={`Loading ${k.vehicle_no || ''}`} sub={`GCS ${k.gcs_no || '-'} · ${k.loaded} of ${k.total} loaded`} onBack={() => { setK(null); load(); }} /><Page>
+    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View>
+    {left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.total} pallet(s) loaded - send the vehicle to the OUT gate</Text> : <Text style={S.h2}>To load ({left.length})</Text>}
+    {left.map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}
+    {k.pallets.filter((p) => p.loaded).map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="DONE" label="LOADED" />} />)}
+  </Page><Toast msg={msg} /></Screen>);
 }
 
 export function Damage({ onBack }) {

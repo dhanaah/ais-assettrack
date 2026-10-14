@@ -5,7 +5,7 @@ server/pallet.db*
 server/logs/
 .venv/
 # node / expo
-hht/node_modules/
+hht/node_modules
 hht/android/
 hht/ios/
 hht/.expo/

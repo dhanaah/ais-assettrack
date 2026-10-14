@@ -16,7 +16,7 @@ import { DocPhotos } from '../ui/docs';
 
 export default function Yard({ onBack, filter }) {   // filter: 'CUST' customer return slips, 'CHL' other-plant challans, none = all
   const [slips, setSlips] = useState([]); const [slip, setSlip] = useState(null); const [scans, setScans] = useState([]); const [accept, setAccept] = useState(false); const [damaged, setDamaged] = useState(false); const [pin, setPin] = useState(''); const [msg, toast] = useToast();
-  const pick = (l) => (l || []).filter((s) => !filter || (filter === 'CHL' ? s.mode === 'CHL' : s.mode !== 'CHL'));
+  const pick = (l) => (l || []).filter((s) => s.mode !== 'CHM' && (!filter || (filter === 'CHL' ? s.mode === 'CHL' : s.mode !== 'CHL')));   // CHM = material challan (FGWH / Packing), never the yard
   useEffect(() => { listSlips().then((l) => setSlips(pick(l))); kv.get('plant').then(p => setAccept(!!p?.accept_other_plant_default)); }, []);
   const [docs, setDocs] = useState({}); const [showDoc, setShowDoc] = useState(false);
   useEffect(() => { kv.get('slip_docs').then(d => setDocs(d || {})); }, [slips]);
@@ -27,6 +27,7 @@ export default function Yard({ onBack, filter }) {   // filter: 'CUST' customer 
     let s = await getSlip(no);
     if (!s && sync.online) { await syncNow().catch(() => {}); s = await getSlip(no); setSlips(pick(await listSlips())); }
     if (!s) return toast(`${no} not found - is it registered at the IN gate? (closed slips / challans are not listed)`, 'err');
+    if (!pick([s]).length) return toast(s.mode === 'CHM' ? `${no} is a material challan - receive it at FGWH / Packing` : s.mode === 'CHL' ? `${no} is an other-plant challan - use Yard-In · Empty pallets from other plants` : `${no} is a customer slip - use Yard-In · Customer returns`, 'err');
     setDocSeen(false); open(s); toast(s.mode === 'CHL' ? `Challan from ${s.customer} - ${s.qty} pallet(s): scan each pallet` : s.mode === 'A' || s.mode === 'B1' ? `Option A slip - ${s.qty} pallet(s) listed: scan each pallet` : `Option B slip - count ${s.qty}: view the customer document, then scan each pallet`, 'ok');
   };
   const onScan = async (code) => {
@@ -47,7 +48,7 @@ export default function Yard({ onBack, filter }) {   // filter: 'CUST' customer 
   const sref = (p) => { const m = /^AIS-[A-Z0-9]+-([A-Z0-9]+)-(\d+)-\d+$/.exec(p || ''); return m ? `${m[1]}-${m[2]}` : p; };
   const close = async () => {
     if (!sync.online) return toast('Closing needs the server; scans are saved and will sync.', 'warn');
-    try { await syncNow(); const r = await api(`/slips/${slip.slip_no}/close`, { method: 'POST', body: { supervisor_pin: pin || null } }); toast(`Closed: received ${r.received}, short ${r.short.length}`); logActivity('SLIP_CLOSE', slip.slip_no, `received ${r.received}, short ${r.short.length}`); setSlip(null); await syncNow(); setSlips(await listSlips()); }
+    try { await syncNow(); const r = await api(`/slips/${slip.slip_no}/close`, { method: 'POST', body: { supervisor_pin: pin || null } }); toast(`Closed: received ${r.received}, short ${r.short.length}`); logActivity('SLIP_CLOSE', slip.slip_no, `received ${r.received}, short ${r.short.length}`); setSlip(null); await syncNow(); setSlips(pick(await listSlips())); }
     catch (e) { toast(e.message, 'err'); }
   };
 

@@ -12,31 +12,32 @@ import { fTime } from '../lib/when';
 
 // Functions grouped by where the work happens, in the order a pallet moves: Gate-In -> Yard-In -> Internal move ->
 // Yard-Out / dispatch -> Gate-Out, then Others. [key, title, sub, permission, icon, badge key]. Same screens as before.
+const MV = 'INTERNAL_MOVE';   // the old "all internal moves" permission still opens every move button
 const GROUPS = [
   { key: 'gin', title: 'Security · Gate-In', sub: 'Every vehicle coming in is endorsed here', icon: 'enter-outline', grad: ['#c026d3', '#a21caf'], items: [
     ['gatein', 'IN Gate', 'Slip A QR · other-plant challan (material or empty)', 'IN_GATE_SCAN', 'enter-outline'],
     ['slip', 'Return Slip (Option B)', 'Made at the gate: count + document photo', 'RETURN_SLIP_B', 'document-text-outline'] ] },
-  { key: 'yin', title: 'Yard-In', sub: 'Empty pallets only · pallet scanned', icon: 'layers-outline', grad: ['#10b981', '#047857'], items: [
+  { key: 'yin', title: 'Yard-In', sub: 'Empty pallets only · scan the pallet QR', icon: 'layers-outline', grad: ['#10b981', '#047857'], items: [
     ['yard', 'Customer returns', 'Slips A / B endorsed at Gate-In', 'YARD_SCAN', 'people-outline', 'slipsCust'],
-    ['yardchl', 'Empty pallets from other plants', 'Plant challan endorsed at Gate-In', 'YARD_SCAN', 'business-outline', 'slipsChl'],
-    ['mvyard', 'Empty pallets back to Yard', 'From Production / FGWH / Packing', 'INTERNAL_MOVE', 'arrow-undo-outline'],
+    ['yardchl', 'Empty pallets from other plants', 'Plant challan endorsed at Gate-In', 'YARD_IN_PLANT', 'business-outline', 'slipsChl'],
+    ['mvyard', 'Empty pallets back to Yard', 'From Production / FGWH / Packing', ['MOVE_TO_YARD', MV], 'arrow-undo-outline'],
     ['damage', 'Damage / Tag issue', 'Mark damaged, request a new tag', 'DAMAGE_MARK', 'warning-outline'] ] },
-  { key: 'yout', title: 'Yard-Out', sub: 'Empty pallets leaving the yard · pallet QR', icon: 'log-out-outline', grad: ['#14b8a6', '#0f766e'], items: [
-    ['mvprod', 'Empty pallets to Production', 'Pallet Yard → Production', 'INTERNAL_MOVE', 'construct-outline'],
-    ['mvpackE', 'Empty pallets to Packing', 'Pallet Yard → Packing', 'INTERNAL_MOVE', 'cube-outline'],
+  { key: 'yout', title: 'Yard-Out', sub: 'Empty pallets leaving the yard · scan the pallet QR', icon: 'log-out-outline', grad: ['#14b8a6', '#0f766e'], items: [
+    ['mvprod', 'Empty pallets to Production', 'Pallet Yard → Production', ['MOVE_TO_PRODUCTION', MV], 'construct-outline'],
+    ['mvpackE', 'Empty pallets to Packing', 'Pallet Yard → Packing', ['YARD_TO_PACKING', MV], 'cube-outline'],
     ['yardret', 'Empty pallets to other plants', 'Load on the empty-return challan', 'EMPTY_RETURN', 'return-up-back-outline', 'yardret'] ] },
-  { key: 'fg', title: 'FGWH · Main Dispatch', sub: 'Loaded pallets · scan the pallet card only', icon: 'business-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
-    ['receipt', 'Other-plant material', 'At FGWH · on the challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline'],
-    ['mvfg', 'Production → FGWH', 'Pallet card', 'INTERNAL_MOVE', 'arrow-forward-outline'],
+  { key: 'fg', title: 'FGWH · Main Dispatch', sub: 'Ships parts to customers · scan the pallet card only', icon: 'business-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
+    ['receipt', 'Other-plant material', 'At FGWH · challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline', 'chm'],
+    ['mvfg', 'Production → FGWH', 'Loaded pallets · pallet card', ['MOVE_TO_FGWH', MV], 'arrow-forward-outline'],
     ['dock', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dock'],
-    ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'],
-    ['mvpack', 'FGWH → Packing', 'Pallet card', 'INTERNAL_MOVE', 'arrow-redo-outline'] ] },
-  { key: 'pk', title: 'Packing · Dispatch', sub: 'Packing dispatches parts to customers too · pallet card only', icon: 'cube-outline', grad: ['#ec4899', '#be185d'], items: [
-    ['receiptP', 'Other-plant material', 'At Packing · on the challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline'],
-    ['dockP', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dockP'],
-    ['pdiP', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline'] ] },
+    ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'] ] },
+  { key: 'pk', title: 'Packing · Dispatch', sub: 'Ships parts to customers · scan the pallet card only', icon: 'cube-outline', grad: ['#ec4899', '#be185d'], items: [
+    ['receiptP', 'Other-plant material', 'At Packing · challan endorsed at Gate-In', 'PACK_RECEIPT', 'download-outline', 'chm'],
+    ['mvpk', 'Production → Packing', 'Loaded pallets · pallet card', ['MOVE_TO_PACKING', MV], 'arrow-forward-outline'],
+    ['dockP', 'Dispatch preparation', 'Pallet cards against the GCS', 'PACK_DISPATCH', 'clipboard-outline', 'dock'],
+    ['pdiP', 'PDI Check', 'Pallet card OK / reject → EBS', 'PACK_PDI', 'shield-checkmark-outline', 'pdi'] ] },
   { key: 'gout', title: 'Security · Loading & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
-    ['load', 'Vehicle loading', 'Each pallet QR into the vehicle · FGWH / Packing', 'DOCK_SCAN', 'car-outline'],
+    ['load', 'Vehicle loading', 'Each pallet QR into the vehicle · FGWH / Packing', 'VEHICLE_LOAD', 'car-outline'],
     ['gateout', 'OUT Gate', 'Challan QR only · Yard empties · FGWH & Packing material', 'OUT_GATE_SCAN', 'exit-outline'] ] },
   { key: 'oth', title: 'Others', sub: 'Look up, alerts, sync', icon: 'apps-outline', grad: ['#64748b', '#334155'], items: [
     ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, 'search-outline'],
@@ -52,7 +53,8 @@ async function counts() {
     dock: await one("SELECT COUNT(*) c FROM picklists WHERE status='OPEN' AND (load_point IS NULL OR load_point<>'YARD')"),
     yardret: await one("SELECT COUNT(*) c FROM picklists WHERE status='OPEN' AND load_point='YARD'"),
     pdi: await one("SELECT COUNT(*) c FROM picklists WHERE status='PDI_PENDING'"),
-    slipsCust: await one("SELECT COUNT(*) c FROM slips WHERE status<>'CLOSED' AND mode<>'CHL'"),
+    slipsCust: await one("SELECT COUNT(*) c FROM slips WHERE status<>'CLOSED' AND mode NOT IN ('CHL','CHM')"),
+    chm: await one("SELECT COUNT(*) c FROM slips WHERE status<>'CLOSED' AND mode='CHM'"),
     slipsChl: await one("SELECT COUNT(*) c FROM slips WHERE status<>'CLOSED' AND mode='CHL'"),
     pending: await one("SELECT COUNT(*) c FROM outbox WHERE status='PENDING'"),
     rejected: await one("SELECT COUNT(*) c FROM outbox WHERE status='REJECTED' AND created_at>=?", t0),
@@ -68,7 +70,7 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
   useEffect(() => { if (sync.online) checkUpdate().then(u => u && u.newer && setUpd(u)); }, [sync.online]);
   const col = !sync.online ? C.warn : sync.pending ? C.amber : C.ok;
   const srv = (getActiveServer() || '').replace(/^https?:\/\//, '');
-  const allowed = (it) => (!it[3] || perms.includes(it[3])) && !(benchMode && it[0] === 'pdi');
+  const allowed = (it) => (!it[3] || [].concat(it[3]).some((x) => perms.includes(x))) && !(benchMode && (it[0] === 'pdi' || it[0] === 'pdiP'));
   const group = (g) => <ButtonGroup key={g.key} g={g} items={g.items.filter(allowed)} n={n} nav={nav} />;
   return (<Screen>
     <Header logo below={<UserChip me={me} onLogout={onLogout} />} />

@@ -81,7 +81,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
         c.post(f"/api/v1/picklists/{n}/confirm", headers=H); c.post(f"/api/v1/picklists/{n}/challan", headers=H)
         c.post(f"/api/v1/picklists/{n}/approve", headers=H, json={"vehicle_no": "TN01X2"})
     with SessionLocal() as db:
-        k = db.get(models.PickList, n2); sc = k.gcs_no or k.challan_no
+        k = db.get(models.PickList, n2); sc = k.challan_no
     r = c.post(f"/api/v1/picklists/{n2}/gate-out", headers=H, json={"scanned": sc})
     check(r.status_code == 200 and pal("CHN-P001")[:2] == ("AT_CUSTOMER", "FORD"), "dispatched once, to FORD")
     r = c.post(f"/api/v1/picklists/{n2}/gate-out", headers=H, json={"scanned": sc})
@@ -94,7 +94,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
     c.post(f"/api/v1/picklists/{n3}/approve", headers=H, json={"vehicle_no": "TN01X3"})
     with SessionLocal() as db:
         p2 = db.get(models.Pallet, "CHN-P002"); p2.status = "AVAILABLE"; p2.picklist_no = None; db.commit()
-        k = db.get(models.PickList, n3); sc = k.gcs_no or k.challan_no
+        k = db.get(models.PickList, n3); sc = k.challan_no
     r = c.post(f"/api/v1/picklists/{n3}/gate-out", headers=H, json={"scanned": sc})
     check(r.status_code == 400 and "HOLD" in r.text, f"HOLD VEHICLE when a pallet left the load ({r.status_code})")
 

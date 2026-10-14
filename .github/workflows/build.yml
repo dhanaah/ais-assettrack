@@ -20,6 +20,7 @@ jobs:
         run: |
           python tests/test_parts_flow.py
           python tests/audit_fixes_check.py
+          python tests/process_rules_check.py
       - name: Import check + API smoke (SQLite, STUB integrations)
         run: |
           python -c "from app.main import app; print('import ok')"

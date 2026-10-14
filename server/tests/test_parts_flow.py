@@ -49,6 +49,14 @@ def tok(c, u, hht=True):
     return h
 
 
+def load_all(c, h, no):
+    """Security scans every prepared pallet QR into the vehicle (needed before the OUT gate for FGWH / Packing loads)."""
+    rows = [x for x in c.get("/api/v1/loading", headers=h).json() if x["picklist_no"] == no]
+    for p in (rows[0]["pallets"] if rows else []):
+        r = c.post(f"/api/v1/picklists/{no}/load", headers=h, json={"scanned": p["pallet_no"]})
+        assert r.status_code == 200, r.text
+
+
 def ev(c, h, t, payload):
     r = c.post("/api/v1/sync/push", headers=h, json={"events": [{"event_id": str(uuid.uuid4()), "device_id": "HHT-T", "event_type": t,
                                                                   "payload": payload, "local_ts": datetime.utcnow().isoformat()}]})
@@ -123,7 +131,10 @@ with TestClient(app) as c:
     check(r["invoice_no"] and r["challan_no"], f"invoice {r['invoice_no']} fetched, challan {r['challan_no']}")
     c.post(f"/api/v1/picklists/{no}/approve", headers=H, json={"vehicle_no": "TN01AB1234"})
     k = c.get(f"/api/v1/picklists/{no}", headers=H).json()["picklist"]
-    r = c.post(f"/api/v1/picklists/{no}/gate-out", headers=H, json={"scanned": k["gcs_no"]}).json()
+    r = c.post(f"/api/v1/picklists/{no}/gate-out", headers=H, json={"scanned": k["challan_no"]})
+    check(r.status_code == 400 and "not loaded by Security" in r.text, f"OUT gate holds the vehicle until Security has loaded every pallet: {r.text[:90]}")
+    load_all(c, H, no)
+    r = c.post(f"/api/v1/picklists/{no}/gate-out", headers=H, json={"scanned": k["challan_no"]}).json()
     check(r["status"] == "DISPATCHED", "dispatched")
     p1 = c.get("/api/v1/pallets/CHN-P001", headers=H).json(); p1 = p1.get("pallet") or p1
     check(p1["status"] == "AT_CUSTOMER" and p1["load_state"] == "LOADED", "pallet AT_CUSTOMER and LOADED")
@@ -366,11 +377,12 @@ with TestClient(app) as c:
     qr = r["gcs_qr"]
     pr = c.get(f"/print/gcs/{no}?tok=" + c.post("/api/v1/auth/ticket", headers=W).json()["ticket"])
     check(pr.status_code == 200 and "GCS-CHN-7781" in pr.text and "TN09AB1234" in pr.text, "GCS print page with QR")
-    bad = qr[:-8] + "DEADBEEF"
-    r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": bad})
-    check(r.status_code == 400 and "HOLD" in r.text, "forged GCS QR refused at the gate")
-    r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": qr}).json()
-    check(r["status"] == "DISPATCHED", "OUT gate: GCS QR -> dispatched")
+    r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": qr})
+    check(r.status_code == 400 and "CHALLAN" in r.text, "OUT gate takes the challan only - GCS QR refused")
+    load_all(c, H, no)
+    chq = f"CHL|{c.get(f'/api/v1/picklists/{no}', headers=H).json()['picklist']['challan_no']}|{no}|3"
+    r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": chq}).json()
+    check(r["status"] == "DISPATCHED", "OUT gate: challan QR -> dispatched")
     p31 = c.get("/api/v1/pallets/CHN-P031", headers=H).json(); p31 = p31.get("pallet") or p31
     check(p31["status"] == "AT_CUSTOMER" and p31["customer_code"] == "HMIL" and p31["challan_ref"] == r["challan_no"], "pallets AT_CUSTOMER with the challan")
     with SessionLocal() as db:

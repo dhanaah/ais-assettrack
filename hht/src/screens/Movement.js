@@ -2,17 +2,19 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Glass, Ring, Screen, Segmented, Empty, ListRow } from '../ui/kit';
-import { enqueue, setPalletLocal, logActivity, resolveTag, listPicklists } from '../lib/db';
-import { validateMove } from '../lib/rules';
+import { enqueue, setPalletLocal, logActivity, resolveTag, listPicklists, listSlips, getLpn } from '../lib/db';
+import { validateMove, isCard, isPalletQr } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
 import { fDT, fTimeS } from '../lib/when';
 
+// [key, title, sub, to zone, load, scan]: empty pallets = pallet QR (Yard staff); loaded = pallet card (FGWH / Packing)
 const ROUTES = [
-  ['PRODUCTION', 'Empty pallets to Production', 'Pallet Yard → Production · scan the pallet'],
-  ['FGWH', 'Production → FGWH', 'Loaded with finished goods · scan the part cards'],
-  ['PACKING', 'FGWH → Packing', 'Loaded for packing · scan the part cards'],
-  ['YARD', 'Empty pallets back to Yard', 'From Production / FGWH / Packing · scan the pallet'],
+  ['PRODUCTION', 'Empty pallets to Production', 'Pallet Yard → Production · scan the pallet QR', 'PRODUCTION', 'EMPTY', 'QR'],
+  ['PACKING_E', 'Empty pallets to Packing', 'Pallet Yard → Packing · scan the pallet QR', 'PACKING', 'EMPTY', 'QR'],
+  ['YARD', 'Empty pallets back to Yard', 'From Production / FGWH / Packing · scan the pallet QR', 'YARD', 'EMPTY', 'QR'],
+  ['FGWH', 'Production → FGWH', 'Loaded with finished goods · scan the pallet card', 'FGWH', 'LOADED', 'CARD'],
+  ['PACKING', 'Production → Packing', 'Loaded with finished goods · scan the pallet card', 'PACKING', 'LOADED', 'CARD'],
 ];
 
 const AlertBox = ({ text, onClose }) => text ? (
@@ -22,14 +24,16 @@ const AlertBox = ({ text, onClose }) => text ? (
 export function Move({ onBack, preset }) {     // preset: open one route straight from the home button
   const [route, setRoute] = useState(preset ? ROUTES.find((r) => r[0] === preset) || null : null); const [done, setDone] = useState([]); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
   const onScan = async (code) => {
-    const v = await validateMove(code, route[0]);
+    const zone = route[3], load = route[4];
+    if (route[5] === 'QR' && await isCard(code)) return toast('Empty pallet move: scan the pallet QR, not the pallet card', 'err');
+    if (route[5] === 'CARD' && !(await isCard(code))) return toast(await isPalletQr(code) ? 'Loaded pallet move: scan the pallet card, not the pallet QR' : 'Pallet card not known - sync / upload the WMS stock', 'err');
+    const v = await validateMove(code, zone);
     if (!v.ok) return toast(v.msg, v.dup ? 'warn' : 'err');
-    const load = route[0] === 'YARD' || route[0] === 'PRODUCTION' ? 'EMPTY' : 'LOADED';
-    await setPalletLocal(v.pallet.pallet_no, { zone: route[0], load, status: route[0] === 'PRODUCTION' && v.pallet.status === 'HELD' ? 'IN_WIP' : (route[0] === 'YARD' && v.pallet.status === 'IN_WIP' ? 'HELD' : v.pallet.status) });
-    const id = await enqueue('PALLET_MOVE', { scanned: code, to_zone: route[0] }, !sync.online);
-    logActivity('PALLET_MOVE', v.pallet.pallet_no, route[0]);
+    await setPalletLocal(v.pallet.pallet_no, { zone, load, status: zone === 'PRODUCTION' && v.pallet.status === 'HELD' ? 'IN_WIP' : (zone === 'YARD' && v.pallet.status === 'IN_WIP' ? 'HELD' : v.pallet.status) });
+    const id = await enqueue('PALLET_MOVE', { scanned: code, to_zone: zone, load, strict: 1 }, !sync.online);
+    logActivity('PALLET_MOVE', v.pallet.pallet_no, zone);
     setDone(d => [{ p: v.pallet.pallet_no, load, t: fTimeS(new Date()) }, ...d].slice(0, 50));
-    toast(`${v.pallet.pallet_no} → ${route[0]} (${load})`, v.warn.length ? 'warn' : 'ok');
+    toast(`${v.pallet.pallet_no} → ${zone} (${load})`, v.warn.length ? 'warn' : 'ok');
     if (v.warn.length) setAlert(v.warn.join('\n'));
     const r = await pushAndResult(id);
     if (r.status === 'REJECTED') { setAlert('Server rejected: ' + r.result); toast(r.result, 'err'); syncNow({ full: true }).catch(() => {}); }
@@ -42,35 +46,50 @@ export function Move({ onBack, preset }) {     // preset: open one route straigh
   return (<Screen><Header title={route[1]} sub={route[2]} onBack={preset ? onBack : () => setRoute(null)} /><Page>
     <Glass style={{ alignItems: 'center' }}><Ring value={String(done.length)} label="moved this session" color={C.ok} size={84} /></Glass>
     <AlertBox text={alert} onClose={() => setAlert(null)} />
-    <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan pallet (or any LPN on it)" /></View>
+    <View style={S.card}><ScanInput onScan={onScan} placeholder={route[5] === 'QR' ? 'Scan the pallet QR' : 'Scan the pallet card'} /></View>
     {done.length === 0 ? <Empty icon="scan-outline" text="Scan the first pallet" hint="Each pallet moved in this session is listed here." /> : null}
     {done.map((d, i) => <ListRow key={i} index={done.length - i} title={d.p} sub={d.t} right={<Pill s={d.load} />} />)}
   </Page><Toast msg={msg} /></Screen>);
 }
 
-export function Receipt({ onBack }) {
-  const [zone, setZone] = useState('FGWH'); const [ref, setRef] = useState(''); const [done, setDone] = useState([]); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
+export function Receipt({ onBack, zone = 'FGWH' }) {   // other-plant material at FGWH or Packing: pallet card on a challan endorsed at the IN gate
+  const [chl, setChl] = useState([]); const [ref, setRef] = useState(null); const [pin, setPin] = useState(''); const [done, setDone] = useState([]); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
+  const loadChl = async () => setChl((await listSlips()).filter((s) => s.mode === 'CHM'));
+  useEffect(() => { loadChl(); }, []);
+  const closeChl = async () => {
+    if (!sync.online) return toast('Closing needs the server; scans are saved and will sync.', 'warn');
+    try { await syncNow(); const r = await api(`/slips/${encodeURIComponent(ref)}/close`, { method: 'POST', body: { supervisor_pin: pin || null } }); setPin('');
+      toast(`Challan ${ref} closed: received ${r.received}${r.short?.length ? `, short ${r.short.length}` : ''}`, 'done'); logActivity('CHALLAN_CLOSE', ref, String(r.received)); setRef(null); await syncNow(); loadChl(); }
+    catch (e) { setAlert(e.message); toast(e.message, 'err'); }
+  };
   const onScan = async (code) => {
-    const { pallet } = await resolveTag(code);
-    if (!pallet) return toast('Unknown pallet - sync / check tag', 'err');
-    const id = await enqueue('PLANT_RECEIPT', { scanned: code, zone, ref: ref || null }, !sync.online);
-    await setPalletLocal(pallet.pallet_no, { status: 'IN_WIP', zone, load: 'LOADED' });
-    logActivity('PLANT_RECEIPT', pallet.pallet_no, zone);
-    setDone(d => [{ p: pallet.pallet_no, h: pallet.home, t: fTimeS(new Date()) }, ...d]);
-    toast(`${pallet.pallet_no} (${pallet.home}) received at ${zone}`);
+    if (!ref) return toast('Pick the challan first (registered at the IN gate)', 'warn');
+    if (!(await isCard(code)) && (await isPalletQr(code))) return toast('Scan the pallet card, not the pallet QR', 'err');   // unknown card: the server decides
+    const l = await getLpn(code.includes('.') ? code.split('.').pop().toUpperCase() : code); const pno = l?.pallet || code;
+    const id = await enqueue('PLANT_RECEIPT', { scanned: code, zone, ref, strict: 1 }, !sync.online);
+    if (l?.pallet) await setPalletLocal(l.pallet, { status: 'IN_WIP', zone, load: 'LOADED' });
+    logActivity('PLANT_RECEIPT', pno, zone);
+    setDone(d => [{ p: pno, c: code, t: fTimeS(new Date()) }, ...d]);
+    toast(`${pno} received at ${zone}`);
     const r = await pushAndResult(id);
     if (r.status === 'REJECTED') { setAlert(r.result); toast(r.result, 'err'); } else if (r.status === 'EXCEPTION') setAlert(r.result);
   };
-  return (<Screen><Header title="Other-plant Material Receipt" sub="Loaded pallets from another AIS plant" onBack={onBack} /><Page>
-    <Segmented options={[['FGWH', 'Receive at FGWH'], ['PACKING', 'Receive at PACKING']]} value={zone} onChange={setZone} />
+  return (<Screen><Header title={`Other-plant material · ${zone === 'PACKING' ? 'Packing' : 'FGWH'}`} sub="Pallet card on a challan endorsed at the IN gate" onBack={onBack} /><Page onRefresh={async () => { await syncNow(); loadChl(); }}>
     <AlertBox text={alert} onClose={() => setAlert(null)} />
-    <View style={S.card}><TextInput style={S.input} placeholder="Sending plant challan / invoice (optional)" value={ref} onChangeText={setRef} /><ScanInput onScan={onScan} placeholder="Scan pallet" /></View>
-    <Text style={S.mute}>Received pallets stay IN WIP. When emptied: Internal Movement → Packing → Pallet Yard, then an Empty Return pick list sends them home (EBS challan + e-way bill).</Text>
-    {done.map((d, i) => <View key={i} style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}><Text style={{ fontWeight: '600' }}>{d.p} · home {d.h}</Text><Text style={S.mute}>{d.t}</Text></View>)}
+    <Text style={S.h2}>1 · Challan (endorsed at the IN gate)</Text>
+    {chl.length === 0 ? <Empty icon="document-outline" text="No material challan at the gate" hint="The IN gate scans the sending plant's challan first. Pull down to refresh." /> : null}
+    {chl.map((s) => <TouchableOpacity key={s.slip_no} onPress={() => setRef(s.slip_no)} style={[S.card, { paddingVertical: 10, borderWidth: ref === s.slip_no ? 2 : 1, borderColor: ref === s.slip_no ? C.accent : C.line }]}>
+      <Text style={{ fontWeight: '700', color: C.fg }}>{s.slip_no}</Text><Text style={S.mute}>From plant {s.customer} · {s.qty} pallet(s)</Text></TouchableOpacity>)}
+    {ref ? <><Text style={S.h2}>2 · Scan each pallet card</Text><View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet card" /></View>
+      <Text style={S.h2}>3 · All received</Text>
+      <TextInput style={S.input} placeholder="Supervisor PIN (only if pallets are short)" value={pin} onChangeText={setPin} secureTextEntry keyboardType="number-pad" />
+      <Btn title="Close challan" icon="checkmark-done-outline" onPress={closeChl} /></> : null}
+    <Text style={S.mute}>Received pallets stay IN WIP at {zone === 'PACKING' ? 'Packing' : 'FGWH'}. When emptied they go to the Pallet Yard (Yard-In · Empty pallets back to Yard) and are sent home on an empty-return challan.</Text>
+    {done.map((d, i) => <View key={i} style={[S.card, { paddingVertical: 8, marginBottom: 6 }]}><Text style={{ fontWeight: '600', color: C.fg }}>{d.p}</Text><Text style={S.mute}>card {d.c} · {d.t}</Text></View>)}
   </Page><Toast msg={msg} /></Screen>);
 }
 
-export function Pdi({ onBack }) {
+export function Pdi({ onBack, packing = false }) {
   const [lists, setLists] = useState([]); const [pk, setPk] = useState(null); const [data, setData] = useState(null); const [rejectMode, setRejectMode] = useState(false); const [remarks, setRemarks] = useState(''); const [msg, toast] = useToast();
   const load = async () => { try { setLists(await api('/picklists?status=PDI_PENDING')); } catch (e) { setLists(await listPicklists(['PDI_PENDING'])); toast('Offline - PDI needs the server', 'warn'); } };
   useEffect(() => { load(); }, []);
@@ -85,7 +104,7 @@ export function Pdi({ onBack }) {
     try { const r = await api(`/picklists/${pk.picklist_no}/pdi-complete`, { method: 'POST' }); toast(`${r.message} · ${r.status}${r.so_number ? ' · SO ' + r.so_number : ''}`, r.rejected?.length ? 'warn' : 'ok'); logActivity('PDI_COMPLETE', pk.picklist_no, r.status); setPk(null); setData(null); load(); syncNow().catch(() => {}); }
     catch (e) { toast(e.message, 'err'); }
   };
-  if (!pk) return (<Screen><Header title="PDI Check" sub="Pick lists waiting for QA" onBack={onBack} /><Page>
+  if (!pk) return (<Screen><Header title={packing ? 'PDI Check · Packing' : 'PDI Check'} sub="Pick lists waiting for QA · scan the pallet card" onBack={onBack} /><Page>
     {lists.length === 0 ? <Empty text="No pick list waiting for PDI" hint="Lists arrive here after the dock confirms them." /> : null}
     {lists.map(k => <TouchableOpacity key={k.picklist_no} style={S.card} onPress={() => open(k)}><Text style={S.h2}>{k.picklist_no}</Text><Text style={S.mute}>{k.customer_code || k.customer} · {k.part_no} × {k.part_qty}</Text></TouchableOpacity>)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);

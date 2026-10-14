@@ -192,7 +192,7 @@ def gcs_print(no: str, tok: str = Query(...), db: Session = Depends(get_db)):
     {item_tbl}
     <table><tr><th>#</th><th>Pallet</th><th>Part cards (LPN)</th><th>Loaded at</th><th>By</th></tr>{rows}
     <tr><th colspan="4" style="text-align:right">TOTAL PALLETS LOADED</th><th>{len(lines)}</th></tr></table>
-    <div style="margin-top:8px;font-size:11px"><b>OUT gate:</b> scan the QR at the top right. The gate accepts only a QR printed by AssetTrack for this GCS and vehicle.</div>
+    <div style="margin-top:8px;font-size:11px"><b>Loading:</b> Security scans each pallet QR into the vehicle (QR at the top right opens this GCS). <b>OUT gate:</b> scan the challan QR - the vehicle is held until every pallet is loaded.</div>
     <div class="sig"><div>PDI (Planning Bench)<br><b>{k.pdi_sign or '—'}</b></div><div>Logistics (Shift supervisor, Planning Bench)<br><b>{k.supervisor_sign or '—'}</b></div><div>Security (loading verified)<br><b>{esc(p.user.full_name)} ({esc(p.user_id)})</b></div></div>
     <div class="foot">AIS AssetTrack · printed {datetime.now():%d-%b-%y %H:%M} by {esc(p.user_id)}</div></body></html>"""
     return HTMLResponse(html)

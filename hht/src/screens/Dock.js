@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert, TextInput } from 'react-native';
 import { S, C, Btn, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen, Page, Empty } from '../ui/kit';
 import { listPicklists, getPicklist, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity, kv } from '../lib/db';
-import { validateDockScan2 } from '../lib/rules';
+import { validateDockScan2, isCard, isPalletQr } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';
 import { fTimeS } from '../lib/when';
@@ -15,7 +15,7 @@ const isYard = (k) => k?.load_point === 'YARD';
 const isGcs = (k) => k?.source === 'GCS';
 const label = (k) => k.dispatch_type === 'EMPTY_RETURN' ? `Empty pallets → ${k.to_plant}${isYard(k) ? ' · Yard loading' + (k.vehicle_no ? ' · ' + k.vehicle_no : '') : ''}` : isGcs(k) ? `GCS ${k.gcs_no || ''} · ${k.customer} · ${k.vehicle_no || 'vehicle ?'}${k.invoice_no ? ' · inv ' + k.invoice_no : ''}` : isPart(k) ? (k.part_no ? `${k.customer} · ${k.part_no} × ${k.part_qty}` : `Dispatch Bench trip · ${k.customer} · ${k.part_qty} pcs`) : `Customer ${k.customer} · pallets only`;
 
-export default function Dock({ onBack, yard = false }) {
+export default function Dock({ onBack, yard = false, packing = false }) {   // packing: Packing · Dispatch preparation (same lists)
   const [lists, setLists] = useState([]); const [pk, setPk] = useState(null); const [scans, setScans] = useState([]); const [lpns, setLpns] = useState([]);
   const [waitLpn, setWaitLpn] = useState(null); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
   const [opts, setOpts] = useState(null); const [owner, setOwner] = useState(null); const [veh, setVeh] = useState('');
@@ -42,6 +42,9 @@ export default function Dock({ onBack, yard = false }) {
   const onScan = async (code) => {
     let first = code, second = null;
     if (waitLpn) { first = waitLpn.lpn; second = code; }
+    else if (!yard && ['CUSTOMER', 'STOCK_TRANSFER'].includes(pk.dispatch_type) && !(await isCard(code)) && (await isPalletQr(code))) {
+      return toast('Dispatch preparation: scan the pallet card - Security scans the pallet QR at vehicle loading', 'err');
+    }
     const v = await validateDockScan2(pk.picklist_no, first, second);
     if (!v.ok) {
       if (v.needPallet) { setWaitLpn(v.lpn); return toast(v.msg, 'warn'); }
@@ -51,7 +54,7 @@ export default function Dock({ onBack, yard = false }) {
     if (!(await localScans(pk.picklist_no)).some(x => x.pallet_no === v.pallet.pallet_no)) await addLocalScan(pk.picklist_no, v.pallet.pallet_no);
     await setPalletLocal(v.pallet.pallet_no, { status: 'ALLOCATED', picklist: pk.picklist_no, load: pk.dispatch_type === 'EMPTY_RETURN' ? 'EMPTY' : (v.lpns.length ? 'LOADED' : v.pallet.load) });
     for (const l of v.lpns) { await addLpnScan(pk.picklist_no, l.lpn, v.pallet.pallet_no, l.qty); await setLpnLocal(l.lpn, { status: 'PICKED', picklist: pk.picklist_no, pallet: v.pallet.pallet_no }); }
-    const payload = { picklist_no: pk.picklist_no, scanned: first, local_pallet: v.pallet.pallet_no }; if (second) payload.pallet = second;
+    const payload = { picklist_no: pk.picklist_no, scanned: first, local_pallet: v.pallet.pallet_no, strict: 1 }; if (second) payload.pallet = second;
     const id = await enqueue('PALLET_SCAN_DOCK', payload, !sync.online);
     logActivity(sync.online ? 'SCAN_DOCK' : 'SCAN_DOCK_OFFLINE', pk.picklist_no, v.pallet.pallet_no, { lpns: v.lpns.map(l => l.lpn) });
     await refresh();
@@ -111,8 +114,8 @@ export default function Dock({ onBack, yard = false }) {
     <Text style={S.mute}>Vehicle no. (optional now, needed before OUT gate)</Text><TextInput style={S.input} value={veh} onChangeText={t => setVeh(t.toUpperCase())} autoCapitalize="characters" placeholder="TN01AB1234" />
     <Btn title="Start loading" icon="play-outline" onPress={start} color={owner ? C.ok : C.accent} /></Page><Toast msg={msg} /></Screen>);
 
-  if (!pk) return (<Screen><Header title={yard ? 'Empty Pallet Return' : 'Vehicle Loading'} sub={yard ? 'Other plants\' empty pallets, loaded at the Yard' : 'Select a pick list'} onBack={onBack} /><Page onRefresh={async () => { await syncNow(); load(); }}>
-    {yard ? <Btn title="New empty return (scan at Yard)" icon="add-circle-outline" onPress={newReturn} /> : <View style={[S.card, { paddingVertical: 10 }]}><Text style={S.h2}>Load a vehicle by GCS</Text><Text style={S.mute}>Scan the GCS QR (scanner or camera); the loading sheet opens with vehicle, customer and invoice.</Text><ScanInput autoFocus={false} placeholder="Scan / type GCS number" onScan={(code) => openGcs(code, false)} /></View>}
+  if (!pk) return (<Screen><Header title={yard ? 'Empty pallets to other plants' : packing ? 'Packing · Dispatch preparation' : 'Dispatch preparation'} sub={yard ? 'Other plants\' empty pallets, loaded at the Yard' : 'Scan the pallet cards against the GCS'} onBack={onBack} /><Page onRefresh={async () => { await syncNow(); load(); }}>
+    {yard ? <Btn title="New empty return (scan at Yard)" icon="add-circle-outline" onPress={newReturn} /> : <View style={[S.card, { paddingVertical: 10 }]}><Text style={S.h2}>Open the GCS</Text><Text style={S.mute}>Scan the GCS QR (scanner or camera); the sheet opens with vehicle, customer and invoice. Then scan each pallet card.</Text><ScanInput autoFocus={false} placeholder="Scan / type GCS number" onScan={(code) => openGcs(code, false)} /></View>}
     {lists.length === 0 ? <Empty icon="list-outline" text={yard ? 'No open Yard loading' : 'No open trips'} hint={yard ? 'Start a new empty return above.' : 'Trips planned in the Dispatch Planning Bench appear here within a minute. Pull down to refresh.'} /> : null}
     {lists.map(k => <TouchableOpacity key={k.picklist_no} style={S.card} onPress={() => open(k)}>
       <View style={S.row}><Text style={[S.h2, { flex: 1, marginBottom: 0 }]}>{k.picklist_no}</Text><Pill s={k.dispatch_type || 'PALLET_ONLY'} /></View>

@@ -311,7 +311,8 @@ def picklist_lpns(no: str, p: Principal = Depends(current_user), db: Session = D
 
 
 @router.post("/picklists/{no}/pdi")
-def pdi_mark(no: str, body: PdiIn, request: Request, p: Principal = Depends(hht("PDI_CHECK")), db: Session = Depends(get_db)):
+def pdi_mark(no: str, body: PdiIn, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
+    p.require_any("PDI_CHECK", "PACK_PDI")
     k = db.get(models.PickList, no)
     if not k:
         raise HTTPException(404, "Not found")
@@ -327,7 +328,8 @@ def pdi_mark(no: str, body: PdiIn, request: Request, p: Principal = Depends(hht(
 
 
 @router.post("/picklists/{no}/pdi-complete")
-def pdi_complete(no: str, request: Request, p: Principal = Depends(hht("PDI_CHECK")), db: Session = Depends(get_db)):
+def pdi_complete(no: str, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
+    p.require_any("PDI_CHECK", "PACK_PDI")
     k = db.get(models.PickList, no)
     if not k:
         raise HTTPException(404, "Not found")

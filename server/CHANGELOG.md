@@ -1,4 +1,23 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.26.0 + HHT 2.20.0 - 2026-10-14 - functions grouped by area, process rules, one permission per button
+**HHT home (approved samples):** functions are grouped as buttons (gradient fill, picture in the corner), in the order a pallet moves:
+- **Security · Gate-In:** IN Gate (slip A QR, other-plant challan - material or empty) · Return Slip (Option B).
+- **Yard-In** (empty only, pallet QR): Customer returns · **Empty pallets from other plants** (new) · Empty pallets back to Yard (from Production / FGWH / Packing) · Damage / Tag issue.
+- **Yard-Out** (pallet QR): Empty pallets to Production · **Empty pallets to Packing** (new) · Empty pallets to other plants.
+- **FGWH · Main Dispatch** (pallet card): Other-plant material · Production → FGWH · Dispatch preparation · PDI Check.
+- **Packing · Dispatch** (pallet card, new section): Other-plant material · Production → Packing · Dispatch preparation · PDI Check.
+- **Security · Loading & Gate-Out:** **Vehicle loading** (new - each pallet QR into the vehicle, loaded X of Y) · OUT Gate (challan QR only).
+- **Others:** Lookup · Missed Scans · Pending & Sync. Customer HHT: Inward · Return to AIS · Others.
+
+**Rules (server and HHT):**
+- Yard receives only slips / challans **endorsed at the IN gate**; Yard scans the **pallet QR only** (a pallet card is refused).
+- FGWH / Packing moves, other-plant material receipt and dispatch preparation use the **pallet card only**; the pallet is found from the card.
+- Other-plant material is received only on a challan endorsed at the IN gate, and closed from the receipt screen. The Yard refuses material challans.
+- **No movement between FGWH (Main Dispatch) and Packing** - both ship parts to customers.
+- **Security vehicle loading:** only pallets prepared on that GCS are accepted. **OUT gate takes the challan only** and holds the vehicle until every prepared pallet is loaded (supervisor PIN override as before). Loads created before this version are not held.
+
+**User access (server):** one permission per HHT button, set per role or user on the web (Users, grouped like the HHT): new YARD_IN_PLANT, YARD_TO_PACKING, PACK_RECEIPT, PACK_DISPATCH, PACK_PDI, VEHICLE_LOAD. At the first start, users of an old permission get the matching new one once (Vehicle loading only to OUT-gate Security - the person who prepares a load does not verify it). Admin changes afterwards are kept.
+
 ## Docs - 2026-10-13 (server 1.25.0, HHT 2.19.0 unchanged)
 - New `docs/DEPLOY_IIS_SQLSERVER.md`: step-by-step production install on IIS + SQL Server and how to update from E:\AssetTrack.
 - `docs/DEPLOY_SERVER_IT.md`: customer HHTs over the restricted FortiClient VPN account (nothing published to the internet); database name PalletDB as in the SQL script.

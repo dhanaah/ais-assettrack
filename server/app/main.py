@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from . import config, models, integration, bench, reminders  # noqa: F401 (reminders registers email_log)
 from .db import engine, Base, SessionLocal, add_missing_columns
-from .security import ROLE_SEED, NEW_PERMS, hash_pw
+from .security import ROLE_SEED, NEW_PERMS, IMPLIED_1_26, hash_pw
 from .routers import auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations
 from .activity import ActivityMiddleware
 
@@ -30,6 +30,24 @@ def seed(db: Session):
             for x in perms:
                 if x not in have and x in NEW_PERMS:
                     r.permissions.append(models.RolePermission(role_code=code, perm=x))
+    if not db.get(models.Setting, "perm_upgrade_1_26"):        # one time: split functions keep their users
+        db.flush()
+        for r in db.query(models.Role).all():
+            have = {x.perm for x in r.permissions}
+            for old, new in IMPLIED_1_26.items():
+                if old in have:
+                    for x in new:
+                        if x not in have:
+                            r.permissions.append(models.RolePermission(role_code=r.code, perm=x)); have.add(x)
+        for u in db.query(models.User).filter(models.User.perms_override.isnot(None)).all():
+            have = [x.strip() for x in u.perms_override.split(",") if x.strip()]
+            for old, new in IMPLIED_1_26.items():
+                if old in have:
+                    have += [x for x in new if x not in have]
+            u.perms_override = ",".join(have)
+        db.add(models.Setting(key="perm_upgrade_1_26", value="done"))
+    if not db.get(models.Setting, "vehicle_load_from"):        # loads made before 1.26 are not held for Security loading
+        db.add(models.Setting(key="vehicle_load_from", value=models.utcnow().isoformat()))
     if db.query(models.User).count() == 0:
         u = models.User(user_id=config.BOOTSTRAP_ADMIN_USER, full_name="Central Admin", password_hash=hash_pw(config.BOOTSTRAP_ADMIN_PASS),
                         plant_code=None, supervisor_allowed=True, must_change_pw=True)

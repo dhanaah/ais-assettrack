@@ -57,14 +57,22 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
             if pk.load_point == "YARD":          # empty return loaded at the Pallet Yard
                 p.require_any("EMPTY_RETURN", "DOCK_SCAN")
             else:
-                p.require("DOCK_SCAN")
+                p.require_any("DOCK_SCAN", "PACK_DISPATCH")
+                if pl.get("strict") and t == "PALLET_SCAN_DOCK" and pk.dispatch_type in lpnsvc.PART_TYPES and not pl.get("pallet") and not lpnsvc.is_card(db, pl["scanned"]) and lpnsvc.is_pallet_qr(db, pl["scanned"]):
+                    raise services.RuleError("Dispatch preparation: scan the pallet card - the pallet QR is scanned by Security at vehicle loading")
             if t == "PALLET_UNSCAN_DOCK":
                 return "APPLIED", lpnsvc.dock_unscan(db, pk, pl["scanned"], plant, user_id=p.user_id, device_id=e.device_id, event_id=e.event_id)
             msg, alerts = lpnsvc.dock_scan(db, pk, pl["scanned"], plant, pallet_scan=pl.get("pallet"), user_id=p.user_id,
                                            device_id=e.device_id, event_id=e.event_id)
             return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
         if t == "PALLET_MOVE":
-            p.require_any("INTERNAL_MOVE", "MOVE_TO_" + str(pl.get("to_zone", "")).upper())
+            to = str(pl.get("to_zone", "")).upper(); empty = to in ("PRODUCTION", "YARD") or str(pl.get("load") or "").upper() == "EMPTY"
+            p.require_any("INTERNAL_MOVE", "YARD_TO_PACKING" if (to == "PACKING" and empty) else "MOVE_TO_" + to)
+            if pl.get("strict"):                        # HHT 2.20+: Yard routes = pallet QR, FGWH / Packing routes = pallet card
+                if empty and lpnsvc.is_card(db, pl["scanned"]):
+                    raise services.RuleError("Empty pallet move: scan the pallet QR, not the pallet card")
+                if not empty and not lpnsvc.is_card(db, pl["scanned"]):
+                    raise services.RuleError("Loaded pallet move: scan the pallet card (not the pallet QR)" if lpnsvc.is_pallet_qr(db, pl["scanned"]) else f"Pallet card {pl['scanned'][:40]} not known - upload the WMS stock")
             tag, pal = services.resolve_tag(db, pl["scanned"])
             if not pal:
                 l = db.get(models.Lpn, pl["scanned"].strip())
@@ -75,25 +83,51 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                                                device_id=e.device_id, event_id=e.event_id, remarks=pl.get("remarks"))
             return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
         if t == "PLANT_RECEIPT":
-            p.require("PLANT_RECEIPT")
-            tag, pal = services.resolve_tag(db, pl["scanned"])
+            p.require("PACK_RECEIPT" if str(pl.get("zone", "FGWH")).upper() == "PACKING" else "PLANT_RECEIPT")
+            if pl.get("strict"):                        # HHT 2.20+: scan the pallet card; the pallet is found from it
+                if not lpnsvc.is_card(db, pl["scanned"]):
+                    raise services.RuleError("Other-plant material: scan the pallet card (not the pallet QR)" if lpnsvc.is_pallet_qr(db, pl["scanned"])
+                                             else f"Pallet card {pl['scanned'][:40]} not known - not on a loading of the sending plant")
+                _k, _l, pal = lpnsvc.resolve_any(db, pl["scanned"], plant)
+                if not pal:
+                    raise services.RuleError(f"Pallet card {pl['scanned'][:40]} is not linked to a pallet")
+                ref = pal.challan_ref
+                if not ref or not db.query(models.GateEntry).filter_by(plant_code=plant, kind="CHALLAN", ref_no=ref).first():
+                    raise services.RuleError(f"Challan {ref or '-'} of {pal.pallet_no} is not endorsed at the IN gate - HOLD, send the vehicle to the IN gate")
+                if pl.get("ref") and pl["ref"] != ref:
+                    raise services.RuleError(f"{pal.pallet_no} is on challan {ref}, not {pl['ref']}")
+                tag = None
+            else:
+                tag, pal = services.resolve_tag(db, pl["scanned"])
             if not pal:
                 raise services.RuleError(f"Unknown pallet {pl['scanned']}")
             msg, alerts = lpnsvc.receive_from_plant(db, pal, pl.get("zone", "FGWH"), plant, user_id=p.user_id, device_id=e.device_id,
                                                     event_id=e.event_id, ref=pl.get("ref"))
             return ("EXCEPTION" if alerts else "APPLIED"), msg + ("" if not alerts else " | ⚠ " + " | ".join(alerts))
         if t == "PDI_MARK":
-            p.require("PDI_CHECK")
+            p.require_any("PDI_CHECK", "PACK_PDI")
             pk = db.get(models.PickList, pl["picklist_no"])
             if not pk or pk.plant_code != plant:
                 raise services.RuleError("Pick list not found for this plant")
             msg, alerts = lpnsvc.pdi_mark(db, pk, pl["scanned"], pl.get("result", "OK"), pl.get("remarks"), p.user_id, e.device_id)
             return ("EXCEPTION" if alerts else "APPLIED"), msg
         if t == "PALLET_SCAN_YARD":
-            p.require("YARD_SCAN")
             slip = db.get(models.ReturnSlip, pl["slip_no"]) if pl.get("slip_no") else None
+            if pl.get("slip_no") and not slip:          # other-plant challan (empty pallets) - must be registered at the IN gate
+                p.require("YARD_IN_PLANT")
+                if not db.query(models.GateEntry).filter_by(plant_code=plant, kind="CHALLAN", ref_no=pl["slip_no"]).first():
+                    raise services.RuleError(f"Challan {pl['slip_no']} is not endorsed at the IN gate - send the vehicle to the IN gate first")
+                kc = db.query(models.PickList).filter_by(challan_no=pl["slip_no"]).first()
+                if kc and kc.dispatch_type == "STOCK_TRANSFER":
+                    raise services.RuleError(f"Challan {pl['slip_no']} is material - receive it at FGWH / Packing (pallet card), not the Yard")
+            else:
+                p.require("YARD_SCAN")
             if slip and slip.plant_code != plant:
                 raise services.RuleError("Slip belongs to another plant")
+            if slip and slip.mode == "A" and slip.status == "OPEN":
+                raise services.RuleError(f"Slip {slip.slip_no} is not endorsed at the IN gate - send the vehicle to the IN gate first")
+            if lpnsvc.is_card(db, pl["scanned"]):
+                raise services.RuleError("Pallet Yard: scan the pallet QR, not the pallet card")
             tag, pal = services.resolve_tag(db, pl["scanned"])
             registered = False
             if not pal:
@@ -275,6 +309,24 @@ def pull(request: Request, since: datetime | None = None, p: Principal = Depends
         lq = lq.filter(models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED", "PDI_OK"]))
     lpns = [{"lpn": l.lpn_no, "part": l.part_no, "qty": l.qty, "pallet": l.pallet_no, "status": l.status, "reserved_for": l.reserved_for,
              "picklist": l.picklist_no} for l in lq.all()]
+    # material coming in from another AIS plant (challan registered at the IN gate): its pallets and pallet cards, so the
+    # FGWH / Packing HHT knows the cards it scans at receipt
+    inc = []
+    for ge in db.query(models.GateEntry).filter_by(plant_code=p.plant, kind="CHALLAN", yard_closed_at=None).all():
+        k = db.query(models.PickList).filter_by(challan_no=ge.ref_no).first()
+        if k and k.dispatch_type == "STOCK_TRANSFER":
+            inc += [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()]
+    if inc:
+        have = {x["pallet_no"] for x in pallets}
+        for x in db.query(models.Pallet).filter(models.Pallet.pallet_no.in_(inc)).all():
+            if x.pallet_no not in have:
+                pallets.append({"pallet_no": x.pallet_no, "tag": x.current_tag, "home": x.home_plant, "type": x.pallet_type, "status": x.status,
+                                "customer": x.customer_code, "picklist": x.picklist_no, "zone": x.zone, "load": x.load_state, "load_ref": x.load_ref,
+                                "location": x.location_plant})
+        haveL = {x["lpn"] for x in lpns}
+        for l in db.query(models.Lpn).filter(models.Lpn.pallet_no.in_(inc)).all():
+            if l.lpn_no not in haveL:
+                lpns.append({"lpn": l.lpn_no, "part": l.part_no, "qty": l.qty, "pallet": l.pallet_no, "status": "INCOMING", "reserved_for": None, "picklist": None})
     tags = [] if since else [{"tag": t.tag_no, "pallet": t.pallet_no, "status": t.status} for t in db.query(models.Tag).filter_by(plant_code=p.plant).all()]
     picklists = [{"picklist_no": k.picklist_no, "customer": k.customer_code, "type": k.pallet_type, "qty": k.qty, "status": k.status,
                   "dispatch_type": k.dispatch_type, "part_no": k.part_no, "part_qty": k.part_qty, "to_plant": k.to_plant,
@@ -288,12 +340,13 @@ def pull(request: Request, since: datetime | None = None, p: Principal = Depends
               "doc": __import__("json").loads(sl.doc_pallets or "[]"), "doc_read": sl.doc_read_qty,
               "doc_photos": len(__import__("json").loads(sl.doc_photos or "[]")),
               "doc_types": __import__("json").loads(sl.doc_types or "{}"), "doc_total": sl.doc_total}
-             for sl in db.query(models.ReturnSlip).filter(models.ReturnSlip.plant_code == p.plant, models.ReturnSlip.status != "CLOSED").all()]
+             for sl in db.query(models.ReturnSlip).filter(models.ReturnSlip.plant_code == p.plant, models.ReturnSlip.status != "CLOSED").all()
+             if not (sl.mode == "A" and sl.status == "OPEN")]          # Option A slip reaches the yard only after the IN gate
     # pallets coming home from another AIS plant: the challan registered at the IN gate is received at the yard like a slip
     for ge in db.query(models.GateEntry).filter_by(plant_code=p.plant, kind="CHALLAN", yard_closed_at=None).all():
         k = db.query(models.PickList).filter_by(challan_no=ge.ref_no).first()
         if k:
-            slips.append({"slip_no": ge.ref_no, "customer": k.plant_code, "mode": "CHL", "qty": ge.qty, "status": "IN_GATE",
+            slips.append({"slip_no": ge.ref_no, "customer": k.plant_code, "mode": "CHM" if k.dispatch_type == "STOCK_TRANSFER" else "CHL", "qty": ge.qty, "status": "IN_GATE",
                           "pallets": [l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()]})
     customers = [{"code": c.code, "name": c.name, "return_mode": c.return_mode} for c in db.query(models.Customer).filter_by(plant_code=p.plant, active=True).all()]
     plant = db.get(models.Plant, p.plant)

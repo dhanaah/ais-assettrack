@@ -314,6 +314,8 @@ class PickListLine(Base):
     scanned_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     user_id: Mapped[str | None] = mapped_column(String(40))
     device_id: Mapped[str | None] = mapped_column(String(60))
+    loaded_at: Mapped[datetime | None] = mapped_column(DateTime)          # Security scanned this pallet QR into the vehicle
+    loaded_by: Mapped[str | None] = mapped_column(String(40))
     __table_args__ = (UniqueConstraint("picklist_no", "pallet_no", name="uq_pl_pallet"),)
 
 

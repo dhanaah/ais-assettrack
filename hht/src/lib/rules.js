@@ -91,7 +91,11 @@ export async function validateDockScan2(picklist_no, scanned, palletScan) {
   return { ok: true, pallet, lpns, warn, picked: picked + add };
 }
 
-const ROUTES = { PRODUCTION: ['YARD'], FGWH: ['PRODUCTION'], PACKING: ['PRODUCTION', 'FGWH'], YARD: ['PACKING'] };
+const ROUTES = { PRODUCTION: ['YARD'], FGWH: ['PRODUCTION'], PACKING: ['PRODUCTION', 'YARD'], YARD: ['PACKING', 'PRODUCTION', 'FGWH'] };
+/** Pallet card (part card / LPN label on the pallet) known on this HHT. Developed by DT */
+export const isCard = async (code) => !!(await getLpn(code)) || (String(code).includes('.') && !!(await getLpn(String(code).split('.').pop().toUpperCase())));
+/** Pallet QR / tag known on this HHT (or a pallet QR label). */
+export const isPalletQr = async (code) => !!(await resolveTag(code)).pallet || /^AIS-|^\{/.test(String(code).trim());
 export async function validateMove(scanned, toZone) {
   if (!ROUTES[toZone]) return { ok: false, msg: `Unknown zone ${toZone}` };
   let { pallet } = await resolveTag(scanned);
@@ -103,6 +107,7 @@ export async function validateMove(scanned, toZone) {
   const warn = [];
   const from = pallet.zone || 'YARD';
   if (from === toZone) return { ok: false, msg: `${pallet.pallet_no} already in ${toZone}`, dup: true };
+  if ((from === 'FGWH' && toZone === 'PACKING') || (from === 'PACKING' && toZone === 'FGWH')) return { ok: false, msg: 'No movement between FGWH (Main Dispatch) and Packing - both dispatch to customers' };
   if (!ROUTES[toZone].includes(from)) warn.push(`${pallet.pallet_no} shown in ${from} - skipped step will be recorded`);
   if (toZone === 'YARD' && pallet.load === 'LOADED') warn.push('Yard = empty only: pallet will be marked EMPTY');
   return { ok: true, pallet, warn };
@@ -127,6 +132,7 @@ export async function validateDockScan(picklist_no, scanned) {
 
 export async function validateYardScan(slip, scanned, acceptForeign) {
   const plant = (await kv.get('plant'))?.code;
+  if (await isCard(scanned)) return { ok: false, msg: 'Pallet Yard: scan the pallet QR, not the pallet card' };
   const { tag, pallet } = await resolveTag(scanned);
   if (!pallet) { const q = parsePalletQr(scanned); if (q) return { ok: true, exception: 'NEW', msg: `New pallet ${q.pallet_no} (${q.type || '?'}, owner ${q.owner || '?'}) - will be registered from its QR`, pallet: null, newPallet: q }; return { ok: true, exception: 'UNKNOWN', msg: `Unknown tag ${String(scanned).slice(0, 40)} - quarantine`, pallet: null }; }
   if (slip && await localScanExists(slip.slip_no, pallet.pallet_no)) return { ok: false, msg: 'Already scanned', dup: true };

@@ -15,13 +15,18 @@ PERMS = [
     "WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT",
     "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN",
     "CUST_RECEIVE", "CUST_RETURN", "TRANSPORTER_MASTER",
+    "YARD_IN_PLANT", "YARD_TO_PACKING", "PACK_RECEIPT", "PACK_DISPATCH", "PACK_PDI", "VEHICLE_LOAD",
 ]
 # What a central admin can switch on/off per user (grouped for the screen)
+# HHT groups = the button groups on the HHT home screen (one permission per button)
 PERM_GROUPS = {
-    "HHT - dispatch": ["DOCK_SCAN", "PDI_CHECK", "OUT_GATE_SCAN"],
-    "HHT - return": ["RETURN_SLIP_B", "IN_GATE_SCAN", "YARD_SCAN", "RECONCILE_CLOSE", "EMPTY_RETURN"],
-    "HHT - internal movement": ["MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "INTERNAL_MOVE", "PLANT_RECEIPT"],
-    "HHT - pallet care": ["DAMAGE_MARK", "TAG_REPLACE_REQUEST"],
+    "HHT - Security · Gate-In": ["IN_GATE_SCAN", "RETURN_SLIP_B"],
+    "HHT - Yard-In (pallet QR)": ["YARD_SCAN", "YARD_IN_PLANT", "MOVE_TO_YARD", "RECONCILE_CLOSE", "DAMAGE_MARK", "TAG_REPLACE_REQUEST"],
+    "HHT - Yard-Out (pallet QR)": ["MOVE_TO_PRODUCTION", "YARD_TO_PACKING", "EMPTY_RETURN"],
+    "HHT - FGWH · Main Dispatch (pallet card)": ["PLANT_RECEIPT", "MOVE_TO_FGWH", "DOCK_SCAN", "PDI_CHECK", "MOVE_TO_PACKING"],
+    "HHT - Packing · Dispatch (pallet card)": ["PACK_RECEIPT", "PACK_DISPATCH", "PACK_PDI"],
+    "HHT - Security · Loading & Gate-Out": ["VEHICLE_LOAD", "OUT_GATE_SCAN"],
+    "HHT - all internal moves (old, covers every move)": ["INTERNAL_MOVE"],
     "Web - documents": ["PICKLIST_CREATE", "CHALLAN_REQUEST", "LOGISTICS_APPROVE", "WMS_UPLOAD"],
     "Web - masters & admin": ["GLOBAL_MASTERS", "TRANSPORTER_MASTER", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "PLANT_USERS_ADMIN", "USER_ADMIN", "INTEGRATION_CONFIG"],
     "Web - reports": ["REPORTS_PLANT", "REPORTS_ALL", "AUDIT_LOG"],
@@ -29,15 +34,19 @@ PERM_GROUPS = {
 }
 NEW_PERMS = {"WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "PDI_CHECK", "INTERNAL_MOVE", "PLANT_RECEIPT", "CHALLAN_REQUEST",
              "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN", "TRANSPORTER_MASTER"}   # added to existing roles on upgrade
+# 1.26 (one time, at the first start): whoever had the old permission for a function also gets the new button's permission,
+# so nobody loses access when a function is split into its own permission. Admin removals afterwards are kept.
+IMPLIED_1_26 = {"YARD_SCAN": ["YARD_IN_PLANT"], "INTERNAL_MOVE": ["YARD_TO_PACKING"], "PLANT_RECEIPT": ["PACK_RECEIPT"],
+                "DOCK_SCAN": ["PACK_DISPATCH"], "PDI_CHECK": ["PACK_PDI"], "OUT_GATE_SCAN": ["VEHICLE_LOAD"]}   # loading = Security, never the preparer
 ROLE_SEED = {
     "SEC_IN":  ("Security - IN Gate", "PLANT", ["RETURN_SLIP_B", "IN_GATE_SCAN", "REPORTS_PLANT"]),
     "CUST_STAFF": ("Customer Staff (customer HHT: receive loaded pallets, return empty pallets)", "PLANT", ["CUST_RECEIVE", "CUST_RETURN"]),
-    "SEC_OUT": ("Security - Logistics / OUT Gate", "PLANT", ["OUT_GATE_SCAN", "REPORTS_PLANT"]),
-    "YARD":    ("Pallet Yard In-charge", "PLANT", ["YARD_SCAN", "RECONCILE_CLOSE", "DAMAGE_MARK", "TAG_REPLACE_REQUEST", "EMPTY_RETURN", "INTERNAL_MOVE", "REPORTS_PLANT"]),
-    "FGWH":    ("FG Warehouse", "PLANT", ["PICKLIST_CREATE", "DOCK_SCAN", "CHALLAN_REQUEST", "WMS_UPLOAD", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT", "REPORTS_PLANT"]),
+    "SEC_OUT": ("Security - Logistics / OUT Gate", "PLANT", ["VEHICLE_LOAD", "OUT_GATE_SCAN", "REPORTS_PLANT"]),
+    "YARD":    ("Pallet Yard In-charge", "PLANT", ["YARD_SCAN", "YARD_IN_PLANT", "MOVE_TO_YARD", "MOVE_TO_PRODUCTION", "YARD_TO_PACKING", "RECONCILE_CLOSE", "DAMAGE_MARK", "TAG_REPLACE_REQUEST", "EMPTY_RETURN", "INTERNAL_MOVE", "REPORTS_PLANT"]),
+    "FGWH":    ("FG Warehouse", "PLANT", ["PICKLIST_CREATE", "DOCK_SCAN", "CHALLAN_REQUEST", "WMS_UPLOAD", "EMPTY_RETURN", "INTERNAL_MOVE", "PLANT_RECEIPT", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "REPORTS_PLANT"]),
     "PROD":    ("Production", "PLANT", ["MOVE_TO_FGWH", "MOVE_TO_PACKING", "REPORTS_PLANT"]),
-    "PACK":    ("Packing Section", "PLANT", ["MOVE_TO_YARD", "PLANT_RECEIPT", "REPORTS_PLANT"]),
-    "QA":      ("QA / PDI", "PLANT", ["PDI_CHECK", "DAMAGE_MARK", "REPORTS_PLANT"]),
+    "PACK":    ("Packing Section", "PLANT", ["MOVE_TO_YARD", "PLANT_RECEIPT", "PACK_RECEIPT", "PACK_DISPATCH", "REPORTS_PLANT"]),
+    "QA":      ("QA / PDI", "PLANT", ["PDI_CHECK", "PACK_PDI", "DAMAGE_MARK", "REPORTS_PLANT"]),
     "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "TRANSPORTER_MASTER", "REPORTS_PLANT"]),
     "PADMIN":  ("Plant Admin", "PLANT", ["PLANT_USERS_ADMIN", "TRANSPORTER_MASTER", "REPORTS_PLANT", "AUDIT_LOG"]),
     "MASTER":  ("Master Maintenance (central)", "ALL", ["GLOBAL_MASTERS", "TRANSPORTER_MASTER", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "REPORTS_ALL"]),

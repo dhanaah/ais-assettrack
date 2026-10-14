@@ -17,7 +17,8 @@ SCAN_POINT_ROLE = {"DOCK_SCAN": "FGWH", "OUT_GATE": "SEC_OUT", "RETURN_SLIP": "S
 
 # ---------------------------------------------------------------- in-plant zones
 ZONES = ("YARD", "PRODUCTION", "FGWH", "PACKING")
-MOVES = {("YARD", "PRODUCTION"), ("PRODUCTION", "FGWH"), ("PRODUCTION", "PACKING"), ("FGWH", "PACKING"), ("PACKING", "YARD")}
+MOVES = {("YARD", "PRODUCTION"), ("PRODUCTION", "FGWH"), ("PRODUCTION", "PACKING"), ("PACKING", "YARD"),
+         ("YARD", "PACKING"), ("PRODUCTION", "YARD"), ("FGWH", "YARD")}      # empty pallets Yard -> Packing; emptied pallets back to the Yard
 MOVE_LOAD = {"PRODUCTION": "EMPTY", "FGWH": "LOADED", "PACKING": "LOADED", "YARD": "EMPTY"}   # default load after arriving
 DISPATCH_ZONES = ("FGWH", "PACKING")
 BENCH = "DISPATCH_BENCH"                       # pick lists pulled from the Dispatch Planning Bench (all customers)
@@ -131,6 +132,8 @@ def internal_move(db: Session, pal: models.Pallet, to_zone: str, plant: str, *, 
     frm = pal.zone or "YARD"
     if frm == to_zone:
         return f"{pal.pallet_no} already in {to_zone}", alerts
+    if {frm, to_zone} == {"FGWH", "PACKING"}:
+        raise RuleError("No movement between FGWH (Main Dispatch) and Packing - both dispatch to customers")
     if (frm, to_zone) not in MOVES:
         r = _route(frm, to_zone)
         if r:
@@ -438,6 +441,19 @@ def looks_like_lpn(s: str) -> bool:
     """A part card we have never seen (Bench stock is not mirrored here): not a pallet QR / ID, not a slip or GCS QR."""
     s = (s or "").strip()
     return 2 < len(s) <= 40 and not s.startswith(("{", "AIS1|", "AIS-", "RTS|", "CHL|")) and services.parse_pallet_qr(s) is None
+
+
+def is_card(db: Session, scanned: str) -> bool:
+    """The scanned code is a pallet card (part card / LPN label on the pallet), not the pallet QR."""
+    s = (scanned or "").strip()
+    if db.get(models.Lpn, s) or ("." in s and not s.startswith(("{", "AIS1|")) and db.get(models.Lpn, s.rpartition(".")[2].upper())):
+        return True
+    return False
+
+
+def is_pallet_qr(db: Session, scanned: str) -> bool:
+    _, pal = services.resolve_tag(db, (scanned or "").strip())
+    return pal is not None or services.parse_pallet_qr((scanned or "").strip()) is not None
 
 
 def resolve_any(db: Session, scanned: str, plant: str):

@@ -243,9 +243,10 @@ class GcsOpenIn(BaseModel):
 
 
 @router.post("/picklists/gcs-open")
-def gcs_open(body: GcsOpenIn, request: Request, p: Principal = Depends(hht("DOCK_SCAN")), db: Session = Depends(get_db)):
+def gcs_open(body: GcsOpenIn, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
     """HHT: scan / type the GCS number at the vehicle. Returns the loading sheet (from the FTP inbox) or opens one from the
     details typed by the operator when the file has not arrived yet."""
+    p.require_any("DOCK_SCAN", "PACK_DISPATCH")
     from .. import gcs as gcssvc
     if not p.plant:
         raise HTTPException(400, "Plant user required")
@@ -513,26 +514,18 @@ class GateOutIn(BaseModel):
 
 @router.post("/gate-out/scan")
 def gate_out_scan(body: GateOutIn, request: Request, p: Principal = Depends(hht("OUT_GATE_SCAN")), db: Session = Depends(get_db)):
-    """OUT gate: scan the GCS QR (AIS1|GCS|...), a GCS number or a challan number - the matching approved load is dispatched."""
-    from .. import gcs as gcssvc
+    """OUT gate: Security scans the CHALLAN only (CHL|challan|... QR or the challan number) - customer dispatch, stock
+    transfer and empty pallets to other plants alike. The matching approved load is dispatched."""
     sc = body.scanned.strip()
-    q = gcssvc.parse_gcs_qr(sc)
-    if q:
-        if not q.get("valid"):
-            audit(db, p, "GATE_OUT_QR_REJECTED", "picklist", q.get("gcs_no"), None, {"qr": sc}, request); db.commit()
-            raise HTTPException(400, q["error"] + " - HOLD VEHICLE")
-        sc = q["gcs_no"]
+    if sc.startswith("AIS1|GCS|"):
+        raise HTTPException(400, "OUT gate: scan the CHALLAN QR, not the GCS")
     if sc.startswith("CHL|"):
         sc = sc.split("|")[1]
-    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, (models.PickList.gcs_no == sc) | (models.PickList.challan_no == sc),
+    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.challan_no == sc,
                                          models.PickList.status != "LINKED").order_by(models.PickList.created_at.desc()).first()
     if not k:
-        raise HTTPException(404, f"No load found for {sc} - HOLD VEHICLE")
-    if q and q.get("legacy") and not services.legacy_ok(k.created_at):
-        raise HTTPException(400, "GCS QR check code invalid - not printed by AssetTrack - HOLD VEHICLE")
-    if q and q.get("vehicle") and k.vehicle_no and q["vehicle"] != k.vehicle_no:
-        raise HTTPException(400, f"QR vehicle {q['vehicle']} differs from the load ({k.vehicle_no}) - HOLD VEHICLE")
-    return gate_out(k.picklist_no, GateOutIn(scanned=k.gcs_no or k.challan_no, manual_override=body.manual_override, supervisor_pin=body.supervisor_pin, remarks=body.remarks), request, p, db)
+        raise HTTPException(404, f"No load found for challan {sc} - HOLD VEHICLE")
+    return gate_out(k.picklist_no, GateOutIn(scanned=k.challan_no, manual_override=body.manual_override, supervisor_pin=body.supervisor_pin, remarks=body.remarks), request, p, db)
 
 
 @router.post("/picklists/{no}/gate-out")
@@ -548,9 +541,11 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
     q = gcssvc.parse_gcs_qr(sc)
     if q and q.get("valid") and q.get("gcs_no"):
         sc = q["gcs_no"]
-    if sc not in (k.gcs_no, k.challan_no):
+    if sc.startswith("CHL|"):
+        sc = sc.split("|")[1]
+    if sc != k.challan_no:                       # OUT gate: challan only
         if not body.manual_override:
-            raise HTTPException(400, "Scanned QR does not match this pick list's GCS/challan - hold vehicle")
+            raise HTTPException(400, "Scan the CHALLAN of this vehicle - hold vehicle")
         if not body.supervisor_pin or not verify_supervisor_pin(db, k.plant_code, body.supervisor_pin):
             raise HTTPException(403, "Supervisor PIN required for manual override")
     lines = db.query(models.PickListLine).filter_by(picklist_no=no).all()
@@ -561,6 +556,10 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
             wrong.append(f"{l.pallet_no} ({pal.status if pal else 'unknown'}{' ' + pal.picklist_no if pal and pal.picklist_no and pal.picklist_no != no else ''})")
     if wrong:
         raise HTTPException(400, f"{len(wrong)} pallet(s) on this load are no longer on it: {', '.join(wrong[:5])} - HOLD VEHICLE, check with logistics")
+    if needs_loading(db, k) and not body.manual_override:
+        notl = [l.pallet_no for l in lines if not l.loaded_at]
+        if notl:
+            raise HTTPException(400, f"{len(notl)} of {len(lines)} pallet(s) not loaded by Security: {', '.join(services.short_ref(x) for x in notl[:5])} - HOLD VEHICLE")
     # one OUT gate only: the load is claimed in one step (a second gate scanning the same GCS at the same moment gets 'already')
     got = db.query(models.PickList).filter_by(picklist_no=no, status="APPROVED").update({"status": "DISPATCHED"}, synchronize_session=False)
     if not got:
@@ -593,6 +592,69 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
     audit(db, p, "GATE_OUT" + ("_OVERRIDE" if body.manual_override else ""), "picklist", no, None, body.model_dump(exclude={"supervisor_pin"}), request)
     db.commit()
     return row(k)
+
+
+# ---------------------------------------------------------------- Security: vehicle loading (pallet QR into the vehicle)
+def needs_loading(db, k) -> bool:
+    """FGWH / Packing material dispatches (customer, stock transfer) are loaded by Security pallet by pallet; empty pallets
+    loaded at the Pallet Yard are scanned by the Yard itself. Loads made before this rule started are not held."""
+    if k.dispatch_type not in lpnsvc.PART_TYPES or k.load_point == "YARD":
+        return False
+    st = db.get(models.Setting, "vehicle_load_from")
+    return not (st and st.value and k.created_at and k.created_at.isoformat() < st.value)
+
+
+def _loading_row(db, k):
+    lines = db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).order_by(models.PickListLine.scanned_at).all()
+    return {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "challan_no": k.challan_no, "vehicle_no": k.vehicle_no, "customer_code": k.customer_code,
+            "to_plant": k.to_plant, "dispatch_type": k.dispatch_type, "status": k.status, "total": len(lines), "loaded": sum(1 for l in lines if l.loaded_at),
+            "pallets": [{"pallet_no": l.pallet_no, "short": services.short_ref(l.pallet_no), "loaded": bool(l.loaded_at)} for l in lines]}
+
+
+@router.get("/loading")
+def loading_list(p: Principal = Depends(hht("VEHICLE_LOAD")), db: Session = Depends(get_db)):
+    """Vehicles being loaded at FGWH / Packing: prepared pallets and how many Security has scanned into the vehicle."""
+    out = []
+    for k in db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.dispatch_type.in_(lpnsvc.PART_TYPES),
+                                              models.PickList.status.notin_(["DISPATCHED", "CANCELLED", "CLOSED", "LINKED"])).order_by(models.PickList.created_at.desc()).limit(200).all():
+        if k.load_point == "YARD":
+            continue
+        r = _loading_row(db, k)
+        if r["total"]:
+            out.append(r)
+    return out
+
+
+class LoadIn(BaseModel):
+    scanned: str
+
+
+@router.post("/picklists/{no}/load")
+def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(hht("VEHICLE_LOAD")), db: Session = Depends(get_db)):
+    """Security scans the pallet QR as the pallet goes into the vehicle. Only pallets prepared on this GCS are accepted."""
+    k = db.get(models.PickList, no)
+    if not k:
+        raise HTTPException(404, "Not found")
+    p.require_plant(k.plant_code)
+    if k.status in ("DISPATCHED", "CANCELLED", "CLOSED"):
+        raise HTTPException(400, f"Load is {k.status}")
+    if lpnsvc.is_card(db, body.scanned):
+        raise HTTPException(400, "Vehicle loading: scan the pallet QR, not the pallet card")
+    _t, pal = services.resolve_tag(db, body.scanned.strip())
+    if not pal:
+        raise HTTPException(400, f"Unknown pallet QR {body.scanned[:40]} - keep it off the vehicle")
+    l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
+    if not l:
+        other = (db.query(models.PickListLine, models.PickList).join(models.PickList, models.PickList.picklist_no == models.PickListLine.picklist_no)
+                 .filter(models.PickListLine.pallet_no == pal.pallet_no, models.PickList.status.notin_(["DISPATCHED", "CANCELLED", "CLOSED"])).first())
+        raise HTTPException(400, f"{services.short_ref(pal.pallet_no)} is not prepared for this vehicle" + (f" - it belongs to {other[1].gcs_no or other[1].picklist_no}" if other else "") + " - keep it off")
+    dup = bool(l.loaded_at)
+    if not dup:
+        l.loaded_at = utcnow(); l.loaded_by = p.user_id
+        audit(db, p, "VEHICLE_LOAD", "picklist", no, None, {"pallet": pal.pallet_no}, request)
+        db.commit()
+    r = _loading_row(db, k)
+    return r | {"pallet_no": pal.pallet_no, "short": services.short_ref(pal.pallet_no), "duplicate": dup}
 
 
 # ---------------------------------------------------------------- return slips
@@ -971,13 +1033,19 @@ class CloseIn(BaseModel):
 
 
 @router.post("/slips/{no}/close")
-def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(hht("RECONCILE_CLOSE")), db: Session = Depends(get_db)):
+def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
     sl = db.get(models.ReturnSlip, no)
     if not sl:
         ge = db.query(models.GateEntry).filter_by(plant_code=p.plant, kind="CHALLAN", ref_no=no).first()
         if ge:
+            kc = db.query(models.PickList).filter_by(challan_no=ge.ref_no).first()
+            if kc and kc.dispatch_type == "STOCK_TRANSFER":     # material challan: closed by FGWH / Packing after receipt
+                p.require_any("RECONCILE_CLOSE", "PLANT_RECEIPT", "PACK_RECEIPT")
+            else:
+                p.require_any("RECONCILE_CLOSE", "YARD_IN_PLANT")
             return _close_challan(db, p, ge, body, request)
         raise HTTPException(404, "Not found")
+    p.require("RECONCILE_CLOSE")
     p.require_plant(sl.plant_code)
     if sl.status == "CLOSED":
         raise HTTPException(400, "Already closed")
