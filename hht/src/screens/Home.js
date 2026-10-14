@@ -21,18 +21,23 @@ const GROUPS = [
     ['yardchl', 'Empty pallets from other plants', 'Plant challan endorsed at Gate-In', 'YARD_SCAN', 'business-outline', 'slipsChl'],
     ['mvyard', 'Empty pallets back to Yard', 'From Production / FGWH / Packing', 'INTERNAL_MOVE', 'arrow-undo-outline'],
     ['damage', 'Damage / Tag issue', 'Mark damaged, request a new tag', 'DAMAGE_MARK', 'warning-outline'] ] },
-  { key: 'yout', title: 'Yard-Out', sub: 'Empty pallets leaving the yard', icon: 'log-out-outline', grad: ['#14b8a6', '#0f766e'], items: [
+  { key: 'yout', title: 'Yard-Out', sub: 'Empty pallets leaving the yard · pallet QR', icon: 'log-out-outline', grad: ['#14b8a6', '#0f766e'], items: [
     ['mvprod', 'Empty pallets to Production', 'Pallet Yard → Production', 'INTERNAL_MOVE', 'construct-outline'],
+    ['mvpackE', 'Empty pallets to Packing', 'Pallet Yard → Packing', 'INTERNAL_MOVE', 'cube-outline'],
     ['yardret', 'Empty pallets to other plants', 'Load on the empty-return challan', 'EMPTY_RETURN', 'return-up-back-outline', 'yardret'] ] },
-  { key: 'mov', title: 'FGWH · Material', sub: 'Loaded pallets · scan the pallet card only', icon: 'swap-horizontal-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
+  { key: 'fg', title: 'FGWH · Main Dispatch', sub: 'Loaded pallets · scan the pallet card only', icon: 'business-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
     ['receipt', 'Other-plant material', 'At FGWH · on the challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline'],
     ['mvfg', 'Production → FGWH', 'Pallet card', 'INTERNAL_MOVE', 'arrow-forward-outline'],
-    ['mvpack', 'FGWH → Packing', 'Pallet card', 'INTERNAL_MOVE', 'cube-outline'],
     ['dock', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dock'],
-    ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'] ] },
-  { key: 'gout', title: 'Security · Dispatch & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
-    ['load', 'Vehicle loading', 'Scan each pallet QR into the vehicle', 'DOCK_SCAN', 'car-outline'],
-    ['gateout', 'OUT Gate', 'Customer dispatch · material & empty pallets to other plants', 'OUT_GATE_SCAN', 'exit-outline'] ] },
+    ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'],
+    ['mvpack', 'FGWH → Packing', 'Pallet card', 'INTERNAL_MOVE', 'arrow-redo-outline'] ] },
+  { key: 'pk', title: 'Packing · Dispatch', sub: 'Packing dispatches parts to customers too · pallet card only', icon: 'cube-outline', grad: ['#ec4899', '#be185d'], items: [
+    ['receiptP', 'Other-plant material', 'At Packing · on the challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline'],
+    ['dockP', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dockP'],
+    ['pdiP', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline'] ] },
+  { key: 'gout', title: 'Security · Loading & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
+    ['load', 'Vehicle loading', 'Each pallet QR into the vehicle · FGWH / Packing', 'DOCK_SCAN', 'car-outline'],
+    ['gateout', 'OUT Gate', 'Challan QR only · Yard empties · FGWH & Packing material', 'OUT_GATE_SCAN', 'exit-outline'] ] },
   { key: 'oth', title: 'Others', sub: 'Look up, alerts, sync', icon: 'apps-outline', grad: ['#64748b', '#334155'], items: [
     ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, 'search-outline'],
     ['misses', 'Missed Scans', 'Open scan alerts', null, 'alert-circle-outline'],
