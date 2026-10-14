@@ -9,18 +9,18 @@ import { state as sync, syncNow, pushAndResult } from '../lib/sync';
 import { fDT, fTimeS } from '../lib/when';
 
 const ROUTES = [
-  ['PRODUCTION', 'Pallet Yard → Production', 'empty pallets to the line'],
-  ['FGWH', 'Production → FGWH', 'loaded with finished goods'],
-  ['PACKING', 'Production / FGWH → Packing', 'loaded for packing'],
-  ['YARD', 'Packing → Pallet Yard', 'EMPTY pallets only'],
+  ['PRODUCTION', 'Empty pallets to Production', 'Pallet Yard → Production · scan the pallet'],
+  ['FGWH', 'Production → FGWH', 'Loaded with finished goods · scan the part cards'],
+  ['PACKING', 'FGWH → Packing', 'Loaded for packing · scan the part cards'],
+  ['YARD', 'Empty pallets back to Yard', 'From Production / FGWH / Packing · scan the pallet'],
 ];
 
 const AlertBox = ({ text, onClose }) => text ? (
   <TouchableOpacity onPress={onClose} style={{ backgroundColor: C.warn, borderRadius: 12, padding: 10, marginBottom: 8 }}>
     <Text style={{ color: '#fff', fontWeight: '700' }}>⚠ {text}</Text><Text style={{ color: '#fff', fontSize: 11 }}>tap to dismiss · recorded in Missed Scans</Text></TouchableOpacity>) : null;
 
-export function Move({ onBack }) {
-  const [route, setRoute] = useState(null); const [done, setDone] = useState([]); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
+export function Move({ onBack, preset }) {     // preset: open one route straight from the home button
+  const [route, setRoute] = useState(preset ? ROUTES.find((r) => r[0] === preset) || null : null); const [done, setDone] = useState([]); const [alert, setAlert] = useState(null); const [msg, toast] = useToast();
   const onScan = async (code) => {
     const v = await validateMove(code, route[0]);
     if (!v.ok) return toast(v.msg, v.dup ? 'warn' : 'err');
@@ -39,7 +39,7 @@ export function Move({ onBack }) {
     {ROUTES.map(r => <TouchableOpacity key={r[0]} style={S.card} onPress={() => { setRoute(r); setDone([]); setAlert(null); }}>
       <Text style={S.h2}>{r[1]}</Text><Text style={S.mute}>{r[2]}</Text></TouchableOpacity>)}
     <Text style={S.mute}>Pallet Yard holds EMPTY pallets only. A skipped step is detected at the next scan and recorded.</Text></Page><Toast msg={msg} /></Screen>);
-  return (<Screen><Header title={route[1]} sub={route[2]} onBack={() => setRoute(null)} /><Page>
+  return (<Screen><Header title={route[1]} sub={route[2]} onBack={preset ? onBack : () => setRoute(null)} /><Page>
     <Glass style={{ alignItems: 'center' }}><Ring value={String(done.length)} label="moved this session" color={C.ok} size={84} /></Glass>
     <AlertBox text={alert} onClose={() => setAlert(null)} />
     <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan pallet (or any LPN on it)" /></View>

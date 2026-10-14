@@ -91,7 +91,7 @@ export default function App() {
     home: <Home me={me} sync={sync} nav={go} onLogout={logout} onLookup={(code) => { setLookupCode(code); go('lookup'); }} />,
     dock: <Dock onBack={back} />, yardret: <Dock onBack={back} yard />, yard: <Yard onBack={back} filter="CUST" />, yardchl: <Yard onBack={back} filter="CHL" />, slip: <ReturnSlip onBack={back} deviceId={deviceId} />,
     gatein: <GateIn onBack={back} />, gateout: <GateOut onBack={back} />, damage: <Damage onBack={back} />, lookup: <Lookup onBack={back} initial={lookupCode} />,
-    move: <Move onBack={back} />, receipt: <Receipt onBack={back} />, pdi: <Pdi onBack={back} />, misses: <Misses onBack={back} />,
+    move: <Move onBack={back} />, mvyard: <Move onBack={back} preset="YARD" />, mvprod: <Move onBack={back} preset="PRODUCTION" />, mvfg: <Move onBack={back} preset="FGWH" />, mvpack: <Move onBack={back} preset="PACKING" />, receipt: <Receipt onBack={back} />, pdi: <Pdi onBack={back} />, misses: <Misses onBack={back} />,
     pending: <Pending onBack={back} />, setup: <Setup onBack={() => setScreen('settings')} />, settings: <Settings onBack={back} onSetup={() => go('setup')} deviceId={deviceId} onTheme={(k) => { setThemeKey(k); refreshUi(); }} onUi={(opts) => { if (opts.idle_min != null) idleMin.current = opts.idle_min; refreshUi(); }} />,
   };
   return (<View style={{ flex: 1 }} onTouchStart={() => { lastTouch.current = Date.now(); }}>

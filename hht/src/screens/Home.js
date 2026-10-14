@@ -13,22 +13,25 @@ import { fTime } from '../lib/when';
 // Functions grouped by where the work happens, in the order a pallet moves: Gate-In -> Yard-In -> Internal move ->
 // Yard-Out / dispatch -> Gate-Out, then Others. [key, title, sub, permission, icon, badge key]. Same screens as before.
 const GROUPS = [
-  { key: 'gin', title: 'Gate-In', sub: 'Vehicles coming in', icon: 'enter-outline', grad: ['#c026d3', '#a21caf'], items: [
-    ['gatein', 'IN Gate', 'Return slip QR · other-plant challan QR', 'IN_GATE_SCAN', 'enter-outline'],
-    ['slip', 'Return Slip (Option B)', 'Customer without slip: count + document photo', 'RETURN_SLIP_B', 'document-text-outline'] ] },
-  { key: 'yin', title: 'Yard-In', sub: 'Empty pallets received at the pallet yard', icon: 'layers-outline', grad: ['#10b981', '#047857'], items: [
-    ['yard', 'Customer returns', 'Return slips Option A / B - scan & reconcile', 'YARD_SCAN', 'people-outline', 'slipsCust'],
-    ['yardchl', 'Empty pallets from other plants', 'Our pallets back on an AIS plant challan', 'YARD_SCAN', 'business-outline', 'slipsChl'],
+  { key: 'gin', title: 'Gate-In', sub: 'Every vehicle coming in is endorsed here', icon: 'enter-outline', grad: ['#c026d3', '#a21caf'], items: [
+    ['gatein', 'IN Gate', 'Slip A QR · other-plant challan (material or empty)', 'IN_GATE_SCAN', 'enter-outline'],
+    ['slip', 'Return Slip (Option B)', 'Made at the gate: count + document photo', 'RETURN_SLIP_B', 'document-text-outline'] ] },
+  { key: 'yin', title: 'Yard-In', sub: 'Empty pallets only · pallet scanned', icon: 'layers-outline', grad: ['#10b981', '#047857'], items: [
+    ['yard', 'Customer returns', 'Slips A / B endorsed at Gate-In', 'YARD_SCAN', 'people-outline', 'slipsCust'],
+    ['yardchl', 'Empty pallets from other plants', 'Plant challan endorsed at Gate-In', 'YARD_SCAN', 'business-outline', 'slipsChl'],
+    ['mvyard', 'Empty pallets back to Yard', 'From Production / FGWH / Packing', 'INTERNAL_MOVE', 'arrow-undo-outline'],
     ['damage', 'Damage / Tag issue', 'Mark damaged, request a new tag', 'DAMAGE_MARK', 'warning-outline'] ] },
-  { key: 'mov', title: 'Internal Move', sub: 'Inside the plant', icon: 'swap-horizontal-outline', grad: ['#22c55e', '#15803d'], items: [
-    ['move', 'Internal Movement', 'Yard · Production · FGWH · Packing', 'INTERNAL_MOVE', 'swap-horizontal-outline'],
-    ['receipt', 'Other-plant Receipt (loaded)', 'Loaded pallets from other plants at FGWH / Packing', 'PLANT_RECEIPT', 'download-outline'] ] },
-  { key: 'yout', title: 'Yard-Out / Dispatch', sub: 'Loading vehicles', icon: 'cube-outline', grad: ['#0ea5e9', '#2563eb'], items: [
-    ['dock', 'Vehicle Loading (GCS)', 'Scan pallets / part cards against the GCS', 'DOCK_SCAN', 'cube-outline', 'dock'],
+  { key: 'yout', title: 'Yard-Out', sub: 'Empty pallets leaving the yard', icon: 'log-out-outline', grad: ['#14b8a6', '#0f766e'], items: [
+    ['mvprod', 'Empty pallets to Production', 'Pallet Yard → Production', 'INTERNAL_MOVE', 'construct-outline'],
+    ['yardret', 'Empty pallets to other plants', 'Load on the empty-return challan', 'EMPTY_RETURN', 'return-up-back-outline', 'yardret'] ] },
+  { key: 'mov', title: 'Internal Move · Material', sub: 'Loaded pallets · part cards only', icon: 'swap-horizontal-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
+    ['receipt', 'Other-plant material', 'At FGWH · part cards on the gated challan', 'PLANT_RECEIPT', 'download-outline'],
+    ['mvfg', 'Production → FGWH', 'Scan the part cards', 'INTERNAL_MOVE', 'arrow-forward-outline'],
+    ['mvpack', 'FGWH → Packing', 'Scan the part cards', 'INTERNAL_MOVE', 'cube-outline'] ] },
+  { key: 'gout', title: 'Dispatch & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [
+    ['dock', 'Vehicle Loading (GCS)', 'Customer dispatch · stock transfer', 'DOCK_SCAN', 'car-outline', 'dock'],
     ['pdi', 'PDI Check', 'LPN OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'],
-    ['yardret', 'Empty pallets to other plants', "Other plants' pallets from the Yard → challan", 'EMPTY_RETURN', 'return-up-back-outline', 'yardret'] ] },
-  { key: 'gout', title: 'Gate-Out', sub: 'Vehicles going out', icon: 'exit-outline', grad: ['#6366f1', '#4338ca'], items: [
-    ['gateout', 'OUT Gate', 'Scan GCS / challan QR', 'OUT_GATE_SCAN', 'exit-outline'] ] },
+    ['gateout', 'OUT Gate', 'Customer dispatch · material & empty pallets to other plants', 'OUT_GATE_SCAN', 'exit-outline'] ] },
   { key: 'oth', title: 'Others', sub: 'Look up, alerts, sync', icon: 'apps-outline', grad: ['#64748b', '#334155'], items: [
     ['lookup', 'Pallet / LPN Lookup', 'Status, loaded / empty, zone', null, 'search-outline'],
     ['misses', 'Missed Scans', 'Open scan alerts', null, 'alert-circle-outline'],
