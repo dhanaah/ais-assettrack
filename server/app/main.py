@@ -102,7 +102,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(static_dir / "index.html")
+    return FileResponse(static_dir / "index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})   # never an old page after an update
 
 
 @app.get("/hht-setup", include_in_schema=False)

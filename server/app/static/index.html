@@ -139,10 +139,19 @@ async function render(){
  const cr=document.getElementById('credit');if(cr)cr.style.display=T?'none':'';
  if(!T){$('#nav').style.display='none';$('#logout').style.display='none';$('#who').textContent='';
   const f=h('form',{className:'card login'},h('img',{src:'/static/icon-192.png',alt:'AIS',style:'height:70px;margin:0 auto 6px;display:block'}),h('img',{src:'/static/wordmark.png',alt:'AssetTrack',style:'max-width:280px;margin:0 auto 12px;display:block'}),h('h2',{},'Sign in'),field('User ID','user_id'),h('br'),field('Password','password','','password'),h('br'),h('button',{className:'p',type:'submit'},'Login'),h('p',{className:'muted',style:'margin-top:12px'},h('a',{href:'/hht-setup',target:'_blank'},'📱 HHT setup QR (connect an HHT to this server)')));
-  f.onsubmit=async e=>{e.preventDefault();try{const d=formData(f);const r=await api('/auth/login',{method:'POST',body:{...d,device_id:'WEB'}});T=r.token;localStorage.setItem('tok',T);if(r.must_change_pw)msg('Please change your password (Users > My account)');render()}catch(x){msg(x.message,1)}};
+  f.onsubmit=async e=>{e.preventDefault();try{const d=formData(f);const r=await api('/auth/login',{method:'POST',body:{...d,device_id:'WEB'}});T=r.token;localStorage.setItem('tok',T);render()}catch(x){msg(x.message,1)}};
   m.append(f);return}
  try{ME=await api('/auth/me');BENCH_MODE=(ME.picklist_source||'BENCH')==='BENCH'}catch{return}
  $('#who').textContent=`${ME.name} · ${ME.plant||'ALL PLANTS'} · ${ME.roles.join(', ')}`;$('#logout').style.display='';
+ if(ME.must_change_pw){       // first login (admin / reset password): set a new password here before anything else opens
+  $('#nav').style.display='none';
+  const f=h('form',{className:'card login',style:'max-width:460px;border:2px solid #6366f1'},h('h2',{},'Set a new password'),
+   h('p',{className:'muted'},ME.user_id==='admin'?'First login of the built-in admin. The first password (Admin@123) must be changed before the application opens.':'Your password was reset. Set your own password to continue.'),
+   field('Current password','old_password','','password'),h('br'),field('New password (6+ characters)','new_password','','password'),h('br'),field('New password again','again','','password'),h('br'),
+   h('button',{className:'p',type:'submit'},'Save new password'));
+  f.onsubmit=async e=>{e.preventDefault();const d=formData(f);if(d.new_password!==d.again)return msg('The two new passwords are not the same',1);
+   try{const r=await api('/auth/change-password',{method:'POST',body:{old_password:d.old_password,new_password:d.new_password}});if(r.token){T=r.token;localStorage.setItem('tok',T)}msg('Password changed');PAGE='dash';render()}catch(x){msg(x.message,1)}};
+  m.append(f);return}
  const nav=$('#nav');nav.style.display='';nav.innerHTML='';
  GROUPS.forEach(([g,ids])=>{const items=ids.map(id=>PAGES.find(p=>p[0]===id)).filter(p=>can(p[2])&&!(BENCH_MODE&&BENCH_HIDDEN.includes(p[0])));if(!items.length)return;
   if(items.length===1&&ids.length===1){nav.append(h('button',{className:PAGE===items[0][0]?'on':'',on:{click:()=>{PAGE=items[0][0];render()}}},items[0][1]));return}
@@ -225,8 +234,8 @@ async function dash(m){
  const plants=ME.plant?[]:await api('/plants');
  if(!ME.plant&&!plants.length&&can('GLOBAL_MASTERS'))   // new server: lead the admin to the first plant
   m.append(h('div',{className:'card',style:'border:2px solid #6366f1'},h('h2',{},'Start here: add your first plant'),
-   h('p',{},ME.must_change_pw?'1. Change the admin password first (Masters › Users › My account), then come back here.':'No plant is set up yet. Add the plant, then create its users (Masters › Users).'),
-   ME.must_change_pw?h('button',{className:'p',on:{click:()=>{PAGE='users';render()}}},'Change password'):h('button',{className:'p',on:{click:()=>{ADD_PLANT=true;PAGE='masters';render()}}},'+ Add plant')));
+   h('p',{},'No plant is set up yet. Add the plant, then create its users (Masters › Users).'),
+   h('button',{className:'p',on:{click:()=>{ADD_PLANT=true;PAGE='masters';render()}}},'+ Add plant')));
  const tb=h('div',{className:'toolbar'});
  if(!ME.plant)tb.append(field('Plant','plant',DASH.plant,'select',{opts:[['','All plants'],...plants.map(x=>[x.code,x.code+' '+x.name])],on:{change:e=>{DASH.plant=e.target.value;render()}}}));
  tb.append(field('Trend window','weeks',DASH.weeks,'select',{opts:[[8,'8 weeks'],[12,'12 weeks'],[26,'26 weeks'],[52,'52 weeks']],on:{change:e=>{DASH.weeks=+e.target.value;render()}}}),h('span',{className:'sp'}),
