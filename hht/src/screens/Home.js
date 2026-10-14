@@ -26,14 +26,15 @@ const GROUPS = [
     ['mvprod', 'Empty pallets to Production', 'Pallet Yard → Production', ['MOVE_TO_PRODUCTION', MV], 'construct-outline'],
     ['mvpackE', 'Empty pallets to Packing', 'Pallet Yard → Packing', ['YARD_TO_PACKING', MV], 'cube-outline'],
     ['yardret', 'Empty pallets to other plants', 'Load on the empty-return challan', 'EMPTY_RETURN', 'return-up-back-outline', 'yardret'] ] },
-  { key: 'fg', title: 'FGWH · Main Dispatch', sub: 'Ships parts to customers · scan the pallet card only', icon: 'business-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
+  { key: 'fg', title: 'FGWH · Central FG', sub: 'All finished goods pass through FGWH · pallet card', icon: 'business-outline', grad: ['#8b5cf6', '#6d28d9'], items: [
+    ['mvfg', 'Production → FGWH', 'Loaded pallets from the line', ['MOVE_TO_FGWH', MV], 'arrow-forward-outline'],
     ['receipt', 'Other-plant material', 'At FGWH · challan endorsed at Gate-In', 'PLANT_RECEIPT', 'download-outline', 'chm'],
-    ['mvfg', 'Production → FGWH', 'Loaded pallets · pallet card', ['MOVE_TO_FGWH', MV], 'arrow-forward-outline'],
+    ['mvmain', 'FGWH → Main Dispatch', 'Pallet card', ['MOVE_TO_DISPATCH', MV], 'arrow-redo-outline'],
+    ['mvpk', 'FGWH → Packing', 'Pallet card', ['MOVE_TO_PACKING', MV], 'arrow-redo-outline'] ] },
+  { key: 'md', title: 'Main Dispatch', sub: 'Ships parts to customers · pallet card', icon: 'car-outline', grad: ['#0ea5e9', '#0369a1'], items: [
     ['dock', 'Dispatch preparation', 'Pallet cards against the GCS', 'DOCK_SCAN', 'clipboard-outline', 'dock'],
     ['pdi', 'PDI Check', 'Pallet card OK / reject → EBS', 'PDI_CHECK', 'shield-checkmark-outline', 'pdi'] ] },
-  { key: 'pk', title: 'Packing · Dispatch', sub: 'Ships parts to customers · scan the pallet card only', icon: 'cube-outline', grad: ['#ec4899', '#be185d'], items: [
-    ['receiptP', 'Other-plant material', 'At Packing · challan endorsed at Gate-In', 'PACK_RECEIPT', 'download-outline', 'chm'],
-    ['mvpk', 'Production → Packing', 'Loaded pallets · pallet card', ['MOVE_TO_PACKING', MV], 'arrow-forward-outline'],
+  { key: 'pk', title: 'Packing · Dispatch', sub: 'Ships parts to customers · pallet card', icon: 'cube-outline', grad: ['#ec4899', '#be185d'], items: [
     ['dockP', 'Dispatch preparation', 'Pallet cards against the GCS', 'PACK_DISPATCH', 'clipboard-outline', 'dock'],
     ['pdiP', 'PDI Check', 'Pallet card OK / reject → EBS', 'PACK_PDI', 'shield-checkmark-outline', 'pdi'] ] },
   { key: 'gout', title: 'Security · Loading & Gate-Out', sub: 'Every vehicle going out is endorsed here', icon: 'exit-outline', grad: ['#3b82f6', '#4338ca'], items: [

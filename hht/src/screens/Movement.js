@@ -14,7 +14,8 @@ const ROUTES = [
   ['PACKING_E', 'Empty pallets to Packing', 'Pallet Yard → Packing · scan the pallet QR', 'PACKING', 'EMPTY', 'QR'],
   ['YARD', 'Empty pallets back to Yard', 'From Production / FGWH / Packing · scan the pallet QR', 'YARD', 'EMPTY', 'QR'],
   ['FGWH', 'Production → FGWH', 'Loaded with finished goods · scan the pallet card', 'FGWH', 'LOADED', 'CARD'],
-  ['PACKING', 'Production → Packing', 'Loaded with finished goods · scan the pallet card', 'PACKING', 'LOADED', 'CARD'],
+  ['DISPATCH', 'FGWH → Main Dispatch', 'Loaded pallets · scan the pallet card', 'DISPATCH', 'LOADED', 'CARD'],
+  ['PACKING', 'FGWH → Packing', 'Loaded pallets · scan the pallet card', 'PACKING', 'LOADED', 'CARD'],
 ];
 
 const AlertBox = ({ text, onClose }) => text ? (
