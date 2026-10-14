@@ -13,7 +13,7 @@ import { fTime } from '../lib/when';
 // Functions grouped by where the work happens, in the order a pallet moves: Gate-In -> Yard-In -> Internal move ->
 // Yard-Out / dispatch -> Gate-Out, then Others. [key, title, sub, permission, icon, badge key]. Same screens as before.
 const GROUPS = [
-  { key: 'gin', title: 'Gate-In', sub: 'Every vehicle coming in is endorsed here', icon: 'enter-outline', grad: ['#c026d3', '#a21caf'], items: [
+  { key: 'gin', title: 'Security · Gate-In', sub: 'Every vehicle coming in is endorsed here', icon: 'enter-outline', grad: ['#c026d3', '#a21caf'], items: [
     ['gatein', 'IN Gate', 'Slip A QR · other-plant challan (material or empty)', 'IN_GATE_SCAN', 'enter-outline'],
     ['slip', 'Return Slip (Option B)', 'Made at the gate: count + document photo', 'RETURN_SLIP_B', 'document-text-outline'] ] },
   { key: 'yin', title: 'Yard-In', sub: 'Empty pallets only · pallet scanned', icon: 'layers-outline', grad: ['#10b981', '#047857'], items: [
