@@ -81,9 +81,19 @@ export async function refreshMe() {
 export const canPrintOffline = () => !!(pair && pair.s && pair.i);
 /** Slips / receipts still waiting to be sent (they belong to this pairing - sent with its key). */
 export async function waitingCount() { return (await outbox()).length + ((await kv.get('cust_recv_outbox')) || []).length; }
-export async function unpair() {
-  const n = await waitingCount();
-  if (n) throw new Error(`${n} slip(s) / receipt(s) are still waiting to be sent. Connect to AIS (VPN) and send them first - then remove the pairing.`);
+/** Slips AIS refused 5 times: no longer sent by themselves, and the only thing a supervised unpair may set aside. */
+export async function parkedCount() { return (await outbox()).filter((x) => (x.tries || 0) >= 5).length; }
+export async function unpair(discardParked = false) {
+  const parked = await parkedCount();
+  const live = (await waitingCount()) - parked;
+  if (live) throw new Error(`${live} slip(s) / receipt(s) are still waiting to be sent. Connect to AIS (VPN) and send them first - then remove the pairing.`);
+  if (parked && !discardParked) { const e = new Error(`${parked} slip(s) were refused by AIS ${5}+ times and will NOT be sent. They stay stored on this HHT for checking.`); e.parked = parked; throw e; }
+  if (parked) {       // supervised discard: the refused slips are kept on the device (read-only) and recorded
+    const ob = await outbox();
+    const keep = ob.filter((x) => (x.tries || 0) >= 5).map((x) => ({ ...x, discarded_at: new Date().toISOString() }));
+    await kv.set('cust_slips_failed', [...(((await kv.get('cust_slips_failed')) || [])).slice(-40), ...keep]);
+    await kv.set('cust_outbox', ob.filter((x) => (x.tries || 0) < 5));
+  }
   await SecureStore.deleteItemAsync('cust_key'); await SecureStore.deleteItemAsync('cust_sign').catch(() => {}); await kv.set('cust_pair', null); pair = null; route = null; }
 export const getPairing = () => pair;
 export const getRoute = () => route;

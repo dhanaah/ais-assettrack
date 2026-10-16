@@ -256,7 +256,9 @@ function CustSettings({ onBack, onSetup, onLogout, deviceId, onUnpaired, onTheme
         <Text style={[S.mute, { marginTop: 8 }]}>Internet address (from AIS IT)</Text>
         <TextInput style={S.input} value={wan} onChangeText={setWan} autoCapitalize="none" autoCorrect={false} secureTextEntry placeholder={pair?.wan ? 'set ✓ - type to change' : 'from AIS IT'} />
         <Btn title="Save address" secondary icon="save-outline" onPress={async () => { try { await setInternetAddress(wan); } catch (e) { return toast(e.message, 'err'); } try { await findRoute(true); toast('Online', 'done'); } catch (e) { toast(e.message, 'warn'); } }} />
-        <Btn title="Remove pairing" secondary icon="unlink-outline" onPress={() => Alert.alert('Remove pairing', 'This HHT will stop working for return slips until AIS pairs it again. Slips still waiting must be sent first.', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { try { await unpair(); onUnpaired(); } catch (e) { feedback('err'); Alert.alert('Cannot remove pairing yet', e.message); } } }])} /></View>} />
+        <Btn title="Remove pairing" secondary icon="unlink-outline" onPress={() => Alert.alert('Remove pairing', 'This HHT will stop working for return slips until AIS pairs it again. Slips still waiting must be sent first.', [{ text: 'Cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { try { await unpair(); onUnpaired(); } catch (e) {
+      if (e.parked) { Alert.alert('Refused slips on this HHT', e.message + '\n\nRemove the pairing anyway? Tell AIS about these slips - they were NOT received by AIS.', [{ text: 'Cancel' }, { text: 'Remove anyway', style: 'destructive', onPress: async () => { try { await unpair(true); onUnpaired(); } catch (x) { feedback('err'); Alert.alert('Cannot remove pairing', x.message); } } }]); return; }
+      feedback('err'); Alert.alert('Cannot remove pairing yet', e.message); } } }])} /></View>} />
     <Toast msg={msg} /></View>);
 }
 

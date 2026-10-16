@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## HHT 2.21.3 - 2026-10-16 (server unchanged 1.27.3)
+- Customer HHT: a device whose only waiting items are slips **refused by AIS 5+ times** can now be unpaired with an extra "Remove anyway" confirmation. The refused slips are kept stored on the device for checking and the message says plainly that AIS never received them. Slips and receipts still waiting normally must be sent first, as before.
+
 ## Server 1.27.3 + HHT 2.21.2 - 2026-10-16 - full runtime & logic check
 A full review of the whole application for errors that could happen while running. Two independent reviews (server; HHT + web) found 21 issues; all fixed and re-verified. No process or screen changes.
 
