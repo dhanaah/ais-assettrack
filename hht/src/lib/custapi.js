@@ -201,8 +201,13 @@ async function sendSlipsNow() {
   const done = new Set(), upd = new Map(), sent = [];
   for (const it of ob) {
     if (it.pc && pair && (it.pc !== pair.c || (it.pi && pair.i && it.pi !== pair.i))) { upd.set(it.client_ref, { ...it, last_error: 'Made under another pairing - not sent' }); continue; }
+    if ((it.tries || 0) >= 5) continue;        // parked after 5 refusals: stays in the list with its error, not resent by itself
     try { const slip = await ext('/return-slip', { method: 'POST', body: { ...it.body, client_ref: it.client_ref } }); done.add(it.client_ref); await remember({ ...slip, offline: false, made_on_device: it.created }); sent.push(slip); }
-    catch (e) { upd.set(it.client_ref, { ...it, tries: (it.tries || 0) + 1, last_error: e.message }); if (e.offline) break; }
+    catch (e) {
+      const auth = [401, 403].includes(e.status);      // staff must sign in again: pause, not a failed try
+      upd.set(it.client_ref, { ...it, tries: (it.tries || 0) + (auth || e.offline ? 0 : 1), last_error: e.message });
+      if (e.offline || auth) break;
+    }
   }
   await serial(async () => { const cur = await outbox(); await kv.set('cust_outbox', cur.filter((x) => !done.has(x.client_ref)).map((x) => upd.get(x.client_ref) || x)); });
   return sent;
@@ -270,8 +275,20 @@ export function sendReceipts() {
 }
 async function sendReceiptsNow() {
   const q = (await kv.get('cust_recv_outbox')) || []; if (!q.length) return 0;
-  const done = new Set();
-  for (const it of q) { try { await ext('/receive', { method: 'POST', body: it }); done.add(it.client_ref); } catch (e) { if (e.offline) break; } }
-  await serial(async () => { const cur = (await kv.get('cust_recv_outbox')) || []; await kv.set('cust_recv_outbox', cur.filter((x) => !done.has(x.client_ref))); });
+  const done = new Set(), upd = new Map(), parked = [];
+  for (const it of q) {
+    try { await ext('/receive', { method: 'POST', body: it }); done.add(it.client_ref); }
+    catch (e) {
+      if (e.offline || [401, 403].includes(e.status)) break;            // network / sign-in: try again later, no try counted
+      const tries = (it.tries || 0) + 1;
+      if (tries >= 5) { done.add(it.client_ref); parked.push({ ...it, tries, last_error: e.message }); }   // refused 5 times: kept aside, no longer blocks
+      else upd.set(it.client_ref, { ...it, tries, last_error: e.message });
+    }
+  }
+  await serial(async () => {
+    const cur = (await kv.get('cust_recv_outbox')) || [];
+    await kv.set('cust_recv_outbox', cur.filter((x) => !done.has(x.client_ref)).map((x) => upd.get(x.client_ref) || x));
+    if (parked.length) await kv.set('cust_recv_failed', [...(((await kv.get('cust_recv_failed')) || [])).slice(-40), ...parked]);
+  });
   return done.size;
 }

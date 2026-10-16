@@ -1,4 +1,24 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.27.3 + HHT 2.21.2 - 2026-10-16 - full runtime & logic check
+A full review of the whole application for errors that could happen while running. Two independent reviews (server; HHT + web) found 21 issues; all fixed and re-verified. No process or screen changes.
+
+**Server - a scan can never jam an HHT again:**
+- Scanning the same unknown tag (or a foreign pallet) twice on one return slip crashed the server and left that HHT's offline queue stuck forever. Fixed, and any unexpected error in one scan is now stored as a refusal with a clear message - the rest of the batch always goes through.
+- Mixed clock formats in one offline batch, or a bad heartbeat value, no longer fail the whole push.
+- A smudged or foreign QR at the gates (GCS / slip QR with a bad number) now gives the normal HOLD message instead of a server error.
+- A corrupt Excel file on Masters or WMS upload is refused with "Not a valid .xlsx file" instead of a server error; a blank Active cell on an update row keeps the stored value instead of failing the row.
+- A missing slip-photo file gives "Photo file missing", not a server error; one bad GCS file from the FTP inbox no longer leaves a half-written loading sheet; two server workers starting at the same moment no longer collide on first-start seeding; customer API: a remark sent together with client_ref is kept.
+
+**HHT (2.21.2) - offline work is never lost:**
+- A return slip made offline is no longer dropped after one failed send (e.g. right after a password change): it stays queued, is retried up to 5 times and then shown FAILED in Pending & Sync - never silently lost.
+- The app can no longer get stuck on the starting screen (start-up errors are caught; a corrupt saved setting falls back to its default).
+- "Create slip & print" ignores a double tap (no duplicate slips).
+- Customer HHT: a refused slip or receipt stops auto-retrying after 5 refusals and keeps its error visible; a sign-in problem pauses sending instead of counting as a failure; unpairing is no longer blocked forever.
+- A pallet scanned by its printed QR while a sync is running is no longer overwritten by the older server state.
+- Vehicle loading: Finish also shows against an older server; confirm dialogs work in the web preview.
+
+**Web:** after logout the next user starts on the Dashboard (never on the previous user's page, and pages a user may not open fall back to the Dashboard); a server restart shows "Try again" instead of a blank stuck page; the self-reload after a server update waits until a half-filled form is finished.
+
 ## Server 1.27.2 - 2026-10-14 (HHT unchanged 2.21.1)
 - **First login:** the "Set a new password" screen opens by itself right after the first admin login (current password, new password twice); nothing else opens before it is saved. Then the Dashboard shows "Start here: add your first plant".
 - **Built-in Ctrl+F5:** the web page is never kept by the browser, and an open page reloads itself when the server is updated to a new version.

@@ -266,7 +266,8 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
     if db.get(models.Plant, c.code):
         raise HTTPException(400, "Other AIS plants return pallets with a challan only - not a return slip")
     if body.client_ref:
-        dup = db.query(models.ReturnSlip).filter_by(customer_code=c.code, plant_code=c.plant_code, remarks=f"ref:{body.client_ref}").first()
+        dup = db.query(models.ReturnSlip).filter(models.ReturnSlip.customer_code == c.code, models.ReturnSlip.plant_code == c.plant_code,
+                                                 (models.ReturnSlip.remarks == f"ref:{body.client_ref}") | models.ReturnSlip.remarks.like(f"ref:{body.client_ref} |%")).first()
         if dup:
             return _slip_out(db, dup) | {"duplicate": True}
     did = getattr(request.state, "device_id", None)
@@ -280,7 +281,7 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
                            customer_challan_no=body.customer_challan_no, customer_challan_date=body.customer_challan_date,
                            driver_name=body.driver_name, driver_mobile=body.driver_mobile,
                            source="CUST_HHT" if getattr(request.state, "device", None) else "EXT_API",
-                           created_by=((staff or f"HHT:{c.code}:{request.state.device}")[:40] if getattr(request.state, "device", None) else f"EXT:{c.code}"), remarks=(f"ref:{body.client_ref}" if body.client_ref else None) or body.remarks)
+                           created_by=((staff or f"HHT:{c.code}:{request.state.device}")[:40] if getattr(request.state, "device", None) else f"EXT:{c.code}"), remarks=(f"ref:{body.client_ref}" + (f" | {body.remarks}" if body.remarks else "") if body.client_ref else body.remarks))
     warnings = []; seen = set()
     for scv in body.pallets:
         tag, pal = services.resolve_tag(db, scv)

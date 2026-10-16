@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
+import { ask,S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
 import { Screen, applyTheme, T, useScanMode, setScanMode } from '../ui/kit';
 import { THEMES, THEME_KEYS } from '../ui/theme';
 import { api, getServer, setServer, APP_VERSION } from '../lib/api';
@@ -95,7 +95,7 @@ export function VehicleLoad({ onBack }) {
         toast(`Loading finished · challan ${r.challan_no || 'pending'}${r.gcs_print ? ' · ' + r.gcs_print : ''}`, 'done'); logActivity('VEHICLE_LOAD_DONE', k.picklist_no, r.challan_no);
         setK(null); load(); }
       catch (e) { feedback('err'); toast(e.message, 'err'); } finally { setBusy(false); } };
-    Alert.alert('Finish loading?', short ? `Only ${k.loaded} of ${k.expected} pallet(s) on the GCS are loaded. Finish anyway?` : `${k.loaded} pallet(s) loaded. The challan is made and the vehicle goes to the OUT gate.`,
+    ask('Finish loading?', short ? `Only ${k.loaded} of ${k.expected} pallet(s) on the GCS are loaded. Finish anyway?` : `${k.loaded} pallet(s) loaded. The challan is made and the vehicle goes to the OUT gate.`,
       [{ text: 'Cancel', style: 'cancel' }, { text: 'Finish', style: short ? 'destructive' : 'default', onPress: go }]);
   };
   const onScan = async (code) => {
@@ -112,7 +112,7 @@ export function VehicleLoad({ onBack }) {
   const left = k.pallets.filter((p) => !p.loaded);
   return (<Screen><Header title={`Loading ${k.vehicle_no || ''}`} sub={`GCS ${k.gcs_no || '-'} · ${k.loaded} of ${k.total || '?'} loaded`} onBack={() => { setK(null); load(); }} /><Page>
     {!['DISPATCHED', 'CANCELLED', 'CLOSED'].includes(k.status) ? <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View> : null}
-    {k.can_finish ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
+    {(k.can_finish !== undefined ? k.can_finish : (k.status === 'OPEN' && !!k.gcs_no && k.loaded > 0)) ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
     {!k.can_finish && k.loaded > 0 && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
     {left.map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}
     {k.pallets.filter((p) => p.loaded).map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="DONE" label="LOADED" />} />)}

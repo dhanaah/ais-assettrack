@@ -558,12 +558,15 @@ def _pull_one(db: Session, plant: str, cfg: dict, fetch=None) -> dict:
     created = updated = skipped = cancelled = 0
     err = None
     for name, data in files:
+        sp = db.begin_nested()                   # one bad file never leaves a half-written loading sheet behind
         try:
             for head, items in group_rows(parse_file(name, data)):
                 what, _ = apply_gcs(db, plant, head, name, items)
                 created += what == "created"; updated += what == "updated"; skipped += what == "skipped"; cancelled += what == "cancelled"
+            sp.commit()
             done_names.append(name)
         except Exception as e:
+            sp.rollback()
             log.warning("GCS file %s: %s", name, e); err = f"{name}: {e}"[:300]
     db.commit()
     if f is not None:
@@ -625,7 +628,7 @@ def parse_gcs_qr(code: str) -> dict | None:
         return {"gcs_no": None, "valid": False, "error": "QR format not recognised"}
     body, sig = "|".join(parts[:8]), parts[8]
     ok = services._sig_ok(body, sig)
-    return {"gcs_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "pallets": int(parts[6] or 0),
+    return {"gcs_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "pallets": services.safe_int(parts[6]),
             "valid": bool(ok), "legacy": ok == "legacy", "error": None if ok else "GCS QR check code invalid - not printed by AssetTrack"}
 
 

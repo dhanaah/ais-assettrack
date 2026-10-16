@@ -160,7 +160,11 @@ def _read_rows(name: str, data: bytes) -> list[dict]:
         txt = data.decode("utf-8-sig", errors="ignore")
         return list(csv.DictReader(io.StringIO(txt)))
     from openpyxl import load_workbook
-    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    try:
+        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    except Exception:
+        from fastapi import HTTPException as _HE
+        raise _HE(400, "Not a valid .xlsx file - upload the WMS stock as .xlsx or .csv")
     ws = wb.worksheets[0]
     it = ws.iter_rows(values_only=True)
     hdr = None

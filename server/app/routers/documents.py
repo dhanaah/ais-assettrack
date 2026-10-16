@@ -869,7 +869,10 @@ def slip_doc_photo_get(no: str, i: int, p: Principal = Depends(current_user), db
     photos = json.loads(sl.doc_photos or "[]")
     if not 1 <= i <= len(photos):
         raise HTTPException(404, "No such photo")
-    return FileResponse(os.path.join(_doc_dir(), photos[i - 1]), media_type="image/jpeg")
+    fp = os.path.join(_doc_dir(), photos[i - 1])
+    if not os.path.isfile(fp):
+        raise HTTPException(404, "Photo file missing on the server (moved or cleaned up)")
+    return FileResponse(fp, media_type="image/jpeg")
 
 
 def doc_compare(db, sl) -> dict | None:

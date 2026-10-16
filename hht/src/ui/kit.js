@@ -13,6 +13,17 @@ export const C = { ...THEMES.glass.C };
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
 const ND = Platform.OS !== 'web';   // native driver for transforms / opacity on the device
 
+/** Confirm dialog that also works on web (Alert.alert is silent there). Last button = yes. */
+export function ask(title, msg, buttons) {
+  if (Platform.OS === 'web') {
+    const yes = buttons[buttons.length - 1], no = buttons[0];
+    if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${msg}`)) { yes.onPress && yes.onPress(); }
+    else if (no !== yes) { no.onPress && no.onPress(); }
+    return;
+  }
+  Alert.alert(title, msg, buttons);
+}
+
 /** Screen entry: each screen fades in and slides a little from the right (or from below for home). */
 export function Enter({ children, from = 'right' }) {
   const a = useRef(new Animated.Value(0)).current;

@@ -221,6 +221,42 @@ with TestClient(app, raise_server_exceptions=False) as c:
     check(c.get("/api/v1/auth/me", headers=H).status_code == 401, "old token refused")
     check(c.get("/api/v1/auth/me", headers={"Authorization": "Bearer " + r.json()["token"]}).status_code == 200, "new token works")
 
+    # after check 17 the chn password is newpass1 - fresh tokens for the runtime checks
+    r = c.post("/api/v1/auth/login", json={"user_id": "chn", "password": "newpass1"}); assert r.status_code == 200, r.text
+    HY = {"Authorization": f"Bearer {r.json()['token']}", "X-Device": "HHT", "X-Device-Id": "HHT-T"}
+    print("18. runtime review (16-Oct): one bad event never breaks the push / jams the HHT queue")
+    with SessionLocal() as db:
+        db.add(models.ReturnSlip(slip_no="RS-RT1", plant_code="CHN", customer_code="HMIL", mode="B2", declared_qty=5, status="IN_GATE")); db.commit()
+    r1 = ev(c, HY, "PALLET_SCAN_YARD", {"slip_no": "RS-RT1", "scanned": "NO-SUCH-TAG-1"})
+    r2 = ev(c, HY, "PALLET_SCAN_YARD", {"slip_no": "RS-RT1", "scanned": "NO-SUCH-TAG-1"})
+    check(r1["status"] == "EXCEPTION" and r2["status"] in ("EXCEPTION", "REJECTED"), f"unknown tag scanned twice on the same slip: no server error ({r1['status']}/{r2['status']})")
+    with SessionLocal() as db:
+        nrows = db.query(models.ReturnSlipLine).filter_by(slip_no="RS-RT1", pallet_no="NO-SUCH-TAG-1").count()
+    check(nrows == 1, f"one quarantined line, not two ({nrows})")
+    r = c.post("/api/v1/sync/push", headers=HY, json={"events": [
+        {"event_id": str(uuid.uuid4()), "device_id": "HHT-T", "event_type": "HEARTBEAT", "payload": {"pending": "abc"}, "local_ts": now()},
+        {"event_id": str(uuid.uuid4()), "device_id": "HHT-T", "event_type": "PALLET_MOVE", "payload": {"scanned": "CHN-P001", "to_zone": "FGWH"}, "local_ts": now() + "+05:30"}]})
+    check(r.status_code == 200, f"mixed naive/aware timestamps and a bad heartbeat in one push: still 200 ({r.status_code} {r.text[:80]})")
+
+    print("19. runtime review: smudged / foreign QR at the gates gives a clean message, not a server error")
+    r = c.post("/api/v1/picklists/gcs-open", headers=HY, json={"gcs_no": "AIS1|GCS|G1|CHN|HMIL|TN01|abc|ts|sig"})
+    check(r.status_code == 400, f"GCS QR with a bad number: 400 ({r.status_code})")
+    r = c.post("/api/v1/slips/" + "AIS1|RS|RS-RT1|CHN|HMIL|TN01|abc|ts|-".replace("|", "%7C") + "/gate-in", headers=HY, json={})
+    check(r.status_code in (200, 400), f"slip QR with a bad number: no server error ({r.status_code})")
+    r = c.post("/api/v1/slips/RTS%7C/gate-in", headers=HY, json={})
+    check(r.status_code in (400, 404), f"empty legacy slip QR: clean refusal ({r.status_code})")
+
+    print("20. runtime review: corrupt upload file is refused with a message, blank Active keeps the value")
+    MA = tok(c, "master", hht=False)
+    r = c.post("/api/v1/masters/plants/upload", headers=MA, files={"file": ("x.xlsx", b"this is not excel")})
+    check(r.status_code == 400 and "Not a valid" in r.text, f"masters upload garbage: clean 400 ({r.status_code} {r.text[:60]})")
+    r = c.post("/api/v1/masters/customers/upload", headers=MA, files={"file": ("c.csv", "Code,Name (as on GCS),Plant,Active (Y/N)\nHMIL,Hyundai,CHN,\n".encode())})
+    j = r.json()
+    check(r.status_code == 200 and j["updated"] == 1 and not j["errors"], f"blank Active cell updates the row without error ({r.text[:90]})")
+    with SessionLocal() as db:
+        cst = db.query(models.Customer).filter_by(code="HMIL", plant_code="CHN").first()
+        check(cst.active is True, "blank Active kept the stored value")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)

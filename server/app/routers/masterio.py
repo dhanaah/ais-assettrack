@@ -177,9 +177,15 @@ def current(kind: str, p: Principal = Depends(current_user), db: Session = Depen
 
 def _read(name: str, data: bytes) -> list[dict]:
     if name.lower().endswith(".csv"):
-        return list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
+        try:
+            return list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
+        except (UnicodeDecodeError, csv.Error):
+            raise HTTPException(400, "Not a readable .csv file")
     from openpyxl import load_workbook
-    ws = load_workbook(io.BytesIO(data), data_only=True).worksheets[0]
+    try:
+        ws = load_workbook(io.BytesIO(data), data_only=True).worksheets[0]
+    except Exception:
+        raise HTTPException(400, "Not a valid .xlsx file - download the template, fill it and upload that file")
     hdr = [str(c.value or "").replace("*", "").strip() for c in ws[1]]
     return [dict(zip(hdr, r)) for r in ws.iter_rows(min_row=2, values_only=True) if any(x not in (None, "") for x in r)]
 
@@ -233,7 +239,7 @@ async def upload(kind: str, request: Request, file: UploadFile = File(...), p: P
                     obj.status, obj.location_plant = "AVAILABLE", rec.get("home_plant")
                 db.add(obj)
             for k, v in rec.items():
-                if k not in sp["key"] and (v is not None or k == "active"):
+                if k not in sp["key"] and v is not None:        # blank cell = keep the stored value (Active included)
                     setattr(obj, k, v)
             db.flush(); sp_.commit()
             out["inserted" if new else "updated"] += 1

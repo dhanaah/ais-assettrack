@@ -31,11 +31,12 @@ export async function openDb() {
     CREATE TABLE IF NOT EXISTS local_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT, pallet_no TEXT, ts TEXT);
     CREATE TABLE IF NOT EXISTS activity (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, action TEXT, ref TEXT, result TEXT, detail TEXT, sent INTEGER DEFAULT 0);
   `);
+  try { await db.execAsync('ALTER TABLE local_docs ADD COLUMN tries INTEGER DEFAULT 0'); } catch (e) { }   // older HHT databases
   return db;
 }
 
 export const kv = {
-  async get(k, d = null) { const r = await (await openDb()).getFirstAsync('SELECT v FROM kv WHERE k=?', k); return r ? JSON.parse(r.v) : d; },
+  async get(k, d = null) { const r = await (await openDb()).getFirstAsync('SELECT v FROM kv WHERE k=?', k); if (!r) return d; try { return JSON.parse(r.v); } catch (e) { return d; } },
   async set(k, v) { await (await openDb()).runAsync('INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)', k, JSON.stringify(v)); },
 };
 
@@ -49,6 +50,7 @@ async function palletsWithPendingScans(d) {
     for (const v of [p.local_pallet, p.pallet, p.pallet_no, p.scanned]) {
       if (!v || typeof v !== 'string') continue;
       out.add(v);
+      const q = parsePalletQr(v); if (q && q.pallet_no) out.add(q.pallet_no);
       const t = await d.getFirstAsync('SELECT pallet FROM tags WHERE tag=?', v); if (t && t.pallet) out.add(t.pallet);
     }
   }
@@ -162,6 +164,14 @@ async function undoRejected(d, event_id) {
     await d.runAsync("UPDATE lpns SET status='RESERVED', picklist=NULL WHERE picklist=? AND pallet=?", p.picklist_no, pallet);
   } catch (err) { }
 }
+/** Server refused the offline document (error answer): count the try; after `max` tries it is FAILED (no longer sent). */
+export const failDoc = async (doc_no, msg, max = 5) => {
+  const d = await openDb();
+  await d.runAsync("UPDATE local_docs SET tries=COALESCE(tries,0)+1, result=? WHERE doc_no=? AND status='PENDING'", String(msg || '').slice(0, 300), doc_no);
+  const r = await d.getFirstAsync('SELECT tries FROM local_docs WHERE doc_no=?', doc_no);
+  if (r && r.tries >= max) { await d.runAsync("UPDATE local_docs SET status='FAILED' WHERE doc_no=? AND status='PENDING'", doc_no); return true; }
+  return false;
+};
 export const recentEvents = async (n = 100) => (await openDb()).getAllAsync('SELECT * FROM outbox ORDER BY created_at DESC LIMIT ?', n);
 export const purgeOld = async (days = 30) => (await openDb()).runAsync("DELETE FROM outbox WHERE status<>'PENDING' AND created_at < ?", new Date(Date.now() - days * 864e5).toISOString());
 

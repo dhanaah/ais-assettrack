@@ -137,15 +137,16 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                 info = services.parse_pallet_qr(pl["scanned"])
                 pal = services.register_from_qr(db, info, plant, user_id=p.user_id, device_id=e.device_id, event_id=e.event_id) if info else None
                 registered = pal is not None
+            def slip_line(pallet_no, exc):     # a re-scan of the same pallet on the same slip never adds a second row
+                if slip and not db.query(models.ReturnSlipLine).filter_by(slip_no=slip.slip_no, pallet_no=pallet_no).first():
+                    db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pallet_no, declared=False, received=True, exception=exc))
             if not pal:
-                if slip:
-                    db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pl["scanned"][:30], declared=False, received=True, exception="UNKNOWN"))
+                slip_line(pl["scanned"][:30], "UNKNOWN")
                 info = services.parse_pallet_qr(pl["scanned"])
                 why = f" - owner plant {info['owner_plant']} not in Plant master" if info and info.get("owner_plant") else ""
                 return "EXCEPTION", f"Unknown tag {pl['scanned'][:40]} quarantined{why}"
             if registered:
-                if slip:
-                    db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pal.pallet_no, declared=False, received=True, exception=None if pal.home_plant == plant else "FOREIGN"))
+                slip_line(pal.pallet_no, None if pal.home_plant == plant else "FOREIGN")
                 return "EXCEPTION", f"NEW pallet {pal.pallet_no} registered from its QR label ({pal.pallet_type}, owner {pal.home_plant}) -> {pal.status} in Yard"
             if pal.home_plant != plant and pal.status in ("AT_CUSTOMER", "IN_TRANSIT") and pal.customer_code == plant:
                 raise services.RuleError(f"{pal.pallet_no} is loaded material from {pal.home_plant} - receive at FGWH / Packing, not Yard")
@@ -174,8 +175,7 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                 services.move(db, pal, "HELD", event_type="YARD_SCAN_FOREIGN", user_id=p.user_id, device_id=e.device_id,
                               event_id=e.event_id, plant=plant, ref=slip.slip_no if slip else None, force=True)
                 lpnsvc.set_zone(pal, "YARD"); lpnsvc.set_load(db, pal, "EMPTY")
-                if slip:
-                    db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pal.pallet_no, declared=False, received=True, exception="FOREIGN"))
+                slip_line(pal.pallet_no, "FOREIGN")
                 return "EXCEPTION", f"{pal.pallet_no} HELD for {pal.home_plant}" + (f" | ⚠ {alert}" if alert else "")
             exc = None
             if slip:
@@ -234,7 +234,9 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
     if not p.plant:
         raise HTTPException(400, "Only plant users push events")
     results = []
-    for e in sorted(body.events, key=lambda x: x.local_ts):
+    def _ts(x):                               # naive and timezone-aware local_ts in one batch sort together
+        return x.local_ts.astimezone(timezone.utc).replace(tzinfo=None) if x.local_ts.tzinfo else x.local_ts
+    for e in sorted(body.events, key=_ts):
         existing = db.get(models.Event, e.event_id)
         if existing:
             results.append({"event_id": e.event_id, "status": existing.status, "result": existing.result, "duplicate": True})
@@ -246,7 +248,10 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
             dev = models.Device(device_id=e.device_id, plant_code=p.plant); db.add(dev)
         dev.last_seen = utcnow(); dev.last_user = p.user_id; dev.app_version = e.app_version
         if e.event_type == "HEARTBEAT":              # device status only - not stored as an event (one per minute per HHT)
-            dev.pending_reported = int(e.payload.get("pending", 0) or 0)
+            try:
+                dev.pending_reported = int(e.payload.get("pending", 0) or 0)
+            except (TypeError, ValueError):
+                dev.pending_reported = 0
             db.commit()
             results.append({"event_id": e.event_id, "status": "APPLIED", "result": "ok"}); continue
         from .. import config as _cfg
@@ -255,11 +260,15 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
             # older than the event history kept on the server: it may already have been applied and purged - never re-apply
             results.append({"event_id": e.event_id, "status": "REJECTED", "result": "scan too old - older than the event history kept"}); continue
         sp = db.begin_nested()
-        status, msg = _apply(db, p, e)
-        if status == "REJECTED":
-            sp.rollback()
-        else:
-            sp.commit()
+        try:
+            status, msg = _apply(db, p, e)
+            if status == "REJECTED":
+                sp.rollback()
+            else:
+                sp.commit()
+        except Exception as ex:                  # one bad event must never break the whole push / jam the HHT queue
+            db.rollback()
+            status, msg = "REJECTED", f"Scan refused - internal error ({type(ex).__name__}), report to IT"
         db.add(models.Event(event_id=e.event_id, device_id=e.device_id, user_id=p.user_id, plant_code=p.plant, event_type=e.event_type,
                             payload=json.dumps(e.payload, default=str), local_ts=e.local_ts, app_version=e.app_version,
                             offline=e.offline, status=status, result=msg[:300]))
@@ -271,7 +280,12 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
             existing = db.get(models.Event, e.event_id)
             if existing:
                 results.append({"event_id": e.event_id, "status": existing.status, "result": existing.result, "duplicate": True}); continue
-            raise
+            # a deferred constraint from this event's own writes: store it REJECTED so the HHT stops retrying it
+            status, msg = "REJECTED", "Scan refused - internal error (constraint), report to IT"
+            db.add(models.Event(event_id=e.event_id, device_id=e.device_id, user_id=p.user_id, plant_code=p.plant, event_type=e.event_type,
+                                payload=json.dumps(e.payload, default=str), local_ts=e.local_ts, app_version=e.app_version,
+                                offline=e.offline, status=status, result=msg))
+            db.commit()
         results.append({"event_id": e.event_id, "status": status, "result": msg})
     return {"results": results, "server_time": utcnow().isoformat()}
 

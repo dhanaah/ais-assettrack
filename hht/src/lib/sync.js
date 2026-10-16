@@ -2,7 +2,7 @@
 // Runs every 60 s when online and immediately after each scan when online. Developed by DT
 import NetInfo from '@react-native-community/netinfo';
 import { api, APP_VERSION, hasToken } from './api';
-import { eventResult, pendingEvents, markEvent, failEvent, pendingDocs, markDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
+import { eventResult, pendingEvents, markEvent, failEvent, pendingDocs, markDoc, failDoc, applyPull, kv, pendingCount, purgeOld, unsentActivity, markActivitySent, purgeActivity, logActivity } from './db';
 
 export const state = { online: false, net: false, server: null, syncing: false, pending: 0, lastSync: null, lastError: null, serverVersion: null };
 const listeners = new Set();
@@ -28,8 +28,9 @@ export async function syncNow({ full = false } = {}) {
         if (d.kind === 'RETURN_SLIP') { await api('/slips', { method: 'POST', body: { ...p, slip_no: d.doc_no } }); }
         await markDoc(d.doc_no, 'DONE', 'ok');
       } catch (e) {
-        if (e.offline) throw e;
-        await markDoc(d.doc_no, e.status === 400 && /exists/i.test(e.message) ? 'DONE' : 'FAILED', e.message);
+        if (e.offline || [401, 403, 426].includes(e.status)) throw e;   // no network / sign-in needed / old app: the slip stays PENDING
+        if (e.status === 400 && /exists/i.test(e.message)) await markDoc(d.doc_no, 'DONE', 'ok');
+        else await failDoc(d.doc_no, e.message);                        // retried up to 5 times, then FAILED (Pending & Sync)
       }
     }
     // 1b photos of customer documents waiting for their slip (Option B)

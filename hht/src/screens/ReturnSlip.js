@@ -19,7 +19,7 @@ import { usedVehicle } from '../lib/vehicles';
 export default function ReturnSlip({ onBack, deviceId }) {
   const [custs, setCusts] = useState([]); const [cust, setCust] = useState(null); const mode = 'B2'; const [veh, setVeh] = useState(''); const [dc, setDc] = useState(''); const [drv, setDrv] = useState(''); const [qty, setQty] = useState('');
   const [done, setDone] = useState(null); const [preview, setPreview] = useState(null); const [msg, toast] = useToast(); const [filter, setFilter] = useState('');
-  const [pages, setPages] = useState([]); const [camOn, setCamOn] = useState(false); const [reading, setReading] = useState(false);
+  const [pages, setPages] = useState([]); const [camOn, setCamOn] = useState(false); const [reading, setReading] = useState(false); const [busy, setBusy] = useState(false);
   useEffect(() => { listCustomers().then(setCusts); sendPhotos().catch(() => {}); }, []);
   const res = pages.some(p => p.res) ? mergeResults(pages.map(p => p.res)) : null;
   const addPage = async (uri) => {
@@ -33,10 +33,15 @@ export default function ReturnSlip({ onBack, deviceId }) {
   };
   const rematch = async () => { setReading(true); try { const out = []; for (const p of pages) out.push({ ...p, res: p.res || await matchPage(cust.code, p).catch(() => null) }); setPages(out); } finally { setReading(false); } };
   const create = async () => {
+    if (busy) return; setBusy(true);
+    try { await createInner(); } finally { setBusy(false); }
+  };
+  const createInner = async () => {
     if (!veh.trim()) return toast('Vehicle number required', 'err');
     if (!(+qty > 0)) return toast('Enter the number of pallets', 'err');
     if (!pages.length) return toast('Photo proof required - take a photo of the customer document', 'err');
-    const plant = await kv.get('plant'); usedVehicle(veh).catch(() => {});
+    const plant = (await kv.get('plant')) || { code: 'AIS' };     // fresh HHT that never synced
+    usedVehicle(veh).catch(() => {});
     const body = { customer_code: cust.code, mode, vehicle_no: veh.trim().toUpperCase().replace(/\s/g, ''), pallets: [], declared_qty: +qty, customer_challan_no: dc || null, driver_name: drv || null, doc_photo_count: pages.length };
     if (pages.length) Object.assign(body, { doc_text: pages.map(p => p.text).join('\n----\n').slice(0, 20000), doc_pallets: res ? [...res.matched, ...res.probable].map(x => x.pallet_no) : [], doc_unread: res ? res.unread : [], doc_read_qty: res ? res.read : null, doc_types: res ? Object.fromEntries((res.type_counts || []).map(t => [t.type, t.doc_qty])) : {}, doc_total: res ? res.stated_total : null });
     let slip, provisional = false;
@@ -59,7 +64,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
 
   if (done) return (<Screen><Header title="Return slip created" onBack={reset} /><Page>
     <View style={[S.card, { alignItems: 'center' }]}><Text style={S.big}>{done.slip_no}</Text><Text style={S.mute}>{done.provisional ? 'PROVISIONAL (offline) - gate entry made when it syncs' : `Gate entry ${done.gate_entry || 'registered'}`} · {done.declared_qty} pallets</Text></View>
-    <Btn title="Reprint" secondary onPress={async () => { const plant = await kv.get('plant'); const r = await printSlip(done, plant); if (!r.printed) setPreview(r.text); }} />
+    <Btn title="Reprint" secondary onPress={async () => { try { const plant = (await kv.get('plant')) || { code: 'AIS' }; const r = await printSlip(done, plant); if (!r.printed) setPreview(r.text); } catch (e) { toast('Print failed: ' + e.message, 'err'); } }} />
     <Btn title="New slip" onPress={reset} />
     <Modal visible={!!preview} onRequestClose={() => setPreview(null)}><ScrollView style={{ padding: 20, paddingTop: 50 }}><Text style={{ fontFamily: 'monospace', fontSize: 13 }}>{preview}</Text><Text style={[S.mute, { marginTop: 12 }]}>No Bluetooth printer connected - this is the slip content. Pair a printer in Settings.</Text><Btn title="Close" onPress={() => setPreview(null)} /></ScrollView></Modal>
   </Page><Toast msg={msg} /></Screen>);
@@ -89,7 +94,7 @@ export default function ReturnSlip({ onBack, deviceId }) {
       <DocResult res={res} customer={cust.code} />
     </View>
     <DocCamera visible={camOn} onClose={() => setCamOn(false)} onShot={addPage} />
-    <Btn title={pages.length ? "Create slip & print" : "Take the document photo first"} icon="print-outline" onPress={create} color={C.violet} />
+    <Btn title={busy ? 'Creating…' : pages.length ? "Create slip & print" : "Take the document photo first"} icon="print-outline" onPress={create} disabled={busy} color={C.violet} />
     <Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>Return slip number is generated automatically.</Text>
     {!sync.online ? <Text style={[S.mute, { textAlign: 'center', marginTop: 6, color: C.amber }]}>Offline: slip gets a device number and syncs later</Text> : null}
   </Page><Toast msg={msg} /></Screen>);

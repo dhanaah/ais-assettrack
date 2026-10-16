@@ -46,7 +46,7 @@ export default function App() {
   const lastTouch = useRef(Date.now()); const idleMin = useRef(30);
 
   useEffect(() => {
-    (async () => {
+    (async () => { try {
       FOOT.v = APP_VERSION; await openDb(); await loadSession(); startScanner().catch(() => { });
       const tk = (await kv.get('theme')) || 'glass'; const scale = (await kv.get('ui_scale')) || 1; applyTheme(tk, scale); setThemeKey(tk); await loadScanMode();
       idleMin.current = (await kv.get('idle_min')) ?? 30;
@@ -55,8 +55,9 @@ export default function App() {
       setCust(await loadPairing());
       initFeedback().catch(() => { });
       const m = await getMe(); if (m && hasToken()) { setMe(m); startAutoSync(); syncNow().catch(() => { }); }
-      await refreshPending(); setReady(true);
-    })();
+      await refreshPending();
+    } catch (e) { try { logActivity('APP_START_ERROR', '', String(e?.message || e)); } catch (x) { } }   // never stuck on the splash screen
+      finally { setReady(true); } })();
     const un = subscribe(s => { setSync(s); setNet({ state: s.syncing ? 'syncing' : s.online ? 'online' : 'offline', pending: s.pending }); if (s.lastError === 'LOGIN') { setMe(null); } });
     return () => { un(); stopAutoSync(); };
   }, []);

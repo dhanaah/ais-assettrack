@@ -306,6 +306,14 @@ def offline_sig(key: str, body: str) -> str:
     return hmac.new(key.encode(), body.encode(), hashlib.sha256).hexdigest()[:10].upper()
 
 
+def safe_int(v, d: int = 0) -> int:
+    """A number field of a scanned QR: a smudged / foreign QR gives 0, never a server error."""
+    try:
+        return int(str(v).strip() or 0)
+    except (TypeError, ValueError):
+        return d
+
+
 def parse_slip_qr(code: str) -> dict:
     """Accepts AIS1|RS|... (verifies check code), AIS1|RO|... (slip printed by a customer HHT without network, signed with
     that HHT's own key), legacy RTS|slip|plant|cust|qty or a bare slip number."""
@@ -317,7 +325,7 @@ def parse_slip_qr(code: str) -> dict:
         body, sig = "|".join(parts[:10]), parts[10]
         dev = parts[8]
         ok = dev.isdigit() and __import__("hmac").compare_digest(sig.upper(), offline_sig(device_sign_key(int(dev)), body))
-        return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": int(parts[6] or 0), "ts": parts[7],
+        return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": safe_int(parts[6]), "ts": parts[7],
                 "device_id": int(dev) if dev.isdigit() else None, "refs": [x for x in parts[9].split(",") if x], "offline": True,
                 "signed": True, "valid": ok, "error": None if ok else "QR check code invalid - slip altered or not made by a paired AIS HHT"}
     if s.startswith("AIS1|RS|"):
@@ -326,10 +334,12 @@ def parse_slip_qr(code: str) -> dict:
             return {"slip_no": None, "error": "QR format not recognised"}
         body, sig = "|".join(parts[:8]), parts[8]
         ok = sig != "-" and _sig_ok(body, sig)
-        return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": int(parts[6] or 0),
+        return {"slip_no": parts[2], "plant": parts[3], "customer": parts[4], "vehicle": parts[5], "qty": safe_int(parts[6]),
                 "signed": sig != "-", "legacy": ok == "legacy", "valid": ok or sig == "-", "error": None if (ok or sig == "-") else "QR check code invalid - label altered or not issued by AssetTrack"}
     if s.startswith("RTS|"):
-        return {"slip_no": s.split("|")[1], "signed": False, "valid": True, "error": None}
+        parts = s.split("|")
+        return {"slip_no": parts[1] if len(parts) > 1 and parts[1] else None, "signed": False, "valid": True,
+                "error": None if len(parts) > 1 and parts[1] else "QR format not recognised"}
     return {"slip_no": s, "signed": False, "valid": True, "error": None}
 
 

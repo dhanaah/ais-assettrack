@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 from pathlib import Path
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from . import config, models, integration, bench, reminders  # noqa: F401 (reminders registers email_log)
 from .db import engine, Base, SessionLocal, add_missing_columns
 from .security import ROLE_SEED, NEW_PERMS, UPGRADES, hash_pw
@@ -64,7 +65,10 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
     with SessionLocal() as db:
-        seed(db)
+        try:
+            seed(db)
+        except IntegrityError:               # two workers started at the same moment: the other one seeded first
+            db.rollback()
         # HMIL Planning Bench became the Dispatch Planning Bench (all customers)
         db.query(models.PickList).filter(models.PickList.source == "HMIL_BENCH").update({"source": "DISPATCH_BENCH"}, synchronize_session=False)
         db.commit()
