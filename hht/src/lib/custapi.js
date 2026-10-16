@@ -290,5 +290,5 @@ async function sendReceiptsNow() {
     await kv.set('cust_recv_outbox', cur.filter((x) => !done.has(x.client_ref)).map((x) => upd.get(x.client_ref) || x));
     if (parked.length) await kv.set('cust_recv_failed', [...(((await kv.get('cust_recv_failed')) || [])).slice(-40), ...parked]);
   });
-  return done.size;
+  return done.size - parked.length;
 }

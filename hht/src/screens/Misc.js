@@ -1,6 +1,6 @@
 // Gate IN, Gate OUT, Damage/Tag, Lookup, Pending & Sync, Settings. Developed by DT
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ask,S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
 import { Screen, applyTheme, T, useScanMode, setScanMode } from '../ui/kit';
@@ -110,10 +110,11 @@ export function VehicleLoad({ onBack }) {
     {lists.map((x) => <ListRow key={x.picklist_no} title={`${x.vehicle_no || '—'} · ${x.customer_code || x.to_plant || ''}`} sub={`GCS ${x.gcs_no || '-'} · challan ${x.challan_no || 'pending'}`} right={<Pill s={x.total && x.loaded >= x.total ? 'DONE' : 'PENDING'} label={`${x.loaded}/${x.total || '?'}`} />} onPress={() => setK(x)} />)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
   const left = k.pallets.filter((p) => !p.loaded);
+  const fin = k.can_finish !== undefined ? k.can_finish : (k.status === 'OPEN' && !!k.gcs_no && k.loaded > 0);   // older servers do not send can_finish
   return (<Screen><Header title={`Loading ${k.vehicle_no || ''}`} sub={`GCS ${k.gcs_no || '-'} · ${k.loaded} of ${k.total || '?'} loaded`} onBack={() => { setK(null); load(); }} /><Page>
     {!['DISPATCHED', 'CANCELLED', 'CLOSED'].includes(k.status) ? <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View> : null}
-    {(k.can_finish !== undefined ? k.can_finish : (k.status === 'OPEN' && !!k.gcs_no && k.loaded > 0)) ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
-    {!k.can_finish && k.loaded > 0 && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
+    {fin ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
+    {!fin && k.loaded > 0 && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
     {left.map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}
     {k.pallets.filter((p) => p.loaded).map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="DONE" label="LOADED" />} />)}
   </Page><Toast msg={msg} /></Screen>);

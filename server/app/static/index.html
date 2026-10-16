@@ -148,7 +148,7 @@ async function render(){
   f.onsubmit=async e=>{e.preventDefault();try{const d=formData(f);const r=await api('/auth/login',{method:'POST',body:{...d,device_id:'WEB'}});T=r.token;localStorage.setItem('tok',T);render()}catch(x){msg(x.message,1)}};
   m.append(f);return}
  try{ME=await api('/auth/me');BENCH_MODE=(ME.picklist_source||'BENCH')==='BENCH'}
- catch(x){m.append(h('div',{className:'card'},h('h2',{},'Server not reachable'),h('p',{className:'muted'},x.message||'Trying again…'),h('button',{className:'p',on:{click:render}},'Try again')));BASE_N=m.childElementCount;return}
+ catch(x){if(!T)return render();m.append(h('div',{className:'card'},h('h2',{},'Server not reachable'),h('p',{className:'muted'},x.message||'Trying again…'),h('button',{className:'p',on:{click:render}},'Try again')));BASE_N=m.childElementCount;return}
  {const pg=PAGES.find(p=>p[0]===PAGE);if(!pg||!can(pg[2]))PAGE='dash'}      // a page the user may not open falls back to the dashboard
  $('#who').textContent=`${ME.name} · ${ME.plant||'ALL PLANTS'} · ${ME.roles.join(', ')}`;$('#logout').style.display='';
  if(ME.must_change_pw){       // first login (admin / reset password): set a new password here before anything else opens
