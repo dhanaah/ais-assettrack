@@ -307,6 +307,18 @@ def _transporter(db: Session, plant: str, f: dict) -> str | None:
     return t.code
 
 
+def plant_by_gcs_name(db: Session, v) -> str | None:
+    """Plant named in the GCS file (column AC, e.g. 'Chennai'): matched against the Plant master's
+    'Plant name in GCS file', then the plant code, then the exact plant name."""
+    s = str(v or "").strip()
+    if not s:
+        return None
+    x = db.query(models.Plant).filter(func.upper(models.Plant.gcs_plant_name) == s.upper()).first()
+    if not x:
+        x = db.get(models.Plant, s.upper()) or db.query(models.Plant).filter(func.upper(models.Plant.name) == s.upper()).first()
+    return x.code if x else None
+
+
 def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, items: list[dict] | None = None) -> tuple[str, models.PickList | None]:
     """Create / refresh the loading sheet for one GCS with its invoice lines (invoice, item, qty at line level).
     Returns ('created'|'updated'|'skipped', picklist)."""
@@ -315,12 +327,16 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
     gcs = str(f.get("gcs_no") or "").strip().upper()
     if not gcs:
         return "skipped", None
+    fp = plant_by_gcs_name(db, f.get("plant"))         # the file names its plant (column AC): that plant wins
+    if fp and fp != plant:
+        log.info("GCS %s: file says plant %r -> %s (folder %s)", gcs, f.get("plant"), fp, plant)
+        plant = fp
     no = f"GCS-{plant}-{re.sub(r'[^A-Z0-9]+', '', gcs)[-20:]}"
     pk = db.get(models.PickList, no) or db.query(models.PickList).filter(models.PickList.plant_code == plant, models.PickList.gcs_no == gcs,
                                                                          models.PickList.source == "GCS").first()
     cust = _customer(db, plant, f)
     cancelled = bool(f.get("cancelled_date")) or "CANCEL" in str(f.get("status") or "").upper()
-    to_plant = (str(f.get("to_plant") or "").strip().upper() or None)
+    to_plant = plant_by_gcs_name(db, f.get("to_plant")) or (str(f.get("to_plant") or "").strip().upper() or None)
     dt = "STOCK_TRANSFER" if (to_plant and db.get(models.Plant, to_plant)) else "CUSTOMER"
     if not pk:
         pk = models.PickList(picklist_no=no, plant_code=plant, customer_code=cust, dispatch_type=dt, source="GCS", ext_ref=gcs, gcs_no=gcs,

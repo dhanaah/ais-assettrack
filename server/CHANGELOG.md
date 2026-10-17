@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.28.0 - 2026-10-17 (HHT unchanged 2.21.3) - GCS plant name, FTP settings fixes
+- **Plant name in GCS file (column AC):** new field in the Plant master (form and Excel template). The GCS file writes the plant as a name (e.g. "Chennai"), which was nowhere in the master. Each GCS row is now matched to its plant by this field (then by plant code, then by the exact plant name), whatever folder it arrived in; an unknown name keeps the folder's plant. "To plant" on stock transfers is matched the same way.
+- **GCS inbox - FTP folder per plant (reported by DT):**
+  - Plants whose Active mark was empty after an upgrade from an old version disappeared from this page (and its dropdown) while still showing on the Plants page. They are listed again.
+  - When no plant exists yet, the page now says "No plant found - add the plant first" instead of showing an empty dropdown.
+  - Neon / dark theme: the opened dropdown lists could show light text on a light panel (choices invisible). Dropdown lists are now always dark text on white, in every theme.
+
 ## Server 1.27.4 - 2026-10-17 (HHT unchanged 2.21.3) - antivirus-friendly portable
 - The portable zip no longer contains any self-made EXE: the small unsigned helper EXEs that pip puts in (never used by the server) are removed at build time, and the build fails if anything but the signed python.exe / pythonw.exe remains. On AIS PCs use the **Portable** zip; the EXE zip is unsigned and strict antivirus may remove it - ask IT to whitelist it, or use Portable.
 

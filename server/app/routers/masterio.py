@@ -27,6 +27,7 @@ SPECS = {
         ("App Challan Series", "app_challan_series", "str", False, "CHN/", ""),
         ("Hold Days", "holding_days_default", "int", False, 30, 30),
         ("WMS Stale After (h)", "wms_stale_hours", "int", False, 4, 4), ("EBS Org Id", "ebs_org_id", "str", False, "", ""),
+        ("Plant Name in GCS File", "gcs_plant_name", "str", False, "Chennai", "Pune"),
         ("GCS FTP Folder", "gcs_folder", "str", False, "/GCS/CHN", "/GCS/PUN"),
         ("GCS Printer", "gcs_printer", "str", False, "\\\\PRINTSRV\\FGWH-LASER", ""),
         ("GCS Print Mode (OFF/WINDOWS/RAW9100)", "gcs_print_mode", "str", False, "WINDOWS", "OFF"),

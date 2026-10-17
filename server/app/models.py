@@ -31,6 +31,7 @@ class Plant(Base):
     app_challan_series: Mapped[str | None] = mapped_column(String(20))
     accept_other_plant_default: Mapped[bool] = mapped_column(Boolean, default=True)
     ebs_org_id: Mapped[str | None] = mapped_column(String(20))
+    gcs_plant_name: Mapped[str | None] = mapped_column(String(80))        # plant name as written in the GCS file (column AC, e.g. "Chennai")
     gcs_endpoint: Mapped[str | None] = mapped_column(String(200))
     holding_days_default: Mapped[int] = mapped_column(Integer, default=30)
     wms_stale_hours: Mapped[int | None] = mapped_column(Integer, default=4)          # block release if WMS stock older

@@ -38,6 +38,7 @@ class PlantIn(BaseModel):
     app_challan_series: str | None = None
     accept_other_plant_default: bool = True
     ebs_org_id: str | None = None
+    gcs_plant_name: str | None = None
     gcs_endpoint: str | None = None
     holding_days_default: int = 30
     wms_stale_hours: int | None = 4

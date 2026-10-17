@@ -257,6 +257,21 @@ with TestClient(app, raise_server_exceptions=False) as c:
         cst = db.query(models.Customer).filter_by(code="HMIL", plant_code="CHN").first()
         check(cst.active is True, "blank Active kept the stored value")
 
+    print("21. GCS file plant name (column AC) is matched through the Plant master")
+    from app import gcs as gcssvc
+    with SessionLocal() as db:
+        db.get(models.Plant, "CHN").gcs_plant_name = "Chennai"; db.commit()
+    with SessionLocal() as db:
+        what, pk = gcssvc.apply_gcs(db, "PUN", {"gcs_no": "GCS-AC1", "plant": "Chennai", "vehicle_no": "TN01AA1111", "customer_code": "HMIL"})
+        db.commit()
+        check(what == "created" and pk.plant_code == "CHN" and pk.picklist_no.startswith("GCS-CHN-"), f"file saying 'Chennai' lands on plant CHN even from another folder ({pk.plant_code})")
+        _w2, pk2 = gcssvc.apply_gcs(db, "PUN", {"gcs_no": "GCS-AC2", "plant": "Mystery City", "vehicle_no": "TN01AA1112", "customer_code": "HMIL"})
+        db.commit()
+        check(pk2.plant_code == "PUN", f"unknown plant name keeps the folder plant ({pk2.plant_code})")
+        _w3, pk3 = gcssvc.apply_gcs(db, "CHN", {"gcs_no": "GCS-AC3", "plant": "chennai", "vehicle_no": "TN01AA1113", "customer_code": "HMIL"})
+        db.commit()
+        check(pk3.plant_code == "CHN", "case does not matter")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)
