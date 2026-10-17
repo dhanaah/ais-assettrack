@@ -1,4 +1,8 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.28.2 - 2026-10-17 (HHT unchanged 2.21.3) - GCS queue control
+- **Remove a queued GCS:** on the GCS inbox page, an OPEN loading sheet now has a **Remove** button (admin / FGWH / integration admin). Pallets already scanned onto it are released, the sheet becomes CANCELLED, and it leaves the HHT loading list. It is recorded in the audit log, and comes back only if its file is dropped again.
+- **GCS PDF only after loading:** the QR-coded gate pass PDF is produced only once **Finish loading** is done. Before that, opening the PDF gives a **preview without the gate QR**, marked "NO GATE QR - loading not finished - NOT VALID AT THE OUT GATE", so the admin can still see the GCS but the OUT gate cannot accept it. The web buttons say "PDF (no QR)" until loading is finished.
+
 ## Server 1.28.1 - 2026-10-17 (HHT unchanged 2.21.3) - new pallet label at Vehicle loading (reported by DT)
 - A brand-new pallet label whose **first-ever scan happens at Vehicle loading** was refused as "Unknown pallet QR". Like the Yard, loading now registers the pallet from its QR (the owner plant must be in the Plant master) and links it to the open GCS lines that name it by type + serial (e.g. RW.3100 → AIS-CHN-RW-3100-…), so the loaded count and the GCS check work. A QR whose owner plant is not in the master is still refused.
 

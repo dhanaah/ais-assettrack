@@ -147,7 +147,7 @@ def cancel_picklist(no: str, request: Request, p: Principal = Depends(current_us
     if not k:
         raise HTTPException(404, "Not found")
     p.require_plant(k.plant_code)
-    p.require_any("PICKLIST_CREATE", "EMPTY_RETURN")
+    p.require_any("PICKLIST_CREATE", "EMPTY_RETURN", "INTEGRATION_CONFIG")   # GCS queue: the admin may remove a queued GCS
     if k.status not in ("OPEN", "SO_PENDING", "PDI_PENDING"):
         raise HTTPException(400, f"Cannot cancel at {k.status}" + (" - SO already in EBS, cancel there first" if k.so_number else ""))
     for line in db.query(models.PickListLine).filter_by(picklist_no=no).all():
@@ -413,9 +413,14 @@ def gcs_pdf(no: str, p: Principal = Depends(current_user), db: Session = Depends
     if not k or not k.gcs_no:
         raise HTTPException(404, "GCS not found")
     p.require_plant(k.plant_code)
+    n = db.query(models.PickListLine).filter_by(picklist_no=no).count()
+    if k.status in ("OPEN", "SO_PENDING", "PDI_PENDING"):
+        # loading not finished: a PREVIEW without the gate QR (fresh each time, never kept) - the OUT gate cannot accept it
+        from fastapi.responses import Response
+        data = gcsprint.build_pdf(db, k, p.user, None)
+        return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="GCS_{(k.gcs_no or no).replace("/", "-")}_PREVIEW.pdf"'})
     path = gcsprint.pdf_path(k)
     if not os.path.exists(path):
-        n = db.query(models.PickListLine).filter_by(picklist_no=no).count()
         data = gcsprint.build_pdf(db, k, p.user, gcssvc.gcs_qr(k, n))
         open(path, "wb").write(data)
     return FileResponse(path, media_type="application/pdf", filename=os.path.basename(path))

@@ -85,7 +85,9 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
     now = datetime.now()
     W, H = A4
     ink = (0.16, 0.2, 0.32); grey = (0.82, 0.84, 0.87); red = (0.78, 0.06, 0.18)
-    qpng = io.BytesIO(); segno.make(qr_text, error="m").save(qpng, kind="png", scale=6, border=1); qbytes = qpng.getvalue()
+    qbytes = None
+    if qr_text:                      # loading not finished: the pass prints WITHOUT the gate QR (preview only)
+        qpng = io.BytesIO(); segno.make(qr_text, error="m").save(qpng, kind="png", scale=6, border=1); qbytes = qpng.getvalue()
     logo = os.path.join(str(config.BASE_DIR), "app", "static", "print-logo.png")      # AIS diamond + "Asahi India Glass Ltd."
     if not os.path.exists(logo):
         logo = os.path.join(str(config.BASE_DIR), "app", "static", "icon-192.png")
@@ -150,9 +152,17 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
                 txt(mid, top - 9 * mm, "Finished Goods Materials Gate Pass  (continued)", 11, True, align="c")
                 txt(mid, top - 15 * mm, f"Vehicle {pk.vehicle_no or '—'}{(' (' + pk.vehicle_type + ')') if pk.vehicle_type else ''}   ·   To M/s {to_name}"[:80], 8.5, align="c")
             qs = qw - 5 * mm
-            c.drawImage(ImageReader(io.BytesIO(qbytes)), x0 + tw - 1.5 * mm - qw + 2.5 * mm, top - 2.5 * mm - qs, qs, qs)
-            if first:
-                txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "OUT GATE: scan QR", 6.5, align="c")
+            if qbytes:
+                c.drawImage(ImageReader(io.BytesIO(qbytes)), x0 + tw - 1.5 * mm - qw + 2.5 * mm, top - 2.5 * mm - qs, qs, qs)
+                if first:
+                    txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "OUT GATE: scan QR", 6.5, align="c")
+            else:
+                c.saveState(); c.setFillColorRGB(*red)
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 8 * mm, "NO GATE QR", 9, True, align="c")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 13 * mm, "loading not", 7, align="c")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 17 * mm, "finished", 7, align="c")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "NOT VALID AT THE OUT GATE", 6.5, True, align="c")
+                c.restoreState()
             return top - hh - 3 * mm
 
         def fitw(t, size, width):            # shrink a value so it never runs into the next column

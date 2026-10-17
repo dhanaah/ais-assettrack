@@ -290,6 +290,27 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r = c.post("/api/v1/picklists/CHN-GCS-RW/load", headers=HY, json={"scanned": qr2})
     check(r.status_code == 400 and "not in the Plant master" in r.text, "unknown owner plant still refused")
 
+    print("23. a queued GCS can be removed from the server (cancel) and its pallets are released")
+    r = c.post("/api/v1/picklists/CHN-GCS-RW/cancel", headers=HY, json={})
+    check(r.status_code == 200 and r.json()["status"] == "CANCELLED", f"queued GCS removed ({r.status_code} {r.text[:70]})")
+    with SessionLocal() as db:
+        pal = db.get(models.Pallet, "AIS-CHN-RW-3100-10001")
+        check(pal.status == "AVAILABLE" and pal.picklist_no is None, f"its loaded pallet released ({pal.status})")
+    r = c.get("/api/v1/loading", headers=HY).json()
+    check(not any(x["picklist_no"] == "CHN-GCS-RW" for x in r), "removed GCS gone from the HHT loading list")
+
+    print("24. GCS PDF before Finish loading is a preview WITHOUT the gate QR; the real pass needs APPROVED")
+    with SessionLocal() as db:
+        db.add(models.PickList(picklist_no="CHN-GCS-PV", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=2, status="OPEN",
+                               gcs_no="GCS-PV", source="GCS", vehicle_no="TN87F2001")); db.commit()
+    r = c.get("/api/v1/picklists/CHN-GCS-PV/gcs.pdf", headers=HY)
+    check(r.status_code == 200 and r.content[:4] == b"%PDF" and b"PREVIEW" in (r.headers.get("content-disposition") or "").encode(), f"open GCS gives a PREVIEW pdf ({r.status_code} {r.headers.get('content-disposition')})")
+    with SessionLocal() as db:
+        k = db.get(models.PickList, "CHN-GCS-PV"); k.status = "APPROVED"; k.challan_no = "CH-PV"; db.commit()
+    r2 = c.get("/api/v1/picklists/CHN-GCS-PV/gcs.pdf", headers=HY)
+    check(r2.status_code == 200 and r2.content[:4] == b"%PDF" and b"PREVIEW" not in (r2.headers.get("content-disposition") or "").encode(), "finished GCS gives the real QR gate pass")
+    check(len(r2.content) != len(r.content), "the two PDFs differ (QR present only on the finished one)")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)
