@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.28.1 - 2026-10-17 (HHT unchanged 2.21.3) - new pallet label at Vehicle loading (reported by DT)
+- A brand-new pallet label whose **first-ever scan happens at Vehicle loading** was refused as "Unknown pallet QR". Like the Yard, loading now registers the pallet from its QR (the owner plant must be in the Plant master) and links it to the open GCS lines that name it by type + serial (e.g. RW.3100 → AIS-CHN-RW-3100-…), so the loaded count and the GCS check work. A QR whose owner plant is not in the master is still refused.
+
 ## Server 1.28.0 - 2026-10-17 (HHT unchanged 2.21.3) - GCS plant name, FTP settings fixes
 - **Plant name in GCS file (column AC):** new field in the Plant master (form and Excel template). The GCS file writes the plant as a name (e.g. "Chennai"), which was nowhere in the master. Each GCS row is now matched to its plant by this field (then by plant code, then by the exact plant name), whatever folder it arrived in; an unknown name keeps the folder's plant. "To plant" on stock transfers is matched the same way.
 - **GCS inbox - FTP folder per plant (reported by DT):**

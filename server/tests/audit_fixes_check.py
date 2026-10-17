@@ -272,6 +272,24 @@ with TestClient(app, raise_server_exceptions=False) as c:
         db.commit()
         check(pk3.plant_code == "CHN", "case does not matter")
 
+    print("22. new pallet label first scanned at Vehicle loading: registered from the QR and linked to its GCS lines")
+    import json as _json
+    with SessionLocal() as db:
+        db.add(models.PickList(picklist_no="CHN-GCS-RW", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=1, status="OPEN",
+                               gcs_no="GCS-RW", source="GCS", vehicle_no="TN87F1098")); db.flush()
+        db.add(models.GcsLpn(picklist_no="CHN-GCS-RW", lpn_no="RW31LPN", lpn_label="RW.3100.P555", pallet_ref="RW.3100", pallet_no=None, part_no="WS-1", qty=5))
+        db.add(models.Lpn(lpn_no="RW31LPN", plant_code="CHN", part_no="WS-1", qty=5, status="RESERVED", reserved_for="CHN-GCS-RW")); db.commit()
+    qr = _json.dumps({"uniquePalletID": "AIS-CHN-RW-3100-10001", "ownerPlant": "CHN", "palletType": "RW", "typeSerial": "3100", "globalSerial": "10001"})
+    r = c.post("/api/v1/picklists/CHN-GCS-RW/load", headers=HY, json={"scanned": qr})
+    check(r.status_code == 200 and r.json()["loaded"] == 1, f"new label registered and loaded against GCS line RW.3100 ({r.status_code} {r.text[:90]})")
+    with SessionLocal() as db:
+        g = db.query(models.GcsLpn).filter_by(picklist_no="CHN-GCS-RW").first()
+        pal = db.get(models.Pallet, "AIS-CHN-RW-3100-10001")
+        check(pal is not None and g.pallet_no == "AIS-CHN-RW-3100-10001", "pallet created and GCS line linked by type + serial")
+    qr2 = _json.dumps({"uniquePalletID": "AIS-XXX-RW-9-10002", "ownerPlant": "XXX", "palletType": "RW"})
+    r = c.post("/api/v1/picklists/CHN-GCS-RW/load", headers=HY, json={"scanned": qr2})
+    check(r.status_code == 400 and "not in the Plant master" in r.text, "unknown owner plant still refused")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)

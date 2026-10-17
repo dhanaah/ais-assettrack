@@ -319,6 +319,26 @@ def plant_by_gcs_name(db: Session, v) -> str | None:
     return x.code if x else None
 
 
+def relink_pallet(db: Session, pal: models.Pallet) -> int:
+    """A pallet registered after its GCS files arrived: fill its pallet_no on GCS lines / part cards whose
+    pallet reference (type + serial, e.g. RW.3100) names it, on loads that are still open."""
+    m = services.PALLET_ID_RE.match(pal.pallet_no)
+    if not m:
+        return 0
+    t, ser = m.group(2), int(m.group(3))
+    n = 0
+    for g in (db.query(models.GcsLpn).join(models.PickList, models.PickList.picklist_no == models.GcsLpn.picklist_no)
+              .filter(models.GcsLpn.pallet_no.is_(None), models.GcsLpn.pallet_ref.isnot(None),
+                      models.PickList.status.notin_(["DISPATCHED", "CANCELLED", "CLOSED"])).all()):
+        mm = re.match(r"^([A-Z0-9]*?[A-Z])[.\- ]?0*(\d+)$", str(g.pallet_ref).strip().upper())
+        if mm and mm.group(1) == t and int(mm.group(2)) == ser:
+            g.pallet_no = pal.pallet_no; n += 1
+            l = db.get(models.Lpn, g.lpn_no)
+            if l and not l.pallet_no:
+                l.pallet_no = pal.pallet_no
+    return n
+
+
 def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, items: list[dict] | None = None) -> tuple[str, models.PickList | None]:
     """Create / refresh the loading sheet for one GCS with its invoice lines (invoice, item, qty at line level).
     Returns ('created'|'updated'|'skipped', picklist)."""

@@ -653,7 +653,16 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
         raise HTTPException(400, "Vehicle loading: scan the pallet QR, not the pallet card")
     _t, pal = services.resolve_tag(db, body.scanned.strip())
     if not pal:
-        raise HTTPException(400, f"Unknown pallet QR {body.scanned[:40]} - keep it off the vehicle")
+        # first-ever scan of a new pallet label at the vehicle: register it from the QR, like the Yard does
+        info = services.parse_pallet_qr(body.scanned.strip())
+        if info and not db.get(models.Plant, info.get("owner_plant") or ""):
+            raise HTTPException(400, f"Pallet QR owner plant {info.get('owner_plant') or '?'} is not in the Plant master - keep it off the vehicle")
+        pal = services.register_from_qr(db, info, k.plant_code, user_id=p.user_id) if info else None
+        if not pal:
+            raise HTTPException(400, f"Unknown pallet QR {body.scanned[:40]} - keep it off the vehicle")
+        from .. import gcs as gcssvc
+        linked = gcssvc.relink_pallet(db, pal)     # GCS lines naming this pallet by type + serial now point at it
+        audit(db, p, "QR_REGISTER_AT_LOADING", "pallet", pal.pallet_no, None, {"gcs": k.gcs_no, "linked_lines": linked}, request)
     l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
     alerts = []
     if not l and k.status == "OPEN" and lpnsvc.is_gcs(k) and k.dispatch_type in lpnsvc.PART_TYPES and k.load_point != "YARD":
