@@ -43,7 +43,9 @@ def customer_auth(request: Request, x_api_key: str = Header(default=None), x_rou
                 d.last_seen = utcnow(); d.last_route = (x_route or "")[:10] or None; d.app_version = (x_app_version or "")[:15] or None
                 db.commit()
                 request.state.device = d.label; request.state.device_id = d.id
-                request.state.staff = _staff_from_token(request.headers.get("x-staff-token"), c)
+                tok = request.headers.get("x-staff-token")
+                request.state.staff = _staff_from_token(tok, c, db)
+                request.state.staff_bad = bool(tok) and not request.state.staff   # a sign-in was sent but is no longer valid
                 return c
         raise HTTPException(401, "This HHT is not paired (or was removed) - pair it again from AIS")
     for c in db.query(models.Customer).filter(models.Customer.api_key_prefix == prefix, models.Customer.active == True).all():
@@ -55,16 +57,27 @@ def customer_auth(request: Request, x_api_key: str = Header(default=None), x_rou
 STAFF_DAYS = 30          # customer staff stay signed in on their HHT this long (offline work in between)
 
 
-def _staff_from_token(tok, c):
+def _staff_from_token(tok, c, db=None):
+    """Staff user of a customer HHT sign-in - None when missing, expired, signed by another server, for another customer,
+    or the user was disabled / given a new password since."""
     import jwt
     from .. import config
     if not tok:
         return None
     try:
         d = jwt.decode(tok, config.JWT_SECRET, algorithms=[config.JWT_ALGO])
-        return d["sub"] if d.get("typ") == "cust" and d.get("cust") == f"{c.plant_code}/{c.code}" else None
     except Exception:
         return None
+    if d.get("typ") != "cust" or d.get("cust") != f"{c.plant_code}/{c.code}":
+        return None
+    if db is not None:
+        u = db.query(models.User).filter(models.User.user_id == d["sub"]).first()
+        if not u or not u.active or u.customer_code != c.code:
+            return None
+        from ..security import _pv
+        if "pv" in d and d["pv"] != _pv(u):                       # password reset by AIS since this sign-in
+            return None
+    return d["sub"]
 
 
 def need_staff(request: Request, perm: str, db) -> str | None:
@@ -73,7 +86,9 @@ def need_staff(request: Request, perm: str, db) -> str | None:
         return None
     sid = getattr(request.state, "staff", None)
     if not sid:
-        raise HTTPException(401, "Customer staff sign-in required (user ID + password on the HHT)")
+        if getattr(request.state, "staff_bad", False):
+            raise HTTPException(401, "STAFF_SIGNIN: your sign-in on this HHT is no longer valid (expired, password changed or AIS server changed) - sign in again")
+        raise HTTPException(401, "STAFF_SIGNIN: customer staff sign-in required (user ID + password on the HHT)")
     u = db.query(models.User).filter(models.User.user_id == sid, models.User.active == True).first()
     from ..security import load_perms
     if not u or perm not in load_perms(db, u):
@@ -108,7 +123,8 @@ def staff_login(body: StaffLoginIn, request: Request, c: models.Customer = Depen
     if u.customer_code != c.code or u.plant_code != c.plant_code:
         raise HTTPException(403, f"User {u.user_id} is not staff of {c.code}")
     u.failed_logins = 0; u.last_login = utcnow()
-    tok = jwt.encode({"sub": u.user_id, "typ": "cust", "cust": f"{c.plant_code}/{c.code}", "exp": utcnow() + timedelta(days=STAFF_DAYS)},
+    from ..security import _pv
+    tok = jwt.encode({"sub": u.user_id, "typ": "cust", "cust": f"{c.plant_code}/{c.code}", "pv": _pv(u), "exp": utcnow() + timedelta(days=STAFF_DAYS)},
                      config.JWT_SECRET, algorithm=config.JWT_ALGO)
     db.add(models.AuditLog(user_id=u.user_id, plant_code=c.plant_code, action="CUST_STAFF_LOGIN", entity="device", entity_id=str(request.state.device)[:40],
                            ip=request.client.host if request.client else None))
@@ -186,7 +202,8 @@ def me(request: Request, c: models.Customer = Depends(customer_auth), db: Sessio
     did = getattr(request.state, "device_id", None)
     return {"customer": c.code, "name": c.name, "plant": c.plant_code, "plant_name": pl.name if pl else c.plant_code,
             "holding_limit_days": c.holding_limit_days, "device": getattr(request.state, "device", None),
-            "device_id": did, "sign_key": services.device_sign_key(did) if did else None, "vehicles": _vehicles(db, c)}
+            "device_id": did, "sign_key": services.device_sign_key(did) if did else None, "vehicles": _vehicles(db, c),
+            "staff": getattr(request.state, "staff", None), "staff_ok": not getattr(request.state, "staff_bad", False)}
 
 
 def _vehicles(db, c) -> list[str]:

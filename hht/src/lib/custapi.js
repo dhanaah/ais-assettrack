@@ -143,7 +143,15 @@ export async function ext(path, { method = 'GET', body, timeout = 15000 } = {}, 
       headers: { 'Content-Type': 'application/json', 'X-API-Key': pair.k, 'X-Route': r0.kind, 'X-App-Version': APP_VERSION, 'X-Device-Id': deviceId, ...(staff?.tok ? { 'X-Staff-Token': staff.tok } : {}) },
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { const e = new Error(typeof j.detail === 'string' ? j.detail : (r.statusText || 'Server error')); e.status = r.status; throw e; }
+    if (!r.ok) {
+      let msg = typeof j.detail === 'string' ? j.detail : (r.statusText || 'Server error');
+      const signin = r.status === 401 && /^STAFF_SIGNIN:/.test(msg);
+      msg = msg.replace(/^STAFF_SIGNIN:\s*/, '');
+      const e = new Error(msg); e.status = r.status;
+      if (signin && staff) { e.signin = true; await staffLogout(msg); }    // AIS no longer accepts this sign-in: back to the sign-in screen
+      throw e;
+    }
+    if (path === '/me' && j && j.staff_ok === false && staff) await staffLogout('Your sign-in on this HHT is no longer valid - sign in again');
     return j;
   } catch (e) {
     if (e.status) throw e;
@@ -261,7 +269,13 @@ export async function staffLogin(user, pw) {
     return staff;
   }
 }
-export async function staffLogout() { staff = null; await kv.set('cust_staff_now', null); }
+const signoutListeners = new Set();
+/** Screens listen here: called with the reason when the HHT signs the staff out by itself (AIS refused the sign-in). */
+export function onStaffSignout(fn) { signoutListeners.add(fn); return () => signoutListeners.delete(fn); }
+export async function staffLogout(reason) {
+  staff = null; await kv.set('cust_staff_now', null);
+  if (reason) signoutListeners.forEach((fn) => { try { fn(reason); } catch (e) { } });
+}
 
 // ---------------------------------------------------------------- receiving AIS deliveries (unloading at the customer)
 export async function incoming(refresh = true) {

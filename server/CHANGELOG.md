@@ -1,4 +1,10 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.28.4 + HHT 2.21.5 - 2026-10-17 - customer staff sign-in (reported by DT)
+- **Customer HHT showed staff as signed in, but AIS kept answering "sign-in required".** This happened when the saved sign-in stopped being valid: the AssetTrack server was reinstalled or replaced (new secret key), the HHT reached the other AIS server, the 30 days ran out, or AIS reset the staff password. The HHT never noticed and stayed on its home screen.
+  - The server now says clearly when a sign-in is no longer valid (expired, password changed, made by another server, user disabled or moved to another customer).
+  - The customer HHT then signs the staff out by itself and opens the sign-in screen with "Please sign in again" and the reason. Waiting slips and receipts stay queued and are sent after signing in.
+  - A password reset by AIS now ends that staff user's older sign-ins on customer HHTs (as it already did on AIS HHTs and the web).
+
 ## Server 1.28.3 + HHT 2.21.4 - 2026-10-17 - loading finishes by itself, challan preview
 - **Loading finishes by itself:** when the last pallet the GCS names is scanned at Vehicle loading, the loading is finished automatically - challan made and the QR gate pass printed, no button needed. The vehicle then **leaves the pending list** on the HHT (fully loaded vehicles are no longer listed). If finishing fails (e.g. Oracle challan error), the HHT says so and "Finish loading" stays available.
 - **Challan PDF on the server:** before loading is finished the challan PDF now opens as a **preview without the QR** ("NO QR - loading not finished - NOT VALID AT THE OUT GATE") instead of "No challan yet"; after finishing it has the QR. Buttons on Pick Lists and GCS inbox: "Challan (no QR)" until then.

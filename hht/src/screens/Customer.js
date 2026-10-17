@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import qrcode from 'qrcode-generator';
 import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer, ButtonGroup, Enter } from '../ui/kit';
-import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline, loadStaff, staffLogin, staffLogout, getStaff, staffCan, incoming, receive, sendReceipts } from '../lib/custapi';
+import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline, loadStaff, staffLogin, staffLogout, getStaff, staffCan, incoming, receive, sendReceipts, onStaffSignout } from '../lib/custapi';
 import { VehiclePicker } from '../ui/vehicle';
 import Setup from './Setup';
 import { parsePalletQr, kv } from '../lib/db';
@@ -97,13 +97,14 @@ export function PairDevice({ onBack, onPaired }) {
 
 // ---------------------------------------------------------------- customer app
 export default function CustomerApp({ deviceId, onUnpaired, onTheme, onUi }) {
-  const [screen, setScreen] = useState('home'); const pair = getPairing(); const [staff, setStaff] = useState(undefined);
+  const [screen, setScreen] = useState('home'); const pair = getPairing(); const [staff, setStaff] = useState(undefined); const [why, setWhy] = useState(null);
   useEffect(() => { loadStaff().then((x) => setStaff(x || null)).catch(() => setStaff(null)); }, []);
+  useEffect(() => onStaffSignout((reason) => { setWhy(reason); setStaff(null); setScreen('home'); }), []);   // AIS refused the sign-in: ask again
   const back = () => setScreen('home');
   if (staff === undefined) return null;
   if (!staff) {
     if (screen === 'setup') return <Setup customer onBack={() => setScreen('home')} />;
-    return <StaffLogin onDone={(x) => { setStaff(x); setScreen('home'); }} onSetup={() => setScreen('setup')} />;
+    return <StaffLogin why={why} onDone={(x) => { setWhy(null); setStaff(x); setScreen('home'); }} onSetup={() => setScreen('setup')} />;
   }
   if (screen === 'receive') return <Enter key="receive"><Receive onBack={back} /></Enter>;
   if (screen === 'new') return <Enter key="new"><NewSlip onBack={back} onDone={() => setScreen('slips')} /></Enter>;
@@ -263,7 +264,7 @@ function CustSettings({ onBack, onSetup, onLogout, deviceId, onUnpaired, onTheme
 }
 
 // ---------------------------------------------------------------- customer staff sign-in
-function StaffLogin({ onDone, onSetup }) {
+function StaffLogin({ onDone, onSetup, why }) {
   const pair = getPairing(); const [u, setU] = useState(''); const [p, setP] = useState(''); const [busy, setBusy] = useState(false); const [route, setRoute] = useState(undefined); const [msg, toast] = useToast();
   const recheck = useCallback(() => { setRoute(undefined); findRoute(true).then(setRoute).catch(() => setRoute(null)); }, []);
   useEffect(() => { recheck(); }, []);
@@ -272,6 +273,7 @@ function StaffLogin({ onDone, onSetup }) {
     try { const r = await staffLogin(u, p); toast(r.offline ? 'Signed in (no network)' : 'Signed in', 'done'); onDone(r); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
   return (<Screen><Header logo sub={`${pair?.n || pair?.c || ''} · customer HHT`} /><Page>
     <NetCard route={route} onRecheck={recheck} toast={toast} style={{ marginHorizontal: 0, marginTop: 0, marginBottom: 10 }} />
+    {why ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.warn }]}><Text style={[S.body, { fontWeight: '700', color: C.warn }]}>Please sign in again</Text><Text style={S.mute}>{why}</Text></View> : null}
     <View style={S.card}><Text style={S.h2}>Customer staff sign-in</Text>
       <Text style={S.mute}>User ID (given by AIS)</Text><TextInput style={S.input} value={u} onChangeText={setU} autoCapitalize="none" autoCorrect={false} />
       <Text style={S.mute}>Password</Text><TextInput style={S.input} value={p} onChangeText={setP} secureTextEntry onSubmitEditing={go} />

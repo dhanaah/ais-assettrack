@@ -332,6 +332,24 @@ with TestClient(app, raise_server_exceptions=False) as c:
     j = r.json() if r.status_code == 200 else {}
     check(r.status_code == 200 and j.get("finished") and j.get("challan_no"), f"accepted, and the only pallet finished the loading (challan {j.get('challan_no')}) ({r.status_code} {r.text[:80]})")
 
+    print("26. customer staff: a sign-in AIS no longer accepts is reported so the HHT asks to sign in again")
+    import jwt as _jwt
+    from datetime import timedelta as _td
+    r = c.post("/api/ext/v1/staff-login", headers=DK, json={"user_id": "hmil.staff", "password": "x"})
+    stok = r.json().get("token", "")
+    me = c.get("/api/ext/v1/me", headers=DK | {"X-Staff-Token": stok}).json()
+    check(r.status_code == 200 and me.get("staff") == "hmil.staff" and me.get("staff_ok") is True, "fresh sign-in accepted (/me staff_ok)")
+    bad = _jwt.encode({"sub": "hmil.staff", "typ": "cust", "cust": "CHN/HMIL", "exp": models.utcnow() + _td(days=5)}, "another-server-secret", algorithm="HS256")
+    me = c.get("/api/ext/v1/me", headers=DK | {"X-Staff-Token": bad}).json()
+    check(me.get("staff_ok") is False, "sign-in made by another server (other secret): /me says staff_ok false")
+    r = c.get("/api/ext/v1/holding", headers=DK | {"X-Staff-Token": bad})
+    r2 = c.post("/api/ext/v1/return-slip", headers=DK | {"X-Staff-Token": bad}, json={"pallets": ["CHN-P001"], "vehicle_no": "TN01AB1234", "client_ref": "z9", "customer_challan_no": "DC9"})
+    check(r2.status_code == 401 and r2.json()["detail"].startswith("STAFF_SIGNIN:"), f"staff action with a stale sign-in: 401 STAFF_SIGNIN ({r2.status_code} {r2.text[:80]})")
+    with SessionLocal() as db:
+        u = db.query(models.User).filter_by(user_id="hmil.staff").first(); u.password_hash = hash_pw("newpw123"); db.commit()
+    me = c.get("/api/ext/v1/me", headers=DK | {"X-Staff-Token": stok}).json()
+    check(me.get("staff_ok") is False, "password reset by AIS: the old sign-in is no longer accepted")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)
