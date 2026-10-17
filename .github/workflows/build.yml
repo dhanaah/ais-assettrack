@@ -102,6 +102,12 @@ jobs:
           Copy-Item -Recurse "$py/Lib/tkinter" "$root/python/Lib/tkinter"
           Get-ChildItem "$py/DLLs" | Where-Object { $_.Name -match '^(_tkinter\.pyd|tcl.*\.dll|tk.*\.dll|zlib.*\.dll)$' } | ForEach-Object { Copy-Item $_.FullName "$root/python/"; Write-Host "copied $($_.Name)" }
           Copy-Item -Recurse "$py/tcl" "$root/python/tcl"
+          # antivirus-friendly: drop the unsigned helper EXEs pip creates (never used) - only Microsoft / python.org signed EXEs remain
+          Remove-Item -Recurse -Force "$root/python/Lib/site-packages/bin" -ErrorAction SilentlyContinue
+          Get-ChildItem -Recurse "$root/python/Lib/site-packages" -Filter *.exe | Remove-Item -Force
+          Get-ChildItem -Recurse "$root/python/tcl" -Filter *.exe | Remove-Item -Force
+          $left = Get-ChildItem -Recurse "$root" -Filter *.exe | Where-Object { $_.Name -notin 'python.exe','pythonw.exe' }
+          if ($left) { $left | ForEach-Object { Write-Output "::error::unsigned exe left: $($_.FullName)" }; exit 1 }
           Copy-Item -Recurse server "$root/server"
           Remove-Item -Recurse -Force "$root/server/tests", "$root/server/dist", "$root/server/build" -ErrorAction SilentlyContinue
           Copy-Item AssetTrack_Server_App.bat, START_ASSETTRACK.bat, Restart_AssetTrack_Server.bat "$root/"

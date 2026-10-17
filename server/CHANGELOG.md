@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.27.4 - 2026-10-17 (HHT unchanged 2.21.3) - antivirus-friendly portable
+- The portable zip no longer contains any self-made EXE: the small unsigned helper EXEs that pip puts in (never used by the server) are removed at build time, and the build fails if anything but the signed python.exe / pythonw.exe remains. On AIS PCs use the **Portable** zip; the EXE zip is unsigned and strict antivirus may remove it - ask IT to whitelist it, or use Portable.
+
 ## HHT 2.21.3 - 2026-10-16 (server unchanged 1.27.3)
 - Customer HHT: a device whose only waiting items are slips **refused by AIS 5+ times** can now be unpaired with an extra "Remove anyway" confirmation. The refused slips are kept stored on the device for checking and the message says plainly that AIS never received them. Slips and receipts still waiting normally must be sent first, as before.
 
