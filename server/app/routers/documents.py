@@ -433,9 +433,13 @@ def challan_pdf(no: str, p: Principal = Depends(current_user), db: Session = Dep
     from ..challanprint import build_challan_pdf
     from fastapi.responses import FileResponse
     k = db.get(models.PickList, no)
-    if not k or not k.challan_no:
-        raise HTTPException(404, "No challan on this pick list yet")
+    if not k:
+        raise HTTPException(404, "Pick list not found")
     p.require_plant(k.plant_code)
+    if not k.challan_no:             # loading not finished: preview without the QR (never kept on disk)
+        from fastapi.responses import Response
+        data = build_challan_pdf(db, k, p.user)
+        return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="Challan_{no}_PREVIEW.pdf"'})
     path = gcsprint.challan_path(k)
     with open(path, "wb") as f:
         f.write(build_challan_pdf(db, k, p.user))
@@ -617,10 +621,14 @@ def _loading_row(db, k):
     lines = db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).order_by(models.PickListLine.scanned_at).all()
     pals = [{"pallet_no": l.pallet_no, "short": services.short_ref(l.pallet_no), "loaded": bool(l.loaded_at)} for l in lines]
     have = {l.pallet_no for l in lines}
-    exp = sorted({g.pallet_no for g in db.query(models.GcsLpn).filter_by(picklist_no=k.picklist_no).all() if g.pallet_no})
+    # every pallet the GCS file names - also those whose label was not scanned anywhere yet (only the reference, e.g. RW.3101)
+    gl = db.query(models.GcsLpn).filter_by(picklist_no=k.picklist_no).all()
+    exp = sorted({g.pallet_no for g in gl if g.pallet_no})
+    refs = sorted({str(g.pallet_ref).strip().upper() for g in gl if not g.pallet_no and g.pallet_ref})
     pals += [{"pallet_no": x, "short": services.short_ref(x), "loaded": False} for x in exp if x not in have]
+    pals += [{"pallet_no": x, "short": x, "loaded": False} for x in refs]
     loaded = sum(1 for x in pals if x["loaded"])
-    expected = len(exp) or (k.qty if not lpnsvc.is_gcs(k) and not lpnsvc.is_bench(k) else 0) or None
+    expected = (len(exp) + len(refs)) or (k.qty if not lpnsvc.is_gcs(k) and not lpnsvc.is_bench(k) else 0) or None
     return {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "challan_no": k.challan_no, "vehicle_no": k.vehicle_no, "customer_code": k.customer_code,
             "to_plant": k.to_plant, "dispatch_type": k.dispatch_type, "status": k.status, "total": max(len(pals), expected or 0), "loaded": loaded,
             "expected": expected, "can_finish": lpnsvc.is_gcs(k) and k.status == "OPEN" and loaded > 0, "pallets": pals}
@@ -635,7 +643,8 @@ def loading_list(p: Principal = Depends(hht("VEHICLE_LOAD")), db: Session = Depe
         if k.load_point == "YARD":
             continue
         r = _loading_row(db, k)
-        if r["total"] or (k.status == "OPEN" and lpnsvc.is_gcs(k)):          # GCS / pick list waiting for its first pallet is listed too
+        pending = k.status == "OPEN" or (r["total"] and r["loaded"] < r["total"])   # finished loads (all on the vehicle) leave the list
+        if pending and (r["total"] or (k.status == "OPEN" and lpnsvc.is_gcs(k))):  # GCS waiting for its first pallet is listed too
             out.append(r)
     return out
 
@@ -671,6 +680,8 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
     l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
     alerts = []
     if not l and k.status == "OPEN" and lpnsvc.is_gcs(k) and k.dispatch_type in lpnsvc.PART_TYPES and k.load_point != "YARD":
+        from .. import gcs as _g
+        _g.relink_pallet(db, pal); db.flush()      # pallet registered after the GCS file came: its GCS lines point at it now
         exp = {g.pallet_no for g in db.query(models.GcsLpn).filter_by(picklist_no=no).all() if g.pallet_no}
         if exp and pal.pallet_no not in exp:      # the GCS file names its pallets: anything else stays off this vehicle
             other = (db.query(models.GcsLpn, models.PickList).join(models.PickList, models.PickList.picklist_no == models.GcsLpn.picklist_no)
@@ -694,7 +705,16 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
         audit(db, p, "VEHICLE_LOAD", "picklist", no, None, {"pallet": pal.pallet_no}, request)
         db.commit()
     r = _loading_row(db, k)
-    return r | {"pallet_no": pal.pallet_no, "short": services.short_ref(pal.pallet_no), "duplicate": dup, "alerts": [a for a in alerts if a]}
+    out = r | {"pallet_no": pal.pallet_no, "short": services.short_ref(pal.pallet_no), "duplicate": dup, "alerts": [a for a in alerts if a]}
+    # every pallet the GCS file names is loaded: finish loading by itself - challan + QR gate pass made now
+    if not dup and r["can_finish"] and r["expected"] and r["loaded"] >= r["expected"]:
+        try:
+            fin = confirm_picklist(no, request, p, db)
+            k = db.get(models.PickList, no)
+            out |= {"finished": True, "status": k.status, "challan_no": k.challan_no, "gcs_print": fin.get("gcs_print"), "can_finish": False}
+        except HTTPException as e:
+            out |= {"finished": False, "finish_error": e.detail}
+    return out
 
 
 # ---------------------------------------------------------------- return slips

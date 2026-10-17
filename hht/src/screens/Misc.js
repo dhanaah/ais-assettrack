@@ -100,7 +100,13 @@ export function VehicleLoad({ onBack }) {
   };
   const onScan = async (code) => {
     if (!needOnline(toast)) return; if (busy) return; setBusy(true);
-    try { const r = await api(`/picklists/${encodeURIComponent(k.picklist_no)}/load`, { method: 'POST', body: { scanned: code } }); setK(r);
+    try { const r = await api(`/picklists/${encodeURIComponent(k.picklist_no)}/load`, { method: 'POST', body: { scanned: code } });
+      if (r.finished) {          // last pallet of the GCS: the server finished the loading by itself (challan + QR gate pass)
+        feedback('ok'); toast(`All ${r.loaded} pallet(s) loaded · loading finished · challan ${r.challan_no || 'pending'}${r.gcs_print && r.gcs_print !== 'off' ? ' · ' + r.gcs_print : ''}`, 'done');
+        logActivity('VEHICLE_LOAD_DONE', k.picklist_no, r.challan_no); setK(null); load(); return;
+      }
+      if (r.finish_error) toast(`All pallets loaded, but finishing failed: ${r.finish_error} - press Finish loading`, 'warn');
+      setK(r);
       feedback(r.duplicate ? 'warn' : 'ok'); toast(r.duplicate ? `${r.short} already loaded` : `${r.short} loaded · ${r.loaded} of ${r.total || '?'}${r.alerts?.length ? ' · ' + r.alerts[0] : ''}`, r.duplicate || r.alerts?.length ? 'warn' : 'done'); logActivity('VEHICLE_LOAD', k.picklist_no, r.pallet_no); }
     catch (e) { feedback('err'); toast(e.message, 'err'); } finally { setBusy(false); }
   };
@@ -115,8 +121,8 @@ export function VehicleLoad({ onBack }) {
     {!['DISPATCHED', 'CANCELLED', 'CLOSED'].includes(k.status) ? <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View> : null}
     {fin ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
     {!fin && k.loaded > 0 && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
-    {left.map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}
-    {k.pallets.filter((p) => p.loaded).map((p) => <ListRow key={p.pallet_no} title={p.short} sub={p.pallet_no} right={<Pill s="DONE" label="LOADED" />} />)}
+    {left.map((p) => <ListRow key={p.pallet_no} big title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}
+    {k.pallets.filter((p) => p.loaded).map((p) => <ListRow key={p.pallet_no} big title={p.short} sub={p.pallet_no} right={<Pill s="DONE" label="LOADED" />} />)}
   </Page><Toast msg={msg} /></Screen>);
 }
 

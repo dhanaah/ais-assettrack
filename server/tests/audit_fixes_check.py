@@ -278,6 +278,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
         db.add(models.PickList(picklist_no="CHN-GCS-RW", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=1, status="OPEN",
                                gcs_no="GCS-RW", source="GCS", vehicle_no="TN87F1098")); db.flush()
         db.add(models.GcsLpn(picklist_no="CHN-GCS-RW", lpn_no="RW31LPN", lpn_label="RW.3100.P555", pallet_ref="RW.3100", pallet_no=None, part_no="WS-1", qty=5))
+        db.add(models.GcsLpn(picklist_no="CHN-GCS-RW", lpn_no="RW32LPN", lpn_label="RW.3101.P556", pallet_ref="RW.3101", pallet_no=None, part_no="WS-1", qty=5))
         db.add(models.Lpn(lpn_no="RW31LPN", plant_code="CHN", part_no="WS-1", qty=5, status="RESERVED", reserved_for="CHN-GCS-RW")); db.commit()
     qr = _json.dumps({"uniquePalletID": "AIS-CHN-RW-3100-10001", "ownerPlant": "CHN", "palletType": "RW", "typeSerial": "3100", "globalSerial": "10001"})
     r = c.post("/api/v1/picklists/CHN-GCS-RW/load", headers=HY, json={"scanned": qr})
@@ -290,6 +291,9 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r = c.post("/api/v1/picklists/CHN-GCS-RW/load", headers=HY, json={"scanned": qr2})
     check(r.status_code == 400 and "not in the Plant master" in r.text, "unknown owner plant still refused")
 
+    with SessionLocal() as db:
+        lst = [x for x in c.get("/api/v1/loading", headers=HY).json() if x["picklist_no"] == "CHN-GCS-RW"]
+        check(lst and lst[0]["expected"] == 2 and lst[0]["loaded"] == 1, f"GCS naming 2 pallets (one never scanned yet) expects 2, not 1 ({lst[0]['expected'] if lst else '-'})")
     print("23. a queued GCS can be removed from the server (cancel) and its pallets are released")
     r = c.post("/api/v1/picklists/CHN-GCS-RW/cancel", headers=HY, json={})
     check(r.status_code == 200 and r.json()["status"] == "CANCELLED", f"queued GCS removed ({r.status_code} {r.text[:70]})")
@@ -299,6 +303,12 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r = c.get("/api/v1/loading", headers=HY).json()
     check(not any(x["picklist_no"] == "CHN-GCS-RW" for x in r), "removed GCS gone from the HHT loading list")
 
+    print("24a. challan PDF: preview without the QR before loading is finished (it was refused before)")
+    with SessionLocal() as db:
+        db.add(models.PickList(picklist_no="CHN-GCS-CP", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=1, status="OPEN",
+                               gcs_no="GCS-CP", source="GCS", vehicle_no="TN87F3001")); db.commit()
+    r = c.get("/api/v1/picklists/CHN-GCS-CP/challan.pdf", headers=HY)
+    check(r.status_code == 200 and r.content[:4] == b"%PDF" and b"PREVIEW" in (r.headers.get("content-disposition") or "").encode(), f"challan preview opens ({r.status_code})")
     print("24. GCS PDF before Finish loading is a preview WITHOUT the gate QR; the real pass needs APPROVED")
     with SessionLocal() as db:
         db.add(models.PickList(picklist_no="CHN-GCS-PV", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=2, status="OPEN",
@@ -310,6 +320,17 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r2 = c.get("/api/v1/picklists/CHN-GCS-PV/gcs.pdf", headers=HY)
     check(r2.status_code == 200 and r2.content[:4] == b"%PDF" and b"PREVIEW" not in (r2.headers.get("content-disposition") or "").encode(), "finished GCS gives the real QR gate pass")
     check(len(r2.content) != len(r.content), "the two PDFs differ (QR present only on the finished one)")
+
+    print("25. pallet registered (at the Yard) AFTER its GCS file came is accepted at loading; last pallet finishes by itself")
+    with SessionLocal() as db:
+        db.add(models.PickList(picklist_no="CHN-GCS-LT", plant_code="CHN", customer_code="HMIL", dispatch_type="CUSTOMER", qty=1, status="OPEN",
+                               gcs_no="GCS-LT", source="GCS", vehicle_no="TN87F4001")); db.flush()
+        db.add(models.GcsLpn(picklist_no="CHN-GCS-LT", lpn_no="LT1", lpn_label="LT.700.P1", pallet_ref="LT.700", pallet_no=None, part_no="WS-1", qty=5))
+        db.add(models.Pallet(pallet_no="AIS-CHN-LT-700-20001", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED"))
+        db.commit()
+    r = c.post("/api/v1/picklists/CHN-GCS-LT/load", headers=HY, json={"scanned": "AIS-CHN-LT-700-20001"})
+    j = r.json() if r.status_code == 200 else {}
+    check(r.status_code == 200 and j.get("finished") and j.get("challan_no"), f"accepted, and the only pallet finished the loading (challan {j.get('challan_no')}) ({r.status_code} {r.text[:80]})")
 
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")

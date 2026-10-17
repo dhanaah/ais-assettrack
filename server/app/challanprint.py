@@ -73,8 +73,10 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
     F = scale or (max(70, min(110, int(getattr(plant, "gcs_font_pct", None) or 88))) / 100)
     W, H = A4
     ink = (0.16, 0.2, 0.32); grey = (0.82, 0.84, 0.87); red = (0.78, 0.06, 0.18)
-    qr_text = f"CHL|{pk.challan_no}|{pk.picklist_no}|{len(lines)}"
-    qpng = io.BytesIO(); segno.make(qr_text, error="m").save(qpng, kind="png", scale=6, border=1); qbytes = qpng.getvalue()
+    qbytes = None
+    if pk.challan_no:                # no challan yet (loading not finished): preview WITHOUT the QR, not valid at the gate
+        qr_text = f"CHL|{pk.challan_no}|{pk.picklist_no}|{len(lines)}"
+        qpng = io.BytesIO(); segno.make(qr_text, error="m").save(qpng, kind="png", scale=6, border=1); qbytes = qpng.getvalue()
     logo = os.path.join(str(config.BASE_DIR), "app", "static", "print-logo.png")      # AIS diamond + "Asahi India Glass Ltd."
     if not os.path.exists(logo):
         logo = os.path.join(str(config.BASE_DIR), "app", "static", "icon-192.png")
@@ -138,9 +140,17 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
                 txt(mid, top - 9 * mm, f"{title}  (continued)", 11, True, align="c")
                 txt(mid, top - 15 * mm, f"Vehicle {pk.vehicle_no or '—'}   ·   To M/s {c_name}"[:80], 8.5, align="c")
             qs = qw - 5 * mm
-            c.drawImage(ImageReader(io.BytesIO(qbytes)), x0 + tw - 1.5 * mm - qw + 2.5 * mm, top - 2.5 * mm - qs, qs, qs)
-            if first:
-                txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "Challan QR", 6.5, align="c")
+            if qbytes:
+                c.drawImage(ImageReader(io.BytesIO(qbytes)), x0 + tw - 1.5 * mm - qw + 2.5 * mm, top - 2.5 * mm - qs, qs, qs)
+                if first:
+                    txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "Challan QR", 6.5, align="c")
+            else:
+                c.saveState(); c.setFillColorRGB(*red)
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 8 * mm, "NO QR", 9, True, align="c")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 13 * mm, "loading not", 7, align="c")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 17 * mm, "finished", 7, align="c")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "NOT VALID AT THE OUT GATE", 6.5, True, align="c")
+                c.restoreState()
             return top - hh - 3 * mm
 
         def details(y):

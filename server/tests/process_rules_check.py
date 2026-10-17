@@ -229,11 +229,14 @@ with TestClient(app, raise_server_exceptions=False) as c:
         check(db.get(models.Lpn, "PC-10").status == "PICKED" and db.get(models.Pallet, "CHN-P010").status == "ALLOCATED", "its part card picked and pallet allocated to the GCS")
     r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P010"}).json()
     check(r["duplicate"], "same pallet again: already loaded")
+    lst = c.get("/api/v1/loading", headers=SL).json()
+    check(any(x["picklist_no"] == "CHN-GCS-11" for x in lst), "1 of 2 loaded: still in the pending list")
     r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P011"}).json()
-    check(r["loaded"] == 2 and r["can_finish"], "2 of 2 loaded: finish allowed")
-    r = c.post("/api/v1/picklists/CHN-GCS-11/confirm", headers=SL)
-    check(r.status_code == 200 and r.json()["status"] == "APPROVED" and r.json().get("challan_no"), f"Finish loading by Security: challan made, ready for the OUT gate ({r.status_code} {r.text[:80]})")
-    cno = r.json().get("challan_no") if r.status_code == 200 else ""
+    check(r["loaded"] == 2 and r.get("finished") and r.get("status") == "APPROVED" and r.get("challan_no"),
+          f"2 of 2 loaded: loading finished by itself - challan + QR made ({r.get('finished')} {r.get('status')} {r.get('challan_no')})")
+    lst = c.get("/api/v1/loading", headers=SL).json()
+    check(not any(x["picklist_no"] == "CHN-GCS-11" for x in lst), "all pallets loaded: gone from the pending list")
+    cno = r.get("challan_no") or ""
     r = c.post("/api/v1/gate-out/scan", headers=H, json={"scanned": f"CHL|{cno}|CHN-GCS-11|2"})
     check(r.status_code == 200 and r.json()["status"] == "DISPATCHED", f"OUT gate scans the challan: dispatched ({r.status_code} {r.text[:80]})")
     r = c.post("/api/v1/picklists/CHN-GCS-11/load", headers=SL, json={"scanned": "CHN-P012"})

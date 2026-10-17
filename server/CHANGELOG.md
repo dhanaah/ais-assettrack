@@ -1,4 +1,10 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.28.3 + HHT 2.21.4 - 2026-10-17 - loading finishes by itself, challan preview
+- **Loading finishes by itself:** when the last pallet the GCS names is scanned at Vehicle loading, the loading is finished automatically - challan made and the QR gate pass printed, no button needed. The vehicle then **leaves the pending list** on the HHT (fully loaded vehicles are no longer listed). If finishing fails (e.g. Oracle challan error), the HHT says so and "Finish loading" stays available.
+- **Challan PDF on the server:** before loading is finished the challan PDF now opens as a **preview without the QR** ("NO QR - loading not finished - NOT VALID AT THE OUT GATE") instead of "No challan yet"; after finishing it has the QR. Buttons on Pick Lists and GCS inbox: "Challan (no QR)" until then.
+- **Expected pallets counted right:** a GCS naming a pallet whose label was never scanned yet (e.g. RW.3101) now counts it, so the loading can't finish early. A pallet registered (e.g. at the Yard) after its GCS file arrived is now accepted at loading instead of "not in GCS".
+- **HHT:** pallet numbers on the Vehicle loading screen are shown larger.
+
 ## Server 1.28.2 - 2026-10-17 (HHT unchanged 2.21.3) - GCS queue control
 - **Remove a queued GCS:** on the GCS inbox page, an OPEN loading sheet now has a **Remove** button (admin / FGWH / integration admin). Pallets already scanned onto it are released, the sheet becomes CANCELLED, and it leaves the HHT loading list. It is recorded in the audit log, and comes back only if its file is dropped again.
 - **GCS PDF only after loading:** the QR-coded gate pass PDF is produced only once **Finish loading** is done. Before that, opening the PDF gives a **preview without the gate QR**, marked "NO GATE QR - loading not finished - NOT VALID AT THE OUT GATE", so the admin can still see the GCS but the OUT gate cannot accept it. The web buttons say "PDF (no QR)" until loading is finished.

@@ -242,10 +242,10 @@ export const SwitchRow = ({ label, hint, value, onChange, danger }) => (
 export const Empty = ({ icon = 'checkmark-done-circle-outline', text, hint }) => (
   <View style={{ alignItems: 'center', paddingVertical: sc(26) }}><Ionicons name={icon} size={sc(40)} color={C.mute} /><Text style={[S.body, { marginTop: 8, fontWeight: '600' }]}>{text}</Text>{hint ? <Text style={[S.mute, { textAlign: 'center', marginTop: 4 }]}>{hint}</Text> : null}</View>);
 /** Row in a list card: left text + right element, long-press action. */
-export const ListRow = ({ title, sub, right, onLongPress, onPress, index }) => (
+export const ListRow = ({ title, sub, right, onLongPress, onPress, index, big }) => (   // big: large title (pallet number at vehicle loading)
   <TouchableOpacity activeOpacity={onLongPress || onPress ? 0.7 : 1} onLongPress={onLongPress} onPress={onPress} style={[S.card, { paddingVertical: sc(9), marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
     {index != null ? <Text style={[S.mute, { width: 24, textAlign: 'right', fontWeight: '700' }]}>{index}</Text> : null}
-    <View style={{ flex: 1, minWidth: 0 }}><Text style={[S.body, { fontWeight: '600' }]} numberOfLines={1}>{title}</Text>{sub ? <Text style={S.mute} numberOfLines={2}>{sub}</Text> : null}</View>
+    <View style={{ flex: 1, minWidth: 0 }}><Text style={[S.body, { fontWeight: big ? '800' : '600' }, big ? { fontSize: sc(24), letterSpacing: 0.6 } : null]} numberOfLines={1}>{title}</Text>{sub ? <Text style={S.mute} numberOfLines={2}>{sub}</Text> : null}</View>
     {right}
   </TouchableOpacity>);
 
