@@ -78,7 +78,7 @@ def get_gcs(p: Principal = Depends(current_user), db: Session = Depends(get_db))
     cfg = gcs.get_settings(db)
     cfg["gcs_password"] = "••••••" if cfg.get("gcs_password") else ""
     ps = gcs.plant_status()
-    q = db.query(models.Plant).filter(models.Plant.active.is_(True))
+    q = db.query(models.Plant).filter((models.Plant.active.is_(True)) | (models.Plant.active.is_(None)))   # old DBs: active may be NULL
     if p.plant:
         q = q.filter(models.Plant.code == p.plant)
     plants = [{"code": x.code, "name": x.name, "gcs_enabled": bool(x.gcs_enabled), "gcs_folder": x.gcs_folder, "gcs_done_folder": x.gcs_done_folder,
