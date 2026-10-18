@@ -349,6 +349,7 @@ jobs:
           $h = Invoke-RestMethod http://localhost/api/v1/health
           if ($h.db -ne "ok") { Write-Output "::error::site not running after the refused migration"; exit 1 }
           Write-Host "refused as expected, site running again"
+          exit 0
       - name: Update run - the same script again keeps web.config and the data
         shell: powershell
         run: |

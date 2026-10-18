@@ -1,4 +1,14 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.30.0 - 2026-10-18 (HHT unchanged 2.22.0) - IIS + SQL Server as a second way to host (requested by DT)
+The tray / portable server with SQLite is **unchanged** and stays supported. The same portable zip can now also be installed on IIS with SQL Server:
+- **`iis\Setup_IIS.ps1`** (IT, as Administrator, in a folder of its own such as `C:\AssetTrack_IIS`): checks IIS (adds it if missing) and the IIS module (HttpPlatformHandler or the ASP.NET Core Module), the ODBC driver, creates the SQL Server database and login (`-CreateDatabase`), writes `server\web.config`, makes the app pool (always running, never idle-stopped) and the site, sets folder rights and the firewall rule, starts it and checks the health. Running it again after unzipping a new version = update; `web.config` with the settings is kept (not in the zip any more).
+- **`iis\Migrate_SQLite_to_SQLServer.ps1`**: copies all data of the tray server into SQL Server (row counts compared), with `secret.key`, so printed QRs and HHT sign-ins stay valid. A SQL database that already holds data is never overwritten; the SQLite file is only read.
+- On IIS the 5-minute job (EBS / GCS retries, reminders) runs inside the server (`PALLET_RETRY_JOB=1`) - no Task Scheduler entry needed; `PALLET_SERVER_PORTS` sets the ports in the HHT setup QR.
+- SQL Server fixes found by running every check on SQL Server 2022: text columns hold any character (NVARCHAR), an over-long text is cut to its column instead of failing the save, and four queries that SQL Server refuses were rewritten (yard zone view, GCS lookup, plant list of the GCS inbox, WMS-missing filter).
+- Uploads sent without a size (IIS can forward them so) are limited to 30 MB like the others.
+- Proven in the build: all checks on SQL Server 2022; the portable zip installed on IIS + SQL Server Express with both IIS modules, then signed in, password changed, plant added, site restarted (data kept), update run, migration refusal.
+- Guide for IT: `docs/DEPLOY_IIS_SQLSERVER.md` and `iis\README_IIS.txt` in the zip.
+
 ## Server 1.29.1 - 2026-10-18 (HHT unchanged 2.22.0) - remaining review points
 - Web sign-in no longer tells whether a user name belongs to customer staff before the password is right.
 - Dashboard chart tips show customer / plant names as plain text (names from GCS files can never run as page code).
