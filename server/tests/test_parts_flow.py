@@ -149,14 +149,20 @@ with TestClient(app) as c:
         from app.security import hash_pw as _h
         cu = db.query(models.Customer).filter_by(code="HMIL", plant_code="CHN").first(); cu.api_key_hash = _h("ais_testkey_123456"); cu.api_key_prefix = "ais_test"; db.commit()
     r = c.post("/api/ext/v1/return-slip", headers={"X-API-Key": "ais_testkey_123456"}, json={"pallets": ["CHN-P001", "CHN-P006"], "vehicle_no": "TN09AB0001", "customer_challan_no": "DC-76"}).json()
-    check(any("MISSED SCAN (OUT_GATE)" in w for w in r.get("warnings", [])), f"returned pallet never dispatched -> missed OUT_GATE recorded {str(r)[:300]}")
+    check(any("CHN-P006" in w and "AVAILABLE" in w for w in r.get("warnings", [])), f"customer slip never changes a pallet AIS shows in the plant (warning only) {str(r)[:300]}")
+    p6 = c.get("/api/v1/pallets/CHN-P006", headers=H).json()["pallet"]
+    check(p6["status"] == "AVAILABLE", "CHN-P006 stays AVAILABLE until the AIS Yard / Gate scan")
     pk2 = c.post("/api/v1/picklists", headers=H, json={"dispatch_type": "CUSTOMER", "blanket_id": b["id"], "part_qty": 10, "qty": 1})
     check(pk2.status_code == 200, "second release ok")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": pk2.json()["picklist_no"], "scanned": "L5", "pallet": "CHN-P002"})
     check(e["status"] == "EXCEPTION" and "RETURN_SLIP" in e["result"] or "YARD_IN" in e["result"], f"pallet still at customer scanned at dock -> auto received: {e['result'][:90]}")
     print("9. other-plant material -> FGWH/Packing -> Yard -> empty return with e-way bill")
+    r = c.post("/api/v1/plant-receipts", headers=H, json={"scanned": ["PUN-P001"], "zone": "FGWH", "ref": "PUN-ST-1"}).json()
+    check(not r[0]["ok"] and "IN gate" in r[0]["message"], "other-plant material refused until its challan is endorsed at the IN gate")
+    with SessionLocal() as db:
+        db.add(models.GateEntry(entry_no="CHN-GE-T1", plant_code="CHN", kind="CHALLAN", ref_no="PUN-ST-1", from_party="PUN", gcs_in_no="GCS-IN-T1")); db.commit()
     r = c.post("/api/v1/plant-receipts", headers=H, json={"scanned": ["PUN-P001", "PUN-P002"], "zone": "FGWH", "ref": "PUN-ST-1"}).json()
-    check(all(x["ok"] for x in r), "PUN pallets received at FGWH (LOADED, IN_WIP)")
+    check(all(x["ok"] for x in r), f"PUN pallets received at FGWH (LOADED, IN_WIP) {r}")
     e = ev(c, H, "PALLET_SCAN_YARD", {"scanned": "PUN-P003", "accept_foreign": True})
     check(e["status"] == "REJECTED" and "FGWH" in e["result"], "loaded other-plant pallet refused at Yard")
     r = c.post("/api/v1/moves", headers=H, json={"scanned": ["PUN-P001"], "to_zone": "PACKING"}).json()[0]
@@ -210,7 +216,7 @@ with TestClient(app) as c:
     print("11. missed-scan register")
     ms = c.get("/api/v1/scan-misses", headers=H).json()
     pts = sorted({m["missed_point"] for m in ms})
-    check(len(ms) >= 5, f"{len(ms)} missed scans recorded: {pts}")
+    check(len(ms) >= 4, f"{len(ms)} missed scans recorded: {pts}")     # (a customer slip no longer auto-corrects in-plant pallets)
     r = c.post(f"/api/v1/scan-misses/{ms[0]['id']}/resolve", headers=H, json={"resolution": "briefed security"}).json()
     check(r["resolved"], "missed scan resolved")
     pp = c.get("/api/v1/reports/plant-position", headers=W).json()

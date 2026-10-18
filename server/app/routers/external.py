@@ -174,6 +174,8 @@ def receive(body: ReceiveIn, request: Request, c: models.Customer = Depends(cust
         k = _incoming_q(db, c).filter((models.PickList.gcs_no == g) | (models.PickList.challan_no == g)).first()
     if not k or k.customer_code != c.code or k.plant_code != c.plant_code:
         raise HTTPException(404, "Delivery not found for this customer")
+    if k.status not in ("DISPATCHED", "CLOSED"):
+        raise HTTPException(400, "This delivery has not left AIS yet - receive it after the vehicle is gated out")
     on = {l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all()}
     who = staff or f"EXT:{c.code}"; res = []
     for scv in body.scanned:
@@ -238,7 +240,8 @@ def vehicles(c: models.Customer = Depends(customer_auth), db: Session = Depends(
 def holding(c: models.Customer = Depends(customer_auth), db: Session = Depends(get_db)):
     now = utcnow()
     rows = db.query(models.Pallet).filter_by(customer_code=c.code, home_plant=c.plant_code, status="AT_CUSTOMER").order_by(models.Pallet.dispatch_date).all()
-    limit = c.holding_limit_days
+    pl = db.get(models.Plant, c.plant_code)
+    limit = c.holding_limit_days or (pl.holding_days_default if pl else None) or 30     # same rule as the reminders
     return {"customer": c.code, "plant": c.plant_code, "count": len(rows), "holding_limit_days": limit,
             "pallets": [{"pallet_no": p.pallet_no, "tag": p.current_tag, "type": p.pallet_type, "challan": p.challan_ref,
                          "dispatched": p.dispatch_date, "days": (now - p.dispatch_date).days if p.dispatch_date else None,
@@ -330,7 +333,9 @@ def create_slip(body: ExtSlipIn, request: Request, c: models.Customer = Depends(
 def _may_autocorrect(db, pal, c) -> bool:
     """A customer slip may correct the ledger (dispatch never scanned) only for this plant's pallet that was on a load
     for this customer - never another plant's or another customer's pallet."""
-    if pal.home_plant != c.plant_code or pal.location_plant not in (None, c.plant_code):
+    if pal.home_plant != c.plant_code or pal.location_plant is not None:
+        # a pallet AIS shows inside the plant (Yard, on a vehicle being loaded) is never changed by customer input:
+        # the slip line is kept as declared with a warning and the AIS Yard / Gate scan corrects it
         return False
     if pal.status == "ALLOCATED":
         pk = db.get(models.PickList, pal.picklist_no) if pal.picklist_no else None
@@ -375,6 +380,8 @@ def _merge_offline(db, sl, body, c, request):
             line = have.pop(sr); line.pallet_no = pno[:30]; have[pno] = line
         if pno in have:
             have[pno].declared = True
+            if have[pno].exception == "EXCESS":     # received at the Yard before the slip arrived: it was declared after all
+                have[pno].exception = None
             continue
         if pal and pal.customer_code == c.code and pal.status == "AT_CUSTOMER":
             services.move(db, pal, "IN_RETURN", event_type="RETURN_SLIP_EXT", user_id=f"EXT:{c.code}", ref=sl.slip_no, customer=c.code)

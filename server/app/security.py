@@ -74,6 +74,12 @@ def check_pw(p: str, h: str) -> bool:
         return False
 
 
+def pw_rule(pw: str | None):
+    """Password policy for new / changed passwords: 8+ characters with letters and digits."""
+    if not pw or len(pw) < 8 or not any(c.isdigit() for c in pw) or not any(c.isalpha() for c in pw):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Password must be at least 8 characters with letters and digits")
+
+
 def _pv(user: models.User) -> str:
     """Password version: changes when the password changes, so older sign-ins stop working."""
     return (user.password_hash or "")[-10:]
@@ -103,7 +109,7 @@ def decode_user(db: Session, raw: str, ticket: bool):
     user = db.get(models.User, data.get("uid"))
     if not user or not user.active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
-    if "pv" in data and data["pv"] != _pv(user):
+    if data.get("pv") != _pv(user):           # every token carries the password version (tokens without it are refused)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Password changed - login again")
     return user
 
@@ -155,11 +161,15 @@ def current_user(request: Request, creds: HTTPAuthorizationCredentials = Depends
     raw = creds.credentials if creds else request.query_params.get("tok")
     if not raw:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login required")
+    if not creds and (request.method != "GET" or request.url.path.startswith("/api/v1/auth/")):
+        # a link ticket only opens a print / PDF / Excel / photo link - it cannot change anything or make new tickets
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Login required")
     user = decode_user(db, raw, ticket=not creds)
-    if (user.must_change_pw and user.user_id == config.BOOTSTRAP_ADMIN_USER and not request.url.path.startswith("/api/v1/auth/")
+    if (user.must_change_pw and (user.user_id == config.BOOTSTRAP_ADMIN_USER or not is_hht(request))
+            and not request.url.path.startswith("/api/v1/auth/")
             and not (request.method == "GET" and request.url.path in ("/api/v1/roles", "/api/v1/perm-groups", "/api/v1/plants"))):   # Users page (My account) still opens
-        # the built-in admin keeps its known first password until it is changed: nothing else works before that
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Change the admin password first (Users > My account)")
+        # a first / reset password must be changed before anything else works on the web (the built-in admin: everywhere)
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Change your password first (Users > My account)")
     p = Principal(user, load_perms(db, user))
     want = (request.headers.get("x-plant") or "").strip().upper()
     if want and want != (user.plant_code or ""):        # plant selected on the HHT (one server, many plants)

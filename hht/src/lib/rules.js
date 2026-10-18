@@ -12,7 +12,8 @@ async function palletForDispatch(pk, pallet, plant, warn) {
   if (['AT_CUSTOMER', 'IN_RETURN', 'IN_TRANSIT'].includes(pallet.status)) { warn.push(`${pallet.pallet_no} shows ${pallet.status} - return scan missed, will be recorded`); return null; }
   if (pallet.status !== 'AVAILABLE') return `${pallet.pallet_no} is ${pallet.status}${pallet.picklist ? ' (' + pallet.picklist + ')' : ''}`;
   if (pallet.zone && !DISPATCH_ZONES.includes(pallet.zone)) warn.push(`${pallet.pallet_no} shown in ${pallet.zone} - internal move missed, will be recorded`);
-  if ((await localScans(pk.picklist_no)).length >= pk.qty) return `Pallet qty ${pk.qty} already reached`;
+  // Dispatch Bench trips and GCS loads have no pallet count limit (same as the server)
+  if (!['DISPATCH_BENCH', 'HMIL_BENCH', 'GCS'].includes(pk.source) && (await localScans(pk.picklist_no)).length >= pk.qty) return `Pallet qty ${pk.qty} already reached`;
   return null;
 }
 

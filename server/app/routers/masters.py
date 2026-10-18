@@ -1,4 +1,5 @@
-"""Masters CRUD: plants, roles, users, customers, transporters, pallets, tags, tag batches."""
+"""Masters CRUD: plants, roles, users, customers, transporters, pallets, tags, tag batches.
+Developed by DT"""
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
@@ -6,13 +7,20 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from .. import models, services
 from ..db import get_db
-from ..security import current_user, need, Principal, audit, hash_pw, PERMS
+from ..security import current_user, need, Principal, audit, hash_pw, pw_rule, PERMS
 
 router = APIRouter(prefix="/api/v1", tags=["masters"])
 
 
+SECRET_COLS = ("password_hash", "supervisor_pin_hash", "gcs_password", "api_key_hash", "key_hash")
+
+
 def row(obj):
-    return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name not in ("password_hash", "supervisor_pin_hash")}
+    """Record as a dict for the web / HHT. Passwords, PIN and key hashes are never sent (FTP password -> has_password)."""
+    d = {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name not in SECRET_COLS}
+    if "gcs_password" in obj.__table__.columns:
+        d["has_password"] = bool(getattr(obj, "gcs_password", None))
+    return d
 
 
 # ---------------------------------------------------------------- plants
@@ -92,6 +100,10 @@ def upsert_role(body: RoleIn, request: Request, p: Principal = Depends(need("INT
     bad = [x for x in body.perms if x not in PERMS]
     if bad:
         raise HTTPException(400, f"Unknown permissions: {bad}")
+    if p.plant is not None:
+        raise HTTPException(403, "Only the central admin can change roles")
+    if not set(body.perms) <= p.perms:
+        raise HTTPException(403, f"You cannot grant access you do not have: {', '.join(sorted(set(body.perms) - p.perms))}")
     r = db.get(models.Role, body.code.upper())
     old = sorted(x.perm for x in r.permissions) if r else None
     if not r:
@@ -172,7 +184,16 @@ def upsert_user(body: UserIn, request: Request, p: Principal = Depends(current_u
     if plant and not db.get(models.Plant, plant):
         raise HTTPException(400, f"Plant {plant} not found")
     u = db.query(models.User).filter(models.User.user_id == uid).first()
+    # nobody can give or touch more access than they have themselves (no self-promotion, no reset of a stronger admin)
+    from ..security import load_perms
+    want = set(body.perms) if body.perms is not None else {x.perm for r in role_objs.values() for x in r.permissions}
+    if not want <= p.perms:
+        raise HTTPException(403, f"You cannot grant access you do not have: {', '.join(sorted(want - p.perms))}")
+    if u and u.id != p.user.id and not load_perms(db, u) <= p.perms:
+        raise HTTPException(403, "This user has more access than you - only an admin with that access can change it")
     old = (row(u) | {"roles": u.role_codes}) if u else None
+    if body.password:
+        pw_rule(body.password)
     if not u:
         if not body.password:
             raise HTTPException(400, "Password required for new user")
@@ -362,6 +383,9 @@ def get_pallet(pallet_no: str, p: Principal = Depends(current_user), db: Session
     tag, pal = services.resolve_tag(db, pallet_no)
     if not pal:
         raise HTTPException(404, "Pallet not found")
+    if p.plant and p.plant not in (pal.home_plant, pal.location_plant):
+        # another plant's pallet: what it is and where it is, but not its history (users, remarks of that plant)
+        return {"pallet": row(pal), "history": [], "tag_history": [], "other_plant": True}
     hist = db.query(models.PalletHistory).filter_by(pallet_no=pal.pallet_no).order_by(models.PalletHistory.ts.desc()).limit(200).all()
     tags = db.query(models.TagHistory).filter_by(pallet_no=pal.pallet_no).order_by(models.TagHistory.ts.desc()).all()
     return {"pallet": row(pal), "history": [row(h) for h in hist], "tag_history": [row(t) for t in tags]}
@@ -445,6 +469,9 @@ def set_status(pallet_no: str, body: StatusIn, request: Request, p: Principal = 
     elif to in ("DAMAGED", "UNDER_REPAIR", "AVAILABLE"):
         if not (p.has("DAMAGE_MARK") or p.has("GLOBAL_MASTERS")):
             raise HTTPException(403, "DAMAGE_MARK permission required")
+        if to == "AVAILABLE" and pal.status not in ("DAMAGED", "UNDER_REPAIR", "AVAILABLE"):
+            # back to AVAILABLE by hand only after repair - a pallet at the customer / in return / on a load comes back by its scans
+            raise HTTPException(400, f"{pal.pallet_no} is {pal.status} - it becomes AVAILABLE by the Gate-In / Yard scan, not by hand")
     else:
         raise HTTPException(400, "Only DAMAGED / UNDER_REPAIR / AVAILABLE / DISCONTINUED can be set manually")
     try:

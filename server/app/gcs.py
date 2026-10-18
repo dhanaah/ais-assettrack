@@ -412,7 +412,7 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
             if not l:
                 db.add(models.Lpn(lpn_no=lno, plant_code=plant, part_no=str(r.get("part_no") or "?")[:40], qty=q or 0, status="RESERVED",
                                   reserved_for=pk.picklist_no, reserved_at=utcnow(), subinventory=(str(r.get("subinventory") or "GCS")[:20]), pallet_no=pno))
-            elif l.status in ("AVAILABLE", "RESERVED") and not (l.reserved_for and l.reserved_for != pk.picklist_no):
+            elif (l.status in ("AVAILABLE", "RESERVED") or (l.status == "MISSING" and l.wms_seen_at is None)) and not (l.reserved_for and l.reserved_for != pk.picklist_no):
                 l.status, l.reserved_for, l.reserved_at = "RESERVED", pk.picklist_no, utcnow()
                 l.qty = l.qty or (q or 0)
                 l.pallet_no = l.pallet_no or pno

@@ -68,6 +68,7 @@ def to_xlsx(body: TableIn, p: Principal = Depends(current_user)):
     ws.freeze_panes = ws.cell(row=hdr + 1, column=1)
     if body.columns:
         ws.auto_filter.ref = f"A{hdr}:{get_column_letter(len(body.columns))}{hdr + max(1, len(body.rows))}"
+    from ..services import xl_dates; xl_dates(wb)        # dates formatted, "=..." text never a formula
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": f'attachment; filename="{_name(body.title, "xlsx")}"'})

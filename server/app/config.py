@@ -31,9 +31,9 @@ def _load_secret() -> str:
     Order: PALLET_JWT_SECRET env -> secret.key next to the database (made once, random) -> legacy default (dev only)."""
     env = os.getenv("PALLET_JWT_SECRET")
     if env:
-        if "CHANGE-ME" in env.upper() or len(env) < 24:
-            import logging
-            logging.getLogger("assettrack").warning("PALLET_JWT_SECRET is the web.config placeholder / too short - set a long random value (labels must be reprinted after a change)")
+        if "CHANGE-ME" in env.upper() or len(env) < 32:
+            raise RuntimeError("PALLET_JWT_SECRET is a placeholder or shorter than 32 characters. Remove it (the server then makes "
+                               "its own secret.key) or set a long random value.")
         return env
     try:
         db_url = os.getenv("PALLET_DB_URL", "")
@@ -48,9 +48,9 @@ def _load_secret() -> str:
         f.write_text(v, encoding="utf-8")
         return v
     except Exception as e:
-        import logging
-        logging.getLogger("assettrack").error("secret.key could not be read or written (%s) - using the built-in secret: QR check codes are NOT safe. Give the server folder write access.", e)
-        return LEGACY_SECRET
+        # never fall back to the old built-in secret (it is public): anyone could then sign in as admin
+        raise RuntimeError(f"secret.key could not be read or written ({e}). Give the server account write access to the "
+                           "server / database folder, or set PALLET_JWT_SECRET (32+ random characters).") from e
 
 
 JWT_SECRET = _load_secret()

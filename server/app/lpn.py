@@ -55,6 +55,10 @@ def receive_from_plant(db: Session, pal: models.Pallet, zone: str, plant: str, *
     alerts = []
     if pal.status in ("HELD", "IN_WIP") and pal.location_plant == plant:
         return f"{pal.pallet_no} already received ({pal.zone})", alerts
+    if pal.status in ("AT_CUSTOMER", "IN_TRANSIT") and pal.challan_ref and not db.query(models.GateEntry).filter_by(
+            plant_code=plant, kind="CHALLAN", ref_no=pal.challan_ref).first():
+        # every way of receiving other-plant material (pallet card, pallet QR, internal move) needs the IN gate endorsement
+        raise RuleError(f"Challan {pal.challan_ref} of {pal.pallet_no} is not endorsed at the IN gate - HOLD, send the vehicle to the IN gate")
     if pal.status not in ("AT_CUSTOMER", "IN_TRANSIT"):
         alerts.append(record_miss(db, pallet=pal, plant=plant, detected_at=f"RECEIPT_{zone}", missed_point="OUT_GATE",
                                   expected="dispatched by home plant", action="ALERT", user_id=user_id, device_id=device_id, current_ref=ref,
@@ -141,6 +145,10 @@ def internal_move(db: Session, pal: models.Pallet, to_zone: str, plant: str, *, 
     frm = pal.zone or "YARD"
     if frm == to_zone:
         return f"{pal.pallet_no} already in {to_zone}", alerts
+    if (frm == "PRODUCTION" and to_zone != "FGWH" and returned_to_production(db, pal) and db.query(models.Lpn).filter(
+            models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "PICKED", "PDI_OK"])).count()):
+        # returned finished goods (rejection / damage / lot-out) cannot be made "empty" and dispatchable while their part cards are on it
+        raise RuleError(f"{pal.pallet_no} was returned to Production with parts on it - unload its part cards first, or move it back to FGWH")
     if (frm, to_zone) in NO_MOVE and not (frm == "PRODUCTION" and to_zone == "PACKING" and (load or "").upper() == "EMPTY"):
         raise RuleError(NO_MOVE[(frm, to_zone)])
     if frm in ("DISPATCH", "PACKING") and to_zone == "PRODUCTION" and db.query(models.Lpn).filter(
@@ -168,6 +176,8 @@ def internal_move(db: Session, pal: models.Pallet, to_zone: str, plant: str, *, 
             raise RuleError("Pallet Yard takes EMPTY pallets only - unload first")
         for l in live:          # parts were unloaded in packing; drop the stale link
             l.pallet_no = None
+        for l in db.query(models.Lpn).filter_by(pallet_no=pal.pallet_no, status="REJECTED").all():
+            l.pallet_no = None      # PDI-rejected glass taken off: the empty pallet is free again
         if live:
             alerts.append(f"{len(live)} LPN unlinked from {pal.pallet_no} (Yard = empty only)")
         new_load = "EMPTY"
@@ -507,6 +517,8 @@ def _alloc_pallet(db, pk, pal, plant, user_id, device_id, event_id, alerts):
         return
     if returned_to_production(db, pal):
         raise RuleError(f"{pal.pallet_no} was returned to Production (rejection / damage / lot-out) - move it back to FGWH first, keep it off the vehicle")
+    if db.query(models.Lpn).filter_by(pallet_no=pal.pallet_no, status="REJECTED").count():
+        raise RuleError(f"{pal.pallet_no} carries PDI-rejected glass - send it FGWH -> Production (Rejection) or unload it, keep it off the vehicle")
     a = check_dock(db, pal, plant, user_id=user_id, device_id=device_id, ref=pk.picklist_no)
     if a:
         alerts.append(a)
@@ -782,6 +794,8 @@ def pdi_complete(db: Session, pk: models.PickList, user_id: str) -> dict:
         if not db.query(models.PickListLpn).filter_by(picklist_no=pk.picklist_no, pallet_no=line.pallet_no).count():
             pal = db.get(models.Pallet, line.pallet_no)
             _release_pallet(db, pk, pal, pk.plant_code, user_id, None, None)
+            if pal and db.query(models.Lpn).filter_by(pallet_no=pal.pallet_no, status="REJECTED").count():
+                set_load(db, pal, "LOADED", "PDI REJECTED glass")      # the rejected glass is still on it - not an empty pallet
     pk.pdi_by, pk.pdi_at = user_id, utcnow()
     if rej:
         pk.status = "OPEN"     # re-pick replacement qty, then confirm -> PDI again for new LPNs only

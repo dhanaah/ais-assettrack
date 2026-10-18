@@ -236,9 +236,19 @@ def availability(db: Session, plant: str | None = None):
     return out
 
 
+SLIP_STALE_DAYS = 3
+
+
+def still_with_customer():
+    """Filter: pallets the customer still holds - AT_CUSTOMER, and IN_RETURN pallets whose return slip never reached AIS
+    within SLIP_STALE_DAYS (a slip alone must not hide overdue pallets from holding and reminders)."""
+    from datetime import timedelta as _td
+    return (models.Pallet.status == AT_CUSTOMER) | ((models.Pallet.status == IN_RETURN) & (models.Pallet.updated_at < utcnow() - _td(days=SLIP_STALE_DAYS)))
+
+
 def customer_holding(db: Session, plant: str | None = None):
     now = utcnow()
-    q = db.query(models.Pallet).filter(models.Pallet.status == AT_CUSTOMER)
+    q = db.query(models.Pallet).filter(still_with_customer())
     if plant:
         q = q.filter(models.Pallet.home_plant == plant)
     res: dict[tuple, dict] = {}
@@ -344,12 +354,15 @@ def parse_slip_qr(code: str) -> dict:
 
 
 def xl_dates(wb):
-    """Every date cell in the workbook shown as dd-mmm-yy (with time when it has one)."""
+    """Every date cell in the workbook shown as dd-mmm-yy (with time when it has one).
+    Text that starts with '=' (e.g. a customer DC no "=HYPERLINK(...)") is kept as plain text, never run by Excel as a formula."""
     from datetime import datetime as _dt, date as _d
     for ws in wb.worksheets:
         for row in ws.iter_rows():
             for c in row:
-                if isinstance(c.value, _dt):
+                if c.data_type == "f":
+                    c.data_type = "s"
+                elif isinstance(c.value, _dt):
                     c.number_format = "dd-mmm-yy hh:mm" if (c.value.hour or c.value.minute) else "dd-mmm-yy"
                 elif isinstance(c.value, _d):
                     c.number_format = "dd-mmm-yy"

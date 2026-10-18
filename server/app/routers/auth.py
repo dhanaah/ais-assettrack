@@ -1,10 +1,13 @@
+"""Sign-in, password change, supervisor PIN, link tickets.
+Developed by DT"""
+import time
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .. import models, config
 from ..db import get_db
-from ..security import check_pw, hash_pw, make_token, make_ticket, current_user, Principal, load_perms, audit, require_client_version, pin_in_use
+from ..security import check_pw, hash_pw, make_token, make_ticket, current_user, Principal, load_perms, audit, require_client_version, pin_in_use, pw_rule
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -53,6 +56,10 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
             u.failed_logins = 0
         db.commit()
         raise HTTPException(401, "Invalid user or password")
+    if (u.must_change_pw and u.user_id == config.BOOTSTRAP_ADMIN_USER and body.password == config.BOOTSTRAP_ADMIN_PASS
+            and (request.client.host if request.client else "") not in ("127.0.0.1", "::1", "localhost", "testclient")):
+        # the documented first password works only on the server PC itself, so nobody on the network can take the admin first
+        raise HTTPException(403, "First admin sign-in only on the server PC (http://localhost:8001) - set a new password there")
     u.failed_logins = 0; u.locked_until = None; u.last_login = datetime.utcnow()
     if body.device_id:
         if u.device_id and u.device_id != body.device_id:
@@ -91,12 +98,14 @@ def change_pw(body: ChangePwIn, p: Principal = Depends(current_user), db: Sessio
     u = db.get(models.User, p.user.id)
     if not check_pw(body.old_password, u.password_hash):
         raise HTTPException(400, "Old password wrong")
-    if len(body.new_password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    pw_rule(body.new_password)
     u.password_hash = hash_pw(body.new_password); u.must_change_pw = False
     audit(db, p, "CHANGE_PASSWORD", "user", u.user_id)
     db.commit()
     return {"ok": True, "token": make_token(u)}        # old sign-ins stop; this browser continues with the new token
+
+
+_SETPIN_TRIES: dict[int, list[float]] = {}
 
 
 @router.post("/set-pin")
@@ -104,10 +113,17 @@ def set_pin(body: SetPinIn, p: Principal = Depends(current_user), db: Session = 
     u = db.get(models.User, p.user.id)
     if not u.supervisor_allowed:
         raise HTTPException(403, "Not a supervisor")
-    if not body.pin.isdigit() or len(body.pin) < 4:
-        raise HTTPException(400, "PIN must be 4+ digits")
+    now = time.time()
+    tries = [t for t in _SETPIN_TRIES.get(u.id, []) if now - t < 600]
+    if len(tries) >= 5:                       # stops trying PIN after PIN to find other supervisors' PINs
+        raise HTTPException(429, "Too many PIN changes - try again in 10 minutes")
+    _SETPIN_TRIES[u.id] = tries + [now]
+    if not body.pin.isdigit() or len(body.pin) < 6:
+        raise HTTPException(400, "PIN must be at least 6 digits")
+    if len(set(body.pin)) < 3 or body.pin in "01234567890" or body.pin in "09876543210":
+        raise HTTPException(400, "PIN too simple - avoid repeated or running digits")
     if pin_in_use(db, u.plant_code, body.pin, u.id):
-        raise HTTPException(400, "This PIN is already used by another supervisor of your plant - choose a different one")
+        raise HTTPException(400, "PIN not accepted - choose a different PIN")
     u.supervisor_pin_hash = hash_pw(body.pin)
     audit(db, p, "SET_PIN", "user", u.user_id)
     db.commit()

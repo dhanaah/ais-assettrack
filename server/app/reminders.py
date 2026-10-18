@@ -59,7 +59,8 @@ def build(db: Session, plant: str | None = None, force: bool = False) -> list[di
     """What would be sent now. One entry per customer that holds overdue pallets."""
     now = utcnow()
     plants = {x.code: x for x in db.query(models.Plant).filter_by(active=True).all()}
-    q = db.query(models.Pallet).filter(models.Pallet.status == "AT_CUSTOMER")
+    from .services import still_with_customer
+    q = db.query(models.Pallet).filter(still_with_customer())
     if plant:
         q = q.filter(models.Pallet.home_plant == plant)
     by = {}
@@ -150,7 +151,7 @@ def run(db: Session, plant: str | None = None, force: bool = False, dry: bool | 
                 _send(item, body); entry.status = "SENT"; res["sent"] += 1
             except Exception as e:
                 entry.status, entry.error = "FAILED", str(e)[:300]; res["failed"] += 1
-        if entry.status in ("SENT", "DRY"):
+        if entry.status == "SENT":            # a dry run (no SMTP yet) must not delay the first real reminder
             key = f"reminder_last:{item['plant']}:{item['customer']}"
             row = db.get(models.Setting, key) or models.Setting(key=key)
             row.value = utcnow().isoformat(); db.add(row)

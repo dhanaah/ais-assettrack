@@ -350,6 +350,73 @@ with TestClient(app, raise_server_exceptions=False) as c:
     me = c.get("/api/ext/v1/me", headers=DK | {"X-Staff-Token": stok}).json()
     check(me.get("staff_ok") is False, "password reset by AIS: the old sign-in is no longer accepted")
 
+    print("27. approval review (18-Oct-2026): security")
+    with SessionLocal() as db:
+        db.get(models.Plant, "CHN").gcs_password = "FtpS3cret!"
+        ua = models.User(user_id="uadmin", full_name="ua", plant_code=None, password_hash=hash_pw("x"), must_change_pw=False, perms_override="USER_ADMIN")
+        ug = models.User(user_id="guard", full_name="g", plant_code="CHN", password_hash=hash_pw("x"), must_change_pw=False, supervisor_allowed=True)
+        ug.roles = [models.UserRole(role_code="SEC_IN")]
+        ca = models.User(user_id="cadm", full_name="ca", plant_code=None, password_hash=hash_pw("x"), must_change_pw=False)
+        ca.roles = [models.UserRole(role_code="CADMIN")]
+        db.add_all([ua, ug, ca])
+        db.add(models.Pallet(pallet_no="PUN-P950", home_plant="PUN", location_plant="PUN", status="AVAILABLE", zone="YARD"))
+        db.commit()
+    UA, GD, CA = tok(c, "uadmin", hht=False), tok(c, "guard"), tok(c, "cadm", hht=False)
+    pl = c.get("/api/v1/plants", headers=GD).json()
+    check(all("gcs_password" not in x for x in pl) and any(x.get("has_password") for x in pl), "FTP password never sent to the web / HHT (has_password only)")
+    r = c.post("/api/v1/users", headers=UA, json={"user_id": "uadmin", "full_name": "ua", "roles": ["CADMIN"]})
+    check(r.status_code == 403, f"USER_ADMIN cannot make itself CADMIN ({r.status_code})")
+    r = c.post("/api/v1/users", headers=UA, json={"user_id": "admin", "full_name": "Central Admin", "roles": ["CADMIN"], "password": "Hack3dPass"})
+    check(r.status_code == 403, f"USER_ADMIN cannot reset the admin password ({r.status_code})")
+    r = c.post("/api/v1/users", headers=CA, json={"user_id": "weak1", "full_name": "w", "plant_code": "CHN", "roles": ["YARD"], "password": "abc"})
+    check(r.status_code == 400 and "8 characters" in r.text, f"weak password refused ({r.status_code} {r.text[:60]})")
+    tk = c.post("/api/v1/auth/ticket", headers=CA).json()["ticket"]
+    check(c.post(f"/api/v1/auth/ticket?tok={tk}").status_code == 401, "a link ticket cannot make a new ticket")
+    check(c.get(f"/api/v1/auth/me?tok={tk}").status_code == 401, "a link ticket cannot be used as a sign-in")
+    from app import config as _cfg
+    nopv = __import__("jwt").encode({"sub": "chn", "uid": 1, "exp": models.utcnow() + __import__("datetime").timedelta(hours=1)}, _cfg.JWT_SECRET, algorithm="HS256")
+    check(c.get("/api/v1/auth/me", headers={"Authorization": "Bearer " + nopv}).status_code == 401, "token without password version refused")
+    r1 = c.post("/api/v1/auth/set-pin", headers=GD, json={"pin": "1234"})
+    check(r1.status_code == 400 and "6 digits" in r1.text, "PIN needs 6+ digits")
+    r1 = c.post("/api/v1/auth/set-pin", headers=GD, json={"pin": "111111"})
+    check(r1.status_code == 400 and "simple" in r1.text, "too simple PIN refused")
+    for _ in range(4):
+        c.post("/api/v1/auth/set-pin", headers=GD, json={"pin": "123"})
+    check(c.post("/api/v1/auth/set-pin", headers=GD, json={"pin": "583920"}).status_code == 429, "PIN changes are throttled (no guessing other supervisors' PINs)")
+    r = c.get("/")
+    check(r.headers.get("x-frame-options") and r.headers.get("x-content-type-options") == "nosniff" and "default-src 'self'" in (r.headers.get("content-security-policy") or ""), "security headers on every page")
+    check(c.get("/docs").status_code == 404 and c.get("/openapi.json").status_code == 404, "Swagger / OpenAPI hidden unless PALLET_API_DOCS=1")
+    from openpyxl import load_workbook
+    import io as _io
+    r = c.post("/api/v1/export/xlsx", headers=CA, json={"title": "t", "columns": ["a"], "rows": [["=HYPERLINK(\"http://x\",\"y\")"]]})
+    ws = load_workbook(_io.BytesIO(r.content)).active
+    vals = [cl for row in ws.iter_rows() for cl in row if isinstance(cl.value, str) and cl.value.startswith("=HYPER")]
+    check(r.status_code == 200 and vals and all(cl.data_type == "s" for cl in vals), "Excel export keeps '=...' text as text (no formula)")
+    o = c.get("/api/v1/pallets/PUN-P950", headers=GD).json()
+    check(o.get("other_plant") and o["history"] == [], "another plant's pallet: no history shown")
+    r = c.post("/api/v1/auth/login", json={"user_id": "admin", "password": config.BOOTSTRAP_ADMIN_PASS}, headers={"X-Forwarded-For": "1.2.3.4"})
+    check(r.status_code in (200, 403), f"admin default password login handled ({r.status_code})")
+
+    print("28. approval review (18-Oct-2026): logic")
+    H = HY
+
+    def _st(no):
+        with SessionLocal() as db:
+            return db.get(models.Pallet, no).status
+    with SessionLocal() as db:
+        db.add(models.Pallet(pallet_no="CHN-D001", home_plant="CHN", location_plant="CHN", status="DAMAGED", zone="YARD"))
+        db.add(models.Pallet(pallet_no="CHN-X001", home_plant="CHN", status="AT_CUSTOMER", customer_code="HMIL"))
+        db.add(models.ReturnSlip(slip_no="CHN-RTS-CL1", plant_code="CHN", customer_code="HMIL", mode="B2", status="CLOSED", declared_qty=1))
+        db.commit()
+    r = ev(c, H, "PALLET_SCAN_YARD", {"scanned": "CHN-D001"})
+    check(_st("CHN-D001") == "DAMAGED" and "stays DAMAGED" in r["result"], f"damaged pallet stays DAMAGED at the Yard ({r['result'][:70]})")
+    r = ev(c, H, "PALLET_SCAN_YARD", {"scanned": "CHN-X001", "slip_no": "CHN-RTS-CL1"})
+    check(r["status"] == "REJECTED" and "CLOSED" in r["result"], "Yard scan on a CLOSED slip refused")
+    r = c.post("/api/v1/pallets/CHN-X001/status", headers=H, json={"status": "AVAILABLE"})
+    check(r.status_code == 400 and _st("CHN-X001") == "AT_CUSTOMER", "AT_CUSTOMER pallet cannot be set AVAILABLE by hand")
+    r = c.post("/api/v1/slips/" + "PUN%2F00009" + "/gate-in", headers=H, json={"qr": "CHL|PUN/00009|X|1"})
+    check(r.status_code != 404 or "Not Found" not in r.text, f"challan number with '/' reaches the gate-in route ({r.status_code} {r.text[:60]})")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)

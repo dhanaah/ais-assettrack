@@ -157,6 +157,9 @@ def cancel_picklist(no: str, request: Request, p: Principal = Depends(current_us
                           user_id=p.user_id, plant=k.plant_code, ref=no, force=True)
     for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all():
         db.delete(r)
+    if lpnsvc.is_gcs(k):          # part cards known only from this GCS file (never in a WMS stock upload) do not become free stock
+        for l in db.query(models.Lpn).filter(models.Lpn.reserved_for == no, models.Lpn.status == "RESERVED", models.Lpn.wms_seen_at.is_(None)).all():
+            l.status, l.reserved_for = "MISSING", None
     n = lpnsvc.release_reservations(db, no, only_unpicked=False)
     k.status = "CANCELLED"
     audit(db, p, "PICKLIST_CANCEL", "picklist", no, None, {"released_lpns": n}, request)
@@ -289,6 +292,8 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
     if not k:
         raise HTTPException(404, "Not found")
     p.require_plant(k.plant_code)
+    if (k.remarks or "").startswith("GCS CANCELLED in ERP"):
+        raise HTTPException(400, f"GCS {k.gcs_no or k.picklist_no} was CANCELLED in the ERP - HOLD VEHICLE; admin: Remove it on the GCS inbox page")
     if k.load_point == "YARD":
         p.require_any("EMPTY_RETURN", "DOCK_SCAN")
     else:
@@ -507,10 +512,13 @@ def approve(no: str, body: ApproveIn, request: Request, p: Principal = Depends(n
     k.vehicle_no = body.vehicle_no.upper().replace(" ", "")
     if body.transporter_code:
         k.transporter_code = body.transporter_code
-    ok, gcs, msg = integration.create_gcs_outward(db, k)
-    k.gcs_no = gcs if ok else None
-    if not ok:
-        integration.queue_retry(db, "GCS_OUT", no, msg)
+    if k.gcs_no and (lpnsvc.is_gcs(k) or lpnsvc.is_bench(k)):
+        ok, gcs, msg = True, k.gcs_no, "GCS number from the GCS file kept"      # a real GCS already exists: never replace it
+    else:
+        ok, gcs, msg = integration.create_gcs_outward(db, k)
+        k.gcs_no = gcs if ok else None
+        if not ok:
+            integration.queue_retry(db, "GCS_OUT", no, msg)
     k.status = "APPROVED"
     audit(db, p, "LOGISTICS_APPROVE", "picklist", no, None, body.model_dump() | {"gcs": gcs, "gcs_msg": msg}, request)
     db.commit()
@@ -546,6 +554,8 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
     if not k:
         raise HTTPException(404, "Not found")
     p.require_plant(k.plant_code)
+    if (k.remarks or "").startswith("GCS CANCELLED in ERP"):
+        raise HTTPException(400, f"GCS {k.gcs_no or k.picklist_no} was CANCELLED in the ERP - HOLD VEHICLE; admin: Remove it on the GCS inbox page")
     if k.status != "APPROVED":
         raise HTTPException(400, f"Vehicle not approved by logistics (status {k.status})")
     sc = body.scanned.strip()
@@ -555,9 +565,9 @@ def gate_out(no: str, body: GateOutIn, request: Request, p: Principal = Depends(
         sc = q["gcs_no"]
     if sc.startswith("CHL|"):
         sc = sc.split("|")[1]
-    if sc != k.challan_no:                       # OUT gate: challan only
-        if not body.manual_override:
-            raise HTTPException(400, "Scan the CHALLAN of this vehicle - hold vehicle")
+    if sc != k.challan_no and not body.manual_override:      # OUT gate: challan only
+        raise HTTPException(400, "Scan the CHALLAN of this vehicle - hold vehicle")
+    if body.manual_override:                    # any override (wrong code or loading not complete) needs a supervisor PIN
         if not body.supervisor_pin or not verify_supervisor_pin(db, k.plant_code, body.supervisor_pin):
             raise HTTPException(403, "Supervisor PIN required for manual override")
     lines = db.query(models.PickListLine).filter_by(picklist_no=no).all()
@@ -661,6 +671,8 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
     if not k:
         raise HTTPException(404, "Not found")
     p.require_plant(k.plant_code)
+    if (k.remarks or "").startswith("GCS CANCELLED in ERP"):
+        raise HTTPException(400, f"GCS {k.gcs_no or k.picklist_no} was CANCELLED in the ERP - HOLD VEHICLE; admin: Remove it on the GCS inbox page")
     if k.status in ("DISPATCHED", "CANCELLED", "CLOSED"):
         raise HTTPException(400, f"Load is {k.status}")
     if lpnsvc.is_card(db, body.scanned):
@@ -682,8 +694,10 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
     if not l and k.status == "OPEN" and lpnsvc.is_gcs(k) and k.dispatch_type in lpnsvc.PART_TYPES and k.load_point != "YARD":
         from .. import gcs as _g
         _g.relink_pallet(db, pal); db.flush()      # pallet registered after the GCS file came: its GCS lines point at it now
-        exp = {g.pallet_no for g in db.query(models.GcsLpn).filter_by(picklist_no=no).all() if g.pallet_no}
-        if exp and pal.pallet_no not in exp:      # the GCS file names its pallets: anything else stays off this vehicle
+        _gl = db.query(models.GcsLpn).filter_by(picklist_no=no).all()
+        exp = {g.pallet_no for g in _gl if g.pallet_no}
+        refs = {g.pallet_ref for g in _gl if not g.pallet_no and g.pallet_ref}      # named only by reference (e.g. RW.3101), label not seen yet
+        if (exp or refs) and pal.pallet_no not in exp:      # the GCS file names its pallets: anything else stays off this vehicle
             other = (db.query(models.GcsLpn, models.PickList).join(models.PickList, models.PickList.picklist_no == models.GcsLpn.picklist_no)
                      .filter(models.GcsLpn.pallet_no == pal.pallet_no, models.PickList.status == "OPEN").first())
             raise HTTPException(400, f"Pallet {services.short_ref(pal.pallet_no)} is NOT in GCS {k.gcs_no}" + (f" - it belongs to GCS {other[1].gcs_no}" if other else "") + " - keep it off the vehicle")
@@ -955,7 +969,7 @@ def gate_entries(plant: str | None = None, days: int = 7, p: Principal = Depends
     return out
 
 
-@router.post("/slips/{no}/gate-in")
+@router.post("/slips/{no:path}/gate-in")      # path: other-plant challans like "PUN/00009" contain "/"
 def gate_in(no: str, request: Request, body: GateInIn | None = None, p: Principal = Depends(hht("IN_GATE_SCAN")), db: Session = Depends(get_db)):
     if no.startswith("CHL|") or (not no.startswith(("AIS1|", "RTS|")) and not db.get(models.ReturnSlip, no)):
         k = _interplant_challan(db, p, no)
@@ -1085,6 +1099,10 @@ def _close_challan(db, p, ge, body, request):
     if short and not (body.supervisor_pin and verify_supervisor_pin(db, p.plant, body.supervisor_pin)):
         raise HTTPException(403, f"{len(short)} pallet(s) on the challan not received - supervisor PIN to close")
     ge.yard_closed_at = utcnow()
+    for x in short:                 # closed short with a PIN: each missing pallet is recorded for follow-up with the sending plant
+        lpnsvc.record_miss(db, pallet=db.get(models.Pallet, x), plant=p.plant, detected_at="CHALLAN_CLOSE", missed_point="YARD_IN",
+                           expected=f"received on challan {ge.ref_no}", action="ALERT", user_id=p.user_id, current_ref=ge.ref_no,
+                           message=f"{x} on challan {ge.ref_no} from {ge.from_party or '-'} not received - challan closed short with supervisor PIN")
     audit(db, p, "CHALLAN_YARD_CLOSE", "gate_entry", ge.entry_no, None, {"challan": ge.ref_no, "received": len(got), "short": short, "remarks": body.remarks}, request)
     db.commit()
     return {"slip_no": ge.ref_no, "status": "CLOSED", "received": len(got), "short": short, "exceptions": []}
@@ -1095,7 +1113,7 @@ class CloseIn(BaseModel):
     remarks: str | None = None
 
 
-@router.post("/slips/{no}/close")
+@router.post("/slips/{no:path}/close")      # path: challan numbers contain "/"
 def close_slip(no: str, body: CloseIn, request: Request, p: Principal = Depends(hht()), db: Session = Depends(get_db)):
     sl = db.get(models.ReturnSlip, no)
     if not sl:

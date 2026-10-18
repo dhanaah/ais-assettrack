@@ -118,8 +118,11 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
             slip = db.get(models.ReturnSlip, pl["slip_no"]) if pl.get("slip_no") else None
             if pl.get("slip_no") and not slip:          # other-plant challan (empty pallets) - must be registered at the IN gate
                 p.require("YARD_IN_PLANT")
-                if not db.query(models.GateEntry).filter_by(plant_code=plant, kind="CHALLAN", ref_no=pl["slip_no"]).first():
+                ge = db.query(models.GateEntry).filter_by(plant_code=plant, kind="CHALLAN", ref_no=pl["slip_no"]).first()
+                if not ge:
                     raise services.RuleError(f"Challan {pl['slip_no']} is not endorsed at the IN gate - send the vehicle to the IN gate first")
+                if getattr(ge, "yard_closed_at", None):
+                    raise services.RuleError(f"Challan {pl['slip_no']} is already closed at the Yard - scan the pallet without a document")
                 kc = db.query(models.PickList).filter_by(challan_no=pl["slip_no"]).first()
                 if kc and kc.dispatch_type == "STOCK_TRANSFER":
                     raise services.RuleError(f"Challan {pl['slip_no']} is material - receive it at FGWH / Packing (pallet card), not the Yard")
@@ -127,6 +130,8 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                 p.require("YARD_SCAN")
             if slip and slip.plant_code != plant:
                 raise services.RuleError("Slip belongs to another plant")
+            if slip and slip.status in ("CLOSED", "CLOSING", "CANCELLED"):
+                raise services.RuleError(f"Slip {slip.slip_no} is {slip.status} - scan the pallet without a slip")
             if slip and slip.mode == "A" and slip.status == "OPEN":
                 raise services.RuleError(f"Slip {slip.slip_no} is not endorsed at the IN gate - send the vehicle to the IN gate first")
             if lpnsvc.is_card(db, pl["scanned"]):
@@ -160,6 +165,9 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                 # still on a pick list that is not gated out: take it off that list (line removed) so it cannot go on a
                 # second list and be dispatched twice
                 pk = db.get(models.PickList, pal.picklist_no) if pal.picklist_no else None
+                ln = db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no, pallet_no=pal.pallet_no).first() if pk else None
+                if ln and ln.loaded_at:      # already loaded on the vehicle by Security (e.g. a late offline Yard scan): keep it on
+                    return "EXCEPTION", f"⚠ {pal.pallet_no} is loaded on vehicle {pk.vehicle_no or pk.picklist_no} - Yard scan not applied, check the pallet"
                 if pk and pk.status not in ("DISPATCHED", "CLOSED", "CANCELLED"):
                     for r in db.query(models.PickListLpn).filter_by(picklist_no=pk.picklist_no, pallet_no=pal.pallet_no).all():
                         x = db.get(models.Lpn, r.lpn_no)
@@ -193,12 +201,15 @@ def _apply(db: Session, p: Principal, e: EventIn) -> tuple[str, str]:
                     db.add(models.ReturnSlipLine(slip_no=slip.slip_no, pallet_no=pal.pallet_no, declared=False, received=True, exception=exc))
                 if slip.status in ("OPEN", "PENDING_VERIFICATION", "IN_GATE"):
                     slip.status = "RECEIVING"
-            to = "DAMAGED" if pl.get("damaged") else "AVAILABLE"
+            # a DAMAGED / UNDER_REPAIR pallet stays so at the Yard - only the repair release makes it AVAILABLE again
+            to = "DAMAGED" if pl.get("damaged") else (pal.status if pal.status in ("DAMAGED", "UNDER_REPAIR") else "AVAILABLE")
+            if to in ("DAMAGED", "UNDER_REPAIR") and not pl.get("damaged"):
+                alert = (f"{alert} | " if alert else "") + f"{pal.pallet_no} stays {to} (release it after repair)"
             services.move(db, pal, to, event_type="YARD_SCAN", user_id=p.user_id, device_id=e.device_id, event_id=e.event_id,
-                          plant=plant, ref=slip.slip_no if slip else None, remarks=pl.get("remarks"), force=pal.status in ("AVAILABLE", "ALLOCATED"))
+                          plant=plant, ref=slip.slip_no if slip else None, remarks=pl.get("remarks"), force=pal.status in ("AVAILABLE", "ALLOCATED") or to == pal.status)
             lpnsvc.set_zone(pal, "YARD"); lpnsvc.set_load(db, pal, "EMPTY")
-            for l in db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED"])).all():
-                l.pallet_no = None
+            for l in db.query(models.Lpn).filter(models.Lpn.pallet_no == pal.pallet_no, models.Lpn.status.in_(["AVAILABLE", "RESERVED", "REJECTED"])).all():
+                l.pallet_no = None      # empty at the Yard: stale part-card links (incl. PDI-rejected glass taken off) dropped
             if pl.get("damaged") and slip:
                 db.query(models.ReturnSlipLine).filter_by(slip_no=slip.slip_no, pallet_no=pal.pallet_no).update({"exception": "DAMAGED"})
             return ("EXCEPTION" if exc or alert or pl.get("damaged") else "APPLIED"), f"{pal.pallet_no} {to}" + (f" ({exc})" if exc else "") + (f" | ⚠ {alert}" if alert else "")
@@ -233,6 +244,9 @@ def push(body: PushIn, request: Request, p: Principal = Depends(current_user), d
     require_hht(request)
     if not p.plant:
         raise HTTPException(400, "Only plant users push events")
+    hdr = db.get(models.Device, (request.headers.get("x-device-id") or "").strip())
+    if hdr and hdr.blocked:                   # the sending HHT itself, whatever device id the events carry
+        raise HTTPException(403, "Device is blocked by admin")
     results = []
     def _ts(x):                               # naive and timezone-aware local_ts in one batch sort together
         return x.local_ts.astimezone(timezone.utc).replace(tzinfo=None) if x.local_ts.tzinfo else x.local_ts

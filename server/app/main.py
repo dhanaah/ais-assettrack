@@ -49,6 +49,17 @@ def seed(db: Session):
                     have += [x for x in new if x not in have]
             u.perms_override = ",".join(have)
         db.add(models.Setting(key=flag, value="done"))
+    if not db.get(models.Setting, "audit_scrub_1290"):        # plant edits before 1.29 wrote the FTP password into the audit log
+        import json as _json
+        for a in db.query(models.AuditLog).filter(models.AuditLog.action == "PLANT_UPSERT").all():
+            for fld in ("old_value", "new_value"):
+                v = getattr(a, fld)
+                if v and "gcs_password" in v:
+                    try:
+                        d = _json.loads(v); d.pop("gcs_password", None); setattr(a, fld, _json.dumps(d, default=str))
+                    except ValueError:
+                        setattr(a, fld, None)
+        db.add(models.Setting(key="audit_scrub_1290", value="done"))
     if not db.get(models.Setting, "vehicle_load_from"):        # loads made before 1.26 are not held for Security loading
         db.add(models.Setting(key="vehicle_load_from", value=models.utcnow().isoformat()))
     if db.query(models.User).count() == 0:
@@ -80,8 +91,10 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_API_DOCS = os.getenv("PALLET_API_DOCS", "0") == "1"      # Swagger /docs only when IT switches it on (settings.env)
 app = FastAPI(title=config.APP_NAME, version=config.APP_VERSION, lifespan=lifespan,
-              description=f"{config.DEVELOPER} · Returnable pallet asset tracking for AIS Glass")
+              description=f"{config.DEVELOPER} · Returnable pallet asset tracking for AIS Glass",
+              docs_url="/docs" if _API_DOCS else None, redoc_url=None, openapi_url="/openapi.json" if _API_DOCS else None)
 from .routers import dashboard, reminders as reminders_router, masterio, exports
 for r in (auth, masters, imports, sync, documents, reports, external, prints, activity, parts, integrations, dashboard, reminders_router, masterio, exports):
     app.include_router(r.router)
@@ -99,6 +112,25 @@ async def _limit_body(request: Request, call_next):
     if n and n.isdigit() and int(n) > MAX_UPLOAD_MB * 1024 * 1024:
         return JSONResponse({"detail": f"File too large (max {MAX_UPLOAD_MB} MB)"}, status_code=413)
     return await call_next(request)
+
+_SEC_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                                "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; "
+                                "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"),
+}
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    """Browser protections on every reply: no foreign scripts, no framing by other sites, no sniffing, no referrer (link tickets)."""
+    resp = await call_next(request)
+    for k, v in _SEC_HEADERS.items():
+        resp.headers.setdefault(k, v)
+    return resp
+
 
 static_dir = config.BASE_DIR / "app" / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

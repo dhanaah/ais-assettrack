@@ -390,6 +390,8 @@ def move_pallets(body: MoveIn, request: Request, p: Principal = Depends(hht()), 
         pal = _pallet_of(db, sc)
         if not pal:
             out.append({"scanned": sc, "ok": False, "message": "Unknown pallet / LPN"}); continue
+        if (pal.zone or "") == "FGWH" and body.to_zone.upper() == "PRODUCTION" and not (p.has("INTERNAL_MOVE") or p.has("MOVE_FG_TO_PRODUCTION")):
+            out.append({"scanned": sc, "ok": False, "message": "Permission MOVE_FG_TO_PRODUCTION required"}); continue   # same as the HHT sync path
         sp = db.begin_nested()
         try:
             msg, alerts = lpnsvc.internal_move(db, pal, body.to_zone, p.plant, load=body.load, user_id=p.user_id, remarks=body.remarks)

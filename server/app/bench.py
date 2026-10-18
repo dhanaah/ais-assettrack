@@ -115,7 +115,16 @@ def pull(db: Session, fetch=None) -> dict:
     for d in disp:
         did = str(d.get("id") or d.get("dispatch_id"))
         status = (d.get("dispatch_status") or "").lower()
-        if not did or status in ("skipped", "cancelled", "canceled"):
+        if not did:
+            continue
+        if status in ("skipped", "cancelled", "canceled"):
+            # cancelled in the Bench: an AssetTrack trip still OPEN with nothing loaded is cancelled too (cards released)
+            for ck in db.query(models.PickList).filter(models.PickList.ext_ref == did, models.PickList.status == "OPEN",
+                                                       models.PickList.source.in_(["DISPATCH_BENCH", "HMIL_BENCH"])).all():
+                if not db.query(models.PickListLine).filter_by(picklist_no=ck.picklist_no).count():
+                    for l in db.query(models.Lpn).filter_by(reserved_for=ck.picklist_no, status="RESERVED").all():
+                        l.status, l.reserved_for, l.reserved_at = "AVAILABLE", None, None
+                    ck.status = "CANCELLED"; ck.remarks = ((ck.remarks or "") + " · cancelled in the Dispatch Bench")[:250]
             continue
         sent = d.get("sent_at") or ""
         try:

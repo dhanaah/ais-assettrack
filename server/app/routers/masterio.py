@@ -143,6 +143,7 @@ def _xlsx(kind, rows, sample=False):
         for i, t in enumerate(lines, 1):
             hl.cell(row=i, column=1, value=t).font = Font(bold=(i == 1))
         hl.column_dimensions["A"].width = 120
+    from ..services import xl_dates; xl_dates(wb)        # dates formatted, "=..." text never a formula
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf
 
