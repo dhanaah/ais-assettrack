@@ -131,12 +131,15 @@ jobs:
           python tests/audit_fixes_check.py > out.txt 2>&1 && tail -2 out.txt || { python -c "import sys;t=open('out.txt',errors='replace').read().splitlines();b=[l for l in t if l.startswith('FAIL')][-15:]+t[-14:];print('::error::'+'%0A'.join(x.replace('%','%25') for x in b))"; exit 1; }
       - name: Copy a filled SQLite database into SQL Server, then start the server on it
         run: |
-          KEEP=/tmp/flow/pallet.db PALLET_TEST_MSSQL= python tests/test_parts_flow.py > /tmp/flow.log || (tail -20 /tmp/flow.log; exit 1)
-          mkdir -p /tmp/target
+          trap 'echo "::error::migration check failed at line $LINENO%0A$(tail -15 /tmp/step.log 2>/dev/null | sed "s/%/%25/g" | tr "\n" "\a" | sed "s/\a/%0A/g")"' ERR
+          set -eE
+          exec > >(tee /tmp/step.log) 2>&1
+          mkdir -p /tmp/flow /tmp/target
+          KEEP=/tmp/flow/pallet.db PALLET_TEST_MSSQL= python tests/test_parts_flow.py > /tmp/flow.log || { tail -20 /tmp/flow.log; false; }
           export PALLET_DB_URL=$(python -c "import sys; sys.path.insert(0,'tests'); from testdb import fresh_db_url; print(fresh_db_url('migr'))")
           python sql/migrate_sqlite_to_mssql.py /tmp/flow/pallet.db /tmp/target
           test -f /tmp/target/secret.key
-          python sql/migrate_sqlite_to_mssql.py /tmp/flow/pallet.db /tmp/target && exit 1 || echo "second copy refused (target not empty) - ok"
+          if python sql/migrate_sqlite_to_mssql.py /tmp/flow/pallet.db /tmp/target; then echo "second copy was NOT refused"; false; else echo "second copy refused (target not empty) - ok"; fi
           python - <<'PY'
           from fastapi.testclient import TestClient
           from app.main import app

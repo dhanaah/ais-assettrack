@@ -29,6 +29,9 @@ if (-not $db -or $db -notmatch "^mssql") { Write-Host "web.config has no SQL Ser
 # a private copy: the source file is only read
 $tmp = Join-Path $env:TEMP ("assettrack_migrate_" + (Get-Date -Format yyyyMMddHHmmss) + ".db")
 Copy-Item $SQLiteFile $tmp
+foreach ($x in "-wal", "-shm") {       # recent changes may still sit in the write-ahead file next to pallet.db
+    if (Test-Path "$SQLiteFile$x") { Copy-Item "$SQLiteFile$x" "$tmp$x" }
+}
 foreach ($k in "secret.key", "job.key") {
     $src = Join-Path (Split-Path $SQLiteFile) $k
     if (Test-Path $src) { Copy-Item $src (Join-Path (Split-Path $tmp) $k) -Force }
@@ -41,7 +44,7 @@ Start-Sleep -Seconds 3
 $env:PALLET_DB_URL = $db
 & $Python (Join-Path $Server "sql\migrate_sqlite_to_mssql.py") $tmp $Server
 $rc = $LASTEXITCODE
-Remove-Item $tmp, (Join-Path (Split-Path $tmp) "secret.key"), (Join-Path (Split-Path $tmp) "job.key") -ErrorAction SilentlyContinue
+Remove-Item $tmp, "$tmp-wal", "$tmp-shm", (Join-Path (Split-Path $tmp) "secret.key"), (Join-Path (Split-Path $tmp) "job.key") -ErrorAction SilentlyContinue
 & $AppCmd start apppool /apppool.name:$SiteName 2>&1 | Out-Null
 & $AppCmd start site /site.name:$SiteName 2>&1 | Out-Null
 $ErrorActionPreference = $old
