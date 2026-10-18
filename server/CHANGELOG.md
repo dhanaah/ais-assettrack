@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.30.3 - 2026-10-18 (HHT unchanged 2.22.0) - complete release in one step
+- The build now publishes each GitHub release once, with all its files (Package, Portable, EXE), and only after every check has passed (SQLite, SQL Server, IIS, EXE, portable, APK). Releases 1.30.1 and 1.30.2 were left incomplete by the old step-by-step publishing - use 1.30.3. Contents as 1.30.2.
+
 ## Server 1.30.2 - 2026-10-18 (HHT unchanged 2.22.0) - EXE inside the package (requested by DT)
 - `AIS_AssetTrack_Package.zip` now also carries the EXE build in `EXE\AssetTrack_Server` (way C, optional - for PCs where IT has whitelisted it). `README_FIRST.txt` explains the three ways; way A (portable, no EXE) stays the recommended one on AIS PCs.
 

@@ -68,16 +68,9 @@ jobs:
           $v = (Select-String -Path app/config.py -Pattern 'APP_VERSION = "([^"]+)"').Matches[0].Groups[1].Value
           "SV=$v" | Out-File -Append $env:GITHUB_ENV
           Compress-Archive -Force -Path dist/AssetTrack_Server -DestinationPath ../AIS_AssetTrack_Server_EXE.zip
-      - name: Publish server EXE as GitHub release server-v<version> (not marked latest - the HHT link stays)
+      - uses: actions/upload-artifact@v4
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: server-v${{ env.SV }}
-          name: AIS AssetTrack Server v${{ env.SV }} (Windows EXE)
-          target_commitish: ${{ github.sha }}
-          make_latest: false
-          body: "AIS AssetTrack Server v${{ env.SV }} for Windows PCs without Python. Unzip, open the AssetTrack_Server folder and run AssetTrack_Server.exe (tray icon). Developed by DT"
-          files: AIS_AssetTrack_Server_EXE.zip
+        with: { name: server-exe-zip, path: AIS_AssetTrack_Server_EXE.zip }
 
   server-sqlserver:
     # Same checks as the server job, on a real SQL Server 2022 (the database of the IIS installation),
@@ -217,16 +210,6 @@ jobs:
           Compress-Archive -Force -Path AssetTrack/* -DestinationPath AIS_AssetTrack_Server_Portable.zip
       - uses: actions/upload-artifact@v4
         with: { name: server-portable, path: AIS_AssetTrack_Server_Portable.zip }
-      - name: Publish with the server release server-v<version>
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: server-v${{ env.SV }}
-          name: AIS AssetTrack Server v${{ env.SV }} (Windows)
-          target_commitish: ${{ github.sha }}
-          make_latest: false
-          body: "AIS AssetTrack Server v${{ env.SV }} for Windows. AIS_AssetTrack_Server_Portable.zip: unzip into the AssetTrack folder and run START_ASSETTRACK.bat - no Python, no install, no admin, no EXE of ours (antivirus-friendly). AIS_AssetTrack_Server_EXE.zip: single EXE build. Developed by DT"
-          files: AIS_AssetTrack_Server_Portable.zip
 
   hht-apk:
     permissions: { contents: write }      # attach the APK to the GitHub release
@@ -261,19 +244,7 @@ jobs:
           echo "V=$V" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with: { name: hht-apk, path: AIS_AssetTrack_HHT_*.apk }
-      - name: Fixed-name copy (permanent link .../releases/latest/download/AIS_AssetTrack_HHT.apk)
-        run: cp ../AIS_AssetTrack_HHT_v${V}.apk ../AIS_AssetTrack_HHT.apk
-      - name: Publish APK as GitHub release hht-v<version> (created by the build, re-used for the same version)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: hht-v${{ env.V }}
-          name: AIS AssetTrack HHT v${{ env.V }}
-          target_commitish: ${{ github.sha }}
-          body: "AIS AssetTrack HHT app v${{ env.V }}. Download AIS_AssetTrack_HHT.apk (or the versioned file) and install on the HHT. Developed by DT"
-          files: |
-            AIS_AssetTrack_HHT_v${{ env.V }}.apk
-            AIS_AssetTrack_HHT.apk
-          make_latest: true
+
 
   server-iis:
     # The portable zip installed on IIS + SQL Server Express exactly as IT would do it (iis\Setup_IIS.ps1, Windows PowerShell 5.1),
@@ -404,11 +375,47 @@ jobs:
           zip -q -r -9 ../AIS_AssetTrack_Package.zip .
           cd .. && unzip -l AIS_AssetTrack_Package.zip | tail -1
           echo "SV=$SV" >> "$GITHUB_ENV"
-      - name: Publish with the server release server-v<version>
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: server-v${{ env.SV }}
-          target_commitish: ${{ github.sha }}
-          files: AIS_AssetTrack_Package.zip
-          make_latest: false
+      - uses: actions/upload-artifact@v4
+        with: { name: package, path: AIS_AssetTrack_Package.zip }
+
+  release:
+    # Publishes each GitHub release ONCE, complete, and only after every check passed (SQLite, SQL Server, IIS, EXE, portable, APK).
+    # An existing release of the same version is never changed (HHT releases are reused while the HHT version stays). Developed by DT
+    needs: [server-sqlserver, server-iis, package]
+    if: github.ref == 'refs/heads/main'
+    permissions: { contents: write }
+    runs-on: ubuntu-latest
+    env: { GH_TOKEN: "${{ github.token }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: package, path: dl }
+      - uses: actions/download-artifact@v4
+        with: { name: server-portable, path: dl }
+      - uses: actions/download-artifact@v4
+        with: { name: server-exe-zip, path: dl }
+      - uses: actions/download-artifact@v4
+        with: { name: hht-apk, path: dl }
+      - name: Server release server-v<version> (Package, Portable, EXE)
+        run: |
+          SV=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' server/app/config.py)
+          ls -la dl
+          if gh release view "server-v$SV" >/dev/null 2>&1; then
+            echo "::notice::server-v$SV already exists - not changed (raise APP_VERSION for a new release)"
+          else
+            gh release create "server-v$SV" --target "$GITHUB_SHA" --latest=false --title "AIS AssetTrack Server v$SV" \
+              --notes "AIS AssetTrack Server v$SV. Everything in one download: AIS_AssetTrack_Package.zip (open README_FIRST.txt). Also: Portable zip (tray server, no EXE - recommended on AIS PCs; same zip installs on IIS + SQL Server) and EXE zip (only where IT has whitelisted it). Changes: server/CHANGELOG.md. Developed by DT" \
+              dl/AIS_AssetTrack_Package.zip dl/AIS_AssetTrack_Server_Portable.zip dl/AIS_AssetTrack_Server_EXE.zip
+          fi
+      - name: HHT release hht-v<version> (only when the HHT version is new)
+        run: |
+          HV=$(node -p "require('./hht/app.json').expo.version")
+          if gh release view "hht-v$HV" >/dev/null 2>&1; then
+            echo "::notice::hht-v$HV already exists - not changed"
+          else
+            cp "dl/AIS_AssetTrack_HHT_v$HV.apk" dl/AIS_AssetTrack_HHT.apk
+            gh release create "hht-v$HV" --target "$GITHUB_SHA" --latest --title "AIS AssetTrack HHT v$HV" \
+              --notes "AIS AssetTrack HHT app v$HV. Download AIS_AssetTrack_HHT.apk (or the versioned file) and install on the HHT. Developed by DT" \
+              "dl/AIS_AssetTrack_HHT_v$HV.apk" dl/AIS_AssetTrack_HHT.apk
+          fi
 
