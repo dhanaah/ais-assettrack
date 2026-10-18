@@ -43,7 +43,7 @@ $RunPy = Join-Path $Server "run.py"
 $WebConfig = Join-Path $Server "web.config"
 $Pool = $SiteName
 $AppCmd = Join-Path $env:windir "System32\inetsrv\appcmd.exe"
-function AC {
+function IISCmd {
     # appcmd with its messages captured (a "not found" from appcmd must not stop the script)
     $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
     $out = & $AppCmd @args 2>&1
@@ -108,8 +108,8 @@ if ($UseSQLite) {
         $DbUrl = "mssql+pyodbc://@$SqlServer/$Database" + "?driver=$drv&trusted_connection=yes&TrustServerCertificate=yes"
     }
     if ($CreateDatabase) {
-        if (-not $SqlUser -and -not ((AC list apppool /name:$Pool) -match "^APPPOOL ")) {
-            AC add apppool /name:$Pool | Out-Null      # the pool's Windows login exists only once the pool exists
+        if (-not $SqlUser -and -not ((IISCmd list apppool /name:$Pool) -match "^APPPOOL ")) {
+            IISCmd add apppool /name:$Pool | Out-Null      # the pool's Windows login exists only once the pool exists
             Say "app pool $Pool created (its Windows login is given access to the database)"
         }
         Say "preparing SQL Server (database, settings, login) with your Windows login..."
@@ -192,31 +192,31 @@ $body
 
 # ---------------------------------------------------------------- 4. app pool + site
 Step "4. IIS app pool and site '$SiteName'"
-AC unlock config -section:system.webServer/handlers | Out-Null
-if ($Module -eq "httpPlatformHandler") { AC unlock config -section:system.webServer/httpPlatform | Out-Null }
-$poolExists = [bool]((AC list apppool /name:$Pool) -match "^APPPOOL ")
-if (-not $poolExists) { AC add apppool /name:$Pool | Out-Null; Say "app pool created" }
-AC set apppool /apppool.name:$Pool /managedRuntimeVersion:"" /startMode:AlwaysRunning /processModel.idleTimeout:00:00:00 `
+IISCmd unlock config -section:system.webServer/handlers | Out-Null
+if ($Module -eq "httpPlatformHandler") { IISCmd unlock config -section:system.webServer/httpPlatform | Out-Null }
+$poolExists = [bool]((IISCmd list apppool /name:$Pool) -match "^APPPOOL ")
+if (-not $poolExists) { IISCmd add apppool /name:$Pool | Out-Null; Say "app pool created" }
+IISCmd set apppool /apppool.name:$Pool /managedRuntimeVersion:"" /startMode:AlwaysRunning /processModel.idleTimeout:00:00:00 `
     /recycling.periodicRestart.time:00:00:00 /processModel.maxProcesses:1 /processModel.identityType:ApplicationPoolIdentity | Out-Null
 Say "app pool: no .NET, always running, never idle-stopped, one process"
-if ($StopDefaultSite -and ((AC list site /name:"Default Web Site") -match "^SITE ")) {
-    AC stop site /site.name:"Default Web Site" | Out-Null
-    AC set site /site.name:"Default Web Site" /serverAutoStart:false | Out-Null
+if ($StopDefaultSite -and ((IISCmd list site /name:"Default Web Site") -match "^SITE ")) {
+    IISCmd stop site /site.name:"Default Web Site" | Out-Null
+    IISCmd set site /site.name:"Default Web Site" /serverAutoStart:false | Out-Null
     Say "Default Web Site stopped"
 }
 $binding = "http/*:${Port}:$HostName"
-$siteExists = [bool]((AC list site /name:$SiteName) -match "^SITE ")
+$siteExists = [bool]((IISCmd list site /name:$SiteName) -match "^SITE ")
 if (-not $siteExists) {
-    $clash = AC list site | Where-Object { $_ -match "http/\*:${Port}:$([regex]::Escape($HostName))[,)]" -and $_ -match "state:Started" }
+    $clash = IISCmd list site | Where-Object { $_ -match "http/\*:${Port}:$([regex]::Escape($HostName))[,)]" -and $_ -match "state:Started" }
     if ($clash) { Fail "port $Port is already used by: $clash`n  Use -Port 8080, a -HostName, or -StopDefaultSite" }
     if ($HostName) { $binding += ",http/*:${Port}:localhost" }      # also answers on this server as localhost (first admin sign-in, checks)
-    AC add site /name:$SiteName /bindings:$binding /physicalPath:$Server | Out-Null
+    IISCmd add site /name:$SiteName /bindings:$binding /physicalPath:$Server | Out-Null
     Say "site created: $binding"
 } else {
-    AC set vdir "$SiteName/" /physicalPath:$Server | Out-Null
+    IISCmd set vdir "$SiteName/" /physicalPath:$Server | Out-Null
     Say "site exists - path checked"
 }
-AC set app "$SiteName/" /applicationPool:$Pool /preloadEnabled:true | Out-Null
+IISCmd set app "$SiteName/" /applicationPool:$Pool /preloadEnabled:true | Out-Null
 
 # ---------------------------------------------------------------- 5. rights, firewall
 Step "5. Folder rights and firewall"
@@ -230,9 +230,9 @@ if (-not (Get-NetFirewallRule -DisplayName "AIS AssetTrack IIS $Port" -ErrorActi
 
 # ---------------------------------------------------------------- 6. start + check
 Step "6. Start and check"
-AC recycle apppool /apppool.name:$Pool | Out-Null
-AC start apppool /apppool.name:$Pool | Out-Null
-AC start site /site.name:$SiteName | Out-Null
+IISCmd recycle apppool /apppool.name:$Pool | Out-Null
+IISCmd start apppool /apppool.name:$Pool | Out-Null
+IISCmd start site /site.name:$SiteName | Out-Null
 $url = "http://localhost:$Port"
 $ok = $false; $h = $null
 for ($i = 0; $i -lt 45 -and -not $ok; $i++) {

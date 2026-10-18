@@ -226,7 +226,7 @@ def list_lpns(plant: str | None = None, status: str | None = None, part: str | N
     if picklist:
         q = q.filter((models.Lpn.picklist_no == picklist) | (models.Lpn.reserved_for == picklist))
     if flagged:
-        q = q.filter(models.Lpn.wms_missing.is_(True))
+        q = q.filter(models.Lpn.wms_missing == True)  # noqa: E712  (= 1; SQL Server does not accept IS 1)
     out = []
     now = utcnow()
     for l in q.order_by(models.Lpn.updated_at.desc()).limit(3000).all():
