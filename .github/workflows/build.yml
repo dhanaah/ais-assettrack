@@ -122,13 +122,13 @@ jobs:
           PY
       - name: Process flow on SQL Server
         run: |
-          python tests/test_parts_flow.py > out.txt 2>&1 && tail -2 out.txt || { python -c "import sys;t=open('out.txt',errors='replace').read().splitlines();b=[l for l in t if l.startswith(('FAIL','Traceback','  File','sqlalchemy','pyodbc','E ','AssertionError'))][-40:]+t[-25:];print('::error::'+'%0A'.join(x.replace('%','%25') for x in b))"; exit 1; }
+          python tests/test_parts_flow.py > out.txt 2>&1 && tail -2 out.txt || { python -c "import sys;t=open('out.txt',errors='replace').read().splitlines();b=[l for l in t if l.startswith('FAIL')][-15:]+t[-14:];print('::error::'+'%0A'.join(x.replace('%','%25') for x in b))"; exit 1; }
       - name: Process rules on SQL Server
         run: |
-          python tests/process_rules_check.py > out.txt 2>&1 && tail -2 out.txt || { python -c "import sys;t=open('out.txt',errors='replace').read().splitlines();b=[l for l in t if l.startswith(('FAIL','Traceback','  File','sqlalchemy','pyodbc','E ','AssertionError'))][-40:]+t[-25:];print('::error::'+'%0A'.join(x.replace('%','%25') for x in b))"; exit 1; }
+          python tests/process_rules_check.py > out.txt 2>&1 && tail -2 out.txt || { python -c "import sys;t=open('out.txt',errors='replace').read().splitlines();b=[l for l in t if l.startswith('FAIL')][-15:]+t[-14:];print('::error::'+'%0A'.join(x.replace('%','%25') for x in b))"; exit 1; }
       - name: Review fixes on SQL Server
         run: |
-          python tests/audit_fixes_check.py > out.txt 2>&1 && tail -2 out.txt || { python -c "import sys;t=open('out.txt',errors='replace').read().splitlines();b=[l for l in t if l.startswith(('FAIL','Traceback','  File','sqlalchemy','pyodbc','E ','AssertionError'))][-40:]+t[-25:];print('::error::'+'%0A'.join(x.replace('%','%25') for x in b))"; exit 1; }
+          python tests/audit_fixes_check.py > out.txt 2>&1 && tail -2 out.txt || { python -c "import sys;t=open('out.txt',errors='replace').read().splitlines();b=[l for l in t if l.startswith('FAIL')][-15:]+t[-14:];print('::error::'+'%0A'.join(x.replace('%','%25') for x in b))"; exit 1; }
       - name: Copy a filled SQLite database into SQL Server, then start the server on it
         run: |
           KEEP=/tmp/flow/pallet.db PALLET_TEST_MSSQL= python tests/test_parts_flow.py > /tmp/flow.log || (tail -20 /tmp/flow.log; exit 1)
@@ -305,6 +305,7 @@ jobs:
       - name: Setup_IIS.ps1 (as IT runs it)
         shell: powershell
         run: |
+          $ErrorActionPreference = "Continue"
           powershell -ExecutionPolicy Bypass -File C:\AssetTrack_IIS\iis\Setup_IIS.ps1 -SqlServer ".\SQLEXPRESS" -CreateDatabase -StopDefaultSite -PublicName assettrack *>&1 | Tee-Object -FilePath C:\setup_out.txt
           if ($LASTEXITCODE) {
             $t = (Get-Content C:\setup_out.txt | Select-Object -Last 60) -join "%0A"
