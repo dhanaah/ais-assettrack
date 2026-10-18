@@ -79,6 +79,71 @@ jobs:
           body: "AIS AssetTrack Server v${{ env.SV }} for Windows PCs without Python. Unzip, open the AssetTrack_Server folder and run AssetTrack_Server.exe (tray icon). Developed by DT"
           files: AIS_AssetTrack_Server_EXE.zip
 
+  server-sqlserver:
+    # Same checks as the server job, on a real SQL Server 2022 (the database of the IIS installation),
+    # plus the SQLite -> SQL Server copy tool. Developed by DT
+    needs: server
+    runs-on: ubuntu-latest
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env: { ACCEPT_EULA: 'Y', MSSQL_SA_PASSWORD: 'AisTest#2026x', MSSQL_PID: 'Developer' }
+        ports: ['1433:1433']
+    defaults: { run: { working-directory: server } }
+    env:
+      PALLET_TEST_MSSQL: "mssql+pyodbc://sa:AisTest%232026x@localhost:1433/{db}?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+      PYTHONPATH: "."
+      PALLET_BENCH_SCHEDULER: "0"
+      PALLET_PICKLIST_SOURCE: "APP"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: ODBC Driver 18 for SQL Server
+        run: |
+          if ! odbcinst -q -d 2>/dev/null | grep -q "ODBC Driver 18"; then
+            curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc >/dev/null
+            curl -sSL https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list >/dev/null
+            sudo apt-get update -q && sudo ACCEPT_EULA=Y apt-get install -y -q msodbcsql18 unixodbc-dev
+          fi
+          odbcinst -q -d
+      - run: pip install -r requirements.txt pyodbc==5.3.0
+      - name: Wait for SQL Server
+        run: |
+          python - <<'PY'
+          import time, pyodbc
+          for i in range(60):
+              try:
+                  pyodbc.connect("DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1433;UID=sa;PWD=AisTest#2026x;TrustServerCertificate=yes", timeout=5).close(); print("SQL Server up"); break
+              except Exception as e:
+                  time.sleep(3)
+          else:
+              raise SystemExit("SQL Server did not start")
+          PY
+      - name: Process flow on SQL Server
+        run: python tests/test_parts_flow.py
+      - name: Process rules on SQL Server
+        run: python tests/process_rules_check.py
+      - name: Review fixes on SQL Server
+        run: python tests/audit_fixes_check.py
+      - name: Copy a filled SQLite database into SQL Server, then start the server on it
+        run: |
+          KEEP=/tmp/flow/pallet.db PALLET_TEST_MSSQL= python tests/test_parts_flow.py > /tmp/flow.log || (tail -20 /tmp/flow.log; exit 1)
+          mkdir -p /tmp/target
+          export PALLET_DB_URL=$(python -c "import sys; sys.path.insert(0,'tests'); from testdb import fresh_db_url; print(fresh_db_url('migr'))")
+          python sql/migrate_sqlite_to_mssql.py /tmp/flow/pallet.db /tmp/target
+          test -f /tmp/target/secret.key
+          python sql/migrate_sqlite_to_mssql.py /tmp/flow/pallet.db /tmp/target && exit 1 || echo "second copy refused (target not empty) - ok"
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from app.main import app
+          with TestClient(app) as c:
+              h = c.get("/api/v1/health").json(); assert h["db"] == "ok", h
+              r = c.post("/api/v1/auth/login", json={"user_id": "chn", "password": "x"}); assert r.status_code == 200, r.text
+              n = len(c.get("/api/v1/pallets?limit=500", headers={"Authorization": "Bearer " + r.json()["token"]}).json().get("items", []))
+              print("server started on the copied database, signed in, pallets:", n); assert n > 0
+          PY
+
   server-portable:
     # Portable server: the official signed Python "embeddable" runtime + libraries + app in one folder.
     # No EXE built by us (antivirus-friendly), no install, no admin rights, no internet on the PC.
@@ -115,6 +180,8 @@ jobs:
           # developer / EXE-build files are not needed in the portable install
           Remove-Item -Force "$root/server/assettrack_server.spec", "$root/server/README_SERVER_EXE.txt", "$root/server/pytest.ini", "$root/server/requirements-build.txt" -ErrorAction SilentlyContinue
           Copy-Item AssetTrack_Server_App.bat, START_ASSETTRACK.bat, Restart_AssetTrack_Server.bat "$root/"
+          Copy-Item -Recurse iis "$root/iis"          # IIS + SQL Server installation scripts (same zip, second way to host)
+          Remove-Item -Force "$root/server/web.config" -ErrorAction SilentlyContinue   # written by iis\Setup_IIS.ps1 - never shipped, so updates keep it
           Copy-Item docs/PORTABLE_SERVER.txt "$root/README_PORTABLE.txt"
       - name: Smoke test with the portable Python only
         shell: pwsh
@@ -201,3 +268,69 @@ jobs:
             AIS_AssetTrack_HHT_v${{ env.V }}.apk
             AIS_AssetTrack_HHT.apk
           make_latest: true
+
+  server-iis:
+    # The portable zip installed on IIS + SQL Server Express exactly as IT would do it (iis\Setup_IIS.ps1, Windows PowerShell 5.1),
+    # with both IIS modules AssetTrack supports. Then used: sign in, change password, add a plant, restart, data kept, update run.
+    needs: server-portable
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix: { module: [httpplatformhandler, aspnetcoremodule] }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: server-portable }
+      - name: Unzip into a folder of its own
+        shell: powershell
+        run: Expand-Archive AIS_AssetTrack_Server_Portable.zip C:\AssetTrack_IIS
+      - name: IIS and the IIS module
+        shell: powershell
+        run: |
+          Install-WindowsFeature Web-Server, Web-Mgmt-Console | Out-Null
+          if ("${{ matrix.module }}" -eq "httpplatformhandler") { choco install httpplatformhandler -y --no-progress }
+          else { choco install dotnet-8.0-windowshosting -y --no-progress }
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 3010) { exit 1 }
+          iisreset | Out-Null
+          exit 0
+      - name: SQL Server Express and ODBC Driver 18
+        shell: powershell
+        run: |
+          choco install sql-server-express -y --no-progress
+          if (-not (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server")) { choco install sqlserver-odbcdriver -y --no-progress }
+          Get-ChildItem "HKLM:\SOFTWARE\ODBC\ODBCINST.INI" | Select-Object -ExpandProperty PSChildName
+          exit 0
+      - name: Setup_IIS.ps1 (as IT runs it)
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File C:\AssetTrack_IIS\iis\Setup_IIS.ps1 -SqlServer ".\SQLEXPRESS" -CreateDatabase -StopDefaultSite -PublicName assettrack
+      - name: Use it - sign in, change password, add a plant, restart, data kept
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $u = "http://localhost"
+          if ((Invoke-WebRequest "$u/" -UseBasicParsing).StatusCode -ne 200) { throw "web page" }
+          if ((Invoke-WebRequest "$u/hht-setup" -UseBasicParsing).StatusCode -ne 200) { throw "hht-setup page" }
+          $t = (Invoke-RestMethod -Method Post "$u/api/v1/auth/login" -ContentType "application/json" -Body '{"user_id":"admin","password":"Admin@123"}').token
+          $t = (Invoke-RestMethod -Method Post "$u/api/v1/auth/change-password" -ContentType "application/json" -Headers @{Authorization="Bearer $t"} -Body '{"old_password":"Admin@123","new_password":"IisTest#2026"}').token
+          Invoke-RestMethod -Method Post "$u/api/v1/plants" -ContentType "application/json" -Headers @{Authorization="Bearer $t"} -Body '{"code":"CHN","name":"Chennai"}' | Out-Null
+          & "$env:windir\System32\inetsrv\appcmd.exe" recycle apppool /apppool.name:AssetTrack
+          Start-Sleep -Seconds 5
+          for ($i = 0; $i -lt 30; $i++) { try { $h = Invoke-RestMethod "$u/api/v1/health"; if ($h.db -eq "ok") { break } } catch { Start-Sleep 3 } }
+          $t = (Invoke-RestMethod -Method Post "$u/api/v1/auth/login" -ContentType "application/json" -Body '{"user_id":"admin","password":"IisTest#2026"}').token
+          $p = Invoke-RestMethod "$u/api/v1/plants" -Headers @{Authorization="Bearer $t"}
+          if (-not ($p | Where-Object { $_.code -eq "CHN" })) { throw "plant not kept after restart" }
+          & C:\AssetTrack_IIS\python\python.exe -c "import pyodbc; c=pyodbc.connect('DRIVER={ODBC Driver 18 for SQL Server};SERVER=.\\SQLEXPRESS;DATABASE=PalletDB;Trusted_Connection=yes;TrustServerCertificate=yes'); print('plants in SQL Server:', c.execute('select code, name from plants').fetchall())"
+          if ($LASTEXITCODE) { throw "SQL check" }
+          Write-Host "IIS + SQL Server installation works ($((Invoke-RestMethod "$u/api/v1/health").version))"
+      - name: Update run - the same script again keeps web.config and the data
+        shell: powershell
+        run: |
+          $before = Get-Content C:\AssetTrack_IIS\server\web.config -Raw
+          powershell -ExecutionPolicy Bypass -File C:\AssetTrack_IIS\iis\Setup_IIS.ps1
+          if ($LASTEXITCODE) { exit 1 }
+          if ((Get-Content C:\AssetTrack_IIS\server\web.config -Raw) -ne $before) { throw "web.config changed by an update run" }
+      - name: Logs
+        if: failure()
+        shell: powershell
+        run: |
+          Get-ChildItem C:\AssetTrack_IIS\server\logs -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "--- $($_.Name)"; Get-Content $_.FullName -Tail 40 }
+          Get-Content C:\AssetTrack_IIS\server\web.config -ErrorAction SilentlyContinue

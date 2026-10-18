@@ -56,4 +56,5 @@ def add_missing_columns():
                     if engine.dialect.name == "mssql":
                         default += " WITH VALUES"
                 kw = "ADD" if engine.dialect.name == "mssql" else "ADD COLUMN"
-                conn.execute(text(f'ALTER TABLE {t.name} {kw} {col.name} {ctype}{default}'))
+                q = engine.dialect.identifier_preparer       # quoted names: safe on SQL Server for words like key / user
+                conn.execute(text(f"ALTER TABLE {q.format_table(t)} {kw} {q.quote(col.name)} {ctype}{default}"))

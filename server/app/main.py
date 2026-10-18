@@ -88,7 +88,25 @@ async def lifespan(app: FastAPI):
         bench.start_scheduler(SessionLocal)
         from . import gcs
         gcs.start_scheduler(SessionLocal)
+    if config.RETRY_JOB:
+        _start_retry_job()
     yield
+
+
+def _start_retry_job():
+    """IIS / service hosting: the 5-minute job (EBS / GCS retry queue, reminders, event purge) runs inside the server,
+    so no Windows Task Scheduler entry is needed. The tray app runs the same job itself (it does not set PALLET_RETRY_JOB)."""
+    import threading, time
+
+    def loop():
+        while True:
+            time.sleep(300)
+            try:
+                with SessionLocal() as db:
+                    integration.run_retries(db)
+            except Exception as e:                # never stop the loop; the next run tries again
+                log.error("retry job: %s", e)
+    threading.Thread(target=loop, name="retry-job", daemon=True).start()
 
 
 _API_DOCS = os.getenv("PALLET_API_DOCS", "0") == "1"      # Swagger /docs only when IT switches it on (settings.env)
@@ -102,6 +120,40 @@ app.include_router(external.admin)
 app.add_middleware(ActivityMiddleware)
 
 
+class _BodyCap:
+    """A request body sent without its size (chunked - IIS may forward uploads that way) is read here first and refused
+    above MAX_UPLOAD_MB, like a body that states its size (checked in _limit_body)."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or any(k == b"content-length" for k, _ in scope.get("headers", [])):
+            return await self.app(scope, receive, send)
+        chunks, total, more = [], 0, True
+        while more:
+            msg = await receive()
+            if msg["type"] != "http.request":
+                return
+            total += len(msg.get("body", b""))
+            if total > MAX_UPLOAD_MB * 1024 * 1024:
+                await JSONResponse({"detail": f"File too large (max {MAX_UPLOAD_MB} MB)"}, status_code=413)(scope, receive, send)
+                return
+            chunks.append(msg.get("body", b""))
+            more = msg.get("more_body", False)
+        body, sent = b"".join(chunks), False
+
+        async def replay():
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+        await self.app(scope, replay, send)
+
+
+app.add_middleware(_BodyCap)
+
+
 MAX_UPLOAD_MB = 30
 
 
@@ -111,9 +163,6 @@ async def _limit_body(request: Request, call_next):
     n = request.headers.get("content-length")
     if n and n.isdigit() and int(n) > MAX_UPLOAD_MB * 1024 * 1024:
         return JSONResponse({"detail": f"File too large (max {MAX_UPLOAD_MB} MB)"}, status_code=413)
-    if not n and request.method in ("POST", "PUT") and "chunked" in (request.headers.get("transfer-encoding") or "").lower():
-        # browsers and the HHT always send the size; a body without it could bypass the limit
-        return JSONResponse({"detail": "Upload size missing (Content-Length required)"}, status_code=411)
     return await call_next(request)
 
 _SEC_HEADERS = {
