@@ -1,11 +1,11 @@
 """Management dashboard data, Excel export of every report, daily exception report (print). Developed by DT"""
 from datetime import datetime, timedelta
 from io import BytesIO
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from .. import models, services, config, lpn as lpnsvc
+from .. import models, config, lpn as lpnsvc
 from ..db import get_db
 from ..security import current_user, Principal
 from ..models import utcnow
@@ -13,7 +13,6 @@ from . import reports as rep
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
-RETURN_EVENTS = ("YARD_SCAN", "RETURN_SLIP", "AUTO_RECEIVE_MISSED_SCAN", "RETURN_SLIP_MISSED_DISPATCH", "YARD_SCAN_FOREIGN")
 
 
 def _rep(p: Principal):

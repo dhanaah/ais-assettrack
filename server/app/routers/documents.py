@@ -1,5 +1,6 @@
 """Pick lists (dispatch) and return slips (return) - document level operations.
-EBS SO posting and GCS calls are stubs behind integration.py; they queue for retry."""
+EBS SO posting and GCS calls are stubs behind integration.py; they queue for retry.
+Developed by DT"""
 import os
 import re
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form

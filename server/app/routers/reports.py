@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta
+"""AIS AssetTrack - reports.py. Developed by DT"""
 from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from .. import models, services, integration
+from .. import models, services, integration, config
 from ..db import get_db
 from ..security import current_user, Principal, need
 from ..models import utcnow
@@ -31,7 +31,7 @@ def holding(plant: str | None = None, p: Principal = Depends(current_user), db: 
     plants = {x.code: x for x in db.query(models.Plant).all()}
     for r in rows:
         c = custs.get((r["plant"], r["customer"]))
-        limit = (c.holding_limit_days if c and c.holding_limit_days else plants[r["plant"]].holding_days_default) if r["plant"] in plants else 30
+        limit = (c.holding_limit_days if c and c.holding_limit_days else plants[r["plant"]].holding_days_default) if r["plant"] in plants else config.DEFAULT_HOLDING_DAYS
         r["name"] = c.name if c else r["customer"]; r["limit_days"] = limit; r["overdue"] = r["max_days"] > limit
     return sorted(rows, key=lambda r: -r["qty"])
 
@@ -148,7 +148,7 @@ def plant_position(plant: str | None = None, p: Principal = Depends(current_user
     own = db.query(models.Pallet).filter(models.Pallet.home_plant == pl, models.Pallet.status != "DISCONTINUED").all()
     custs = {c.code: c for c in db.query(models.Customer).filter_by(plant_code=pl).all()}
     plant_obj = db.get(models.Plant, pl)
-    hold_default = plant_obj.holding_days_default if plant_obj else 30
+    hold_default = plant_obj.holding_days_default if plant_obj else config.DEFAULT_HOLDING_DAYS
     at_home = {}
     other_plants, in_transit, at_customer, care, items = {}, {}, {}, {}, []
 

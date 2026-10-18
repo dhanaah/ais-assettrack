@@ -1,0 +1,11 @@
+AIS AssetTrack - Returnable Pallet Tracking
+Copyright (c) 2026 Asahi India Glass Ltd. All rights reserved.
+
+Proprietary and confidential. For internal use by Asahi India Glass Ltd. and the
+customers / transporters it authorises. No part of this software may be copied,
+published, distributed or used outside AIS without written permission of AIS.
+
+Developed by DT.
+
+Third-party open-source libraries used by this software keep their own licences
+(listed in server/requirements.txt and hht/package.json).

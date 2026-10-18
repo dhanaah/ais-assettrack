@@ -3,11 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { S, C, Page, Header, Footer, Screen, ScanInput, T, UserChip, ButtonGroup } from '../ui/kit';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { openDb, kv } from '../lib/db';
 import { checkUpdate, openUpdate } from '../lib/update';
-import { getActiveServer } from '../lib/api';
 import { fTime } from '../lib/when';
 
 // Functions grouped by where the work happens, in the order a pallet moves: Gate-In -> Yard-In -> Internal move ->
@@ -69,7 +67,6 @@ export default function Home({ me, sync, nav, onLogout, onLookup }) {
   useEffect(() => { let on = true; const load = () => counts().then(x => on && setN(x)).catch(() => { }); load(); const t = setInterval(load, 15000); return () => { on = false; clearInterval(t); }; }, [sync.lastSync, sync.pending]);
   useEffect(() => { if (sync.online) checkUpdate().then(u => u && u.newer && setUpd(u)); }, [sync.online]);
   const col = !sync.online ? C.warn : sync.pending ? C.amber : C.ok;
-  const srv = (getActiveServer() || '').replace(/^https?:\/\//, '');
   const allowed = (it) => (!it[3] || [].concat(it[3]).some((x) => perms.includes(x))) && !(benchMode && it[0] === 'pdi');
   // groups open and close by tapping the heading; what is open is remembered on this HHT
   const [open, setOpen] = useState({});

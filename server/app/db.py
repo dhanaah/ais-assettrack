@@ -1,3 +1,4 @@
+"""AIS AssetTrack - db.py. Developed by DT"""
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from .config import DB_URL

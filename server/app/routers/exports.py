@@ -79,7 +79,7 @@ def to_pdf(body: TableIn, p: Principal = Depends(current_user)):
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import mm
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
     from reportlab.lib.styles import ParagraphStyle
     buf = io.BytesIO()
     n = max(1, len(body.columns))

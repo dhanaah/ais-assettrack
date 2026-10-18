@@ -1,6 +1,6 @@
 // Small UI kit + ScanInput (hardware scanner wedge + camera). Developed by DT
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Modal, Vibration, ScrollView, Image, RefreshControl, ActivityIndicator, Animated, Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet, Modal, ScrollView, Image, RefreshControl, ActivityIndicator, Animated, Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';

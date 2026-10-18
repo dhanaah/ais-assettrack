@@ -4,13 +4,13 @@ HHT scans pallets or part cards (LPN) against it; "Finish loading" makes the cha
 the OUT gate scans that QR. Settings (web > Masters > GCS inbox): host, port, user, password, folder, file pattern,
 done folder, interval. Files: .json / .csv / .txt / .pdf - fields found by name (GCS no, vehicle, customer, invoice, ...).
 Developed by DT
-"""
+Developed by DT"""
 import io, json, logging, re, threading, time, csv
 from datetime import datetime
 from ftplib import FTP
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from . import models, config, services
+from . import models, services
 from .models import utcnow
 
 log = logging.getLogger("gcs")

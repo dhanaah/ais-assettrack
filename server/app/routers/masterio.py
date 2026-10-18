@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from .. import models
 from ..db import get_db
-from ..security import need, current_user, Principal, audit
+from ..security import current_user, Principal, audit
 
 router = APIRouter(prefix="/api/v1/masters", tags=["masters-io"])
 

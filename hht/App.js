@@ -1,12 +1,12 @@
 // AIS Pallet HHT - entry: session, navigation, idle lock, crash guard. Developed by DT
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, BackHandler, Alert, AppState, TouchableOpacity } from 'react-native';
+import { View, Text, BackHandler, Alert, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as Application from 'expo-application';
 import * as Clipboard from 'expo-clipboard';
 import { openDb, kv, logActivity, pendingCount } from './src/lib/db';
-import { applyTheme, T, S, C, Btn, Screen, Page, Header, AisLogo, loadScanMode, setNet, FOOT, Enter } from './src/ui/kit';
+import { applyTheme, T, S, Btn, Screen, Page, Header, AisLogo, loadScanMode, setNet, FOOT, Enter } from './src/ui/kit';
 import { loadSession, setToken, me as getMe, hasToken, setApiDevice, APP_VERSION } from './src/lib/api';
 import { state as syncState, subscribe, syncNow, startAutoSync, stopAutoSync, setDeviceId, refreshPending } from './src/lib/sync';
 import { initFeedback } from './src/lib/feedback';
@@ -90,12 +90,12 @@ export default function App() {
   const refreshUi = () => setUiKey(k => k + 1);
   const screens = {
     home: <Home me={me} sync={sync} nav={go} onLogout={logout} onLookup={(code) => { setLookupCode(code); go('lookup'); }} />,
-    dock: <Dock onBack={back} />, dockP: <Dock onBack={back} packing />, load: <VehicleLoad onBack={back} />,
-    receipt: <Receipt onBack={back} zone="FGWH" />, receiptP: <Receipt onBack={back} zone="PACKING" />, pdi: <Pdi onBack={back} />, pdiP: <Pdi onBack={back} packing />,
+    dock: <Dock onBack={back} />, load: <VehicleLoad onBack={back} />,
+    receipt: <Receipt onBack={back} zone="FGWH" />, receiptP: <Receipt onBack={back} zone="PACKING" />, pdi: <Pdi onBack={back} />,
     yardret: <Dock onBack={back} yard />, yard: <Yard onBack={back} filter="CUST" />, yardchl: <Yard onBack={back} filter="CHL" />, slip: <ReturnSlip onBack={back} deviceId={deviceId} />,
     gatein: <GateIn onBack={back} />, gateout: <GateOut onBack={back} />, damage: <Damage onBack={back} />, lookup: <Lookup onBack={back} initial={lookupCode} />,
-    move: <Move onBack={back} />, mvyard: <Move onBack={back} preset="YARD" />, mvprod: <Move onBack={back} preset="PRODUCTION" />, mvpackE: <Move onBack={back} preset="PACKING_E" />,
-    mvfg: <Move onBack={back} preset="FGWH" />, mvpk: <Move onBack={back} preset="PACKING" />, mvmain: <Move onBack={back} preset="DISPATCH" />, mvfgback: <Move onBack={back} preset="PRODUCTION_R" />, misses: <Misses onBack={back} />,
+    mvyard: <Move onBack={back} preset="YARD" />, mvprod: <Move onBack={back} preset="PRODUCTION" />, mvpackE: <Move onBack={back} preset="PACKING_E" />,
+    mvfg: <Move onBack={back} preset="FGWH" />, mvpk: <Move onBack={back} preset="PACKING" />, mvfgback: <Move onBack={back} preset="PRODUCTION_R" />, misses: <Misses onBack={back} />,
     pending: <Pending onBack={back} />, setup: <Setup onBack={() => setScreen('settings')} />, settings: <Settings onBack={back} onSetup={() => go('setup')} deviceId={deviceId} onTheme={(k) => { setThemeKey(k); refreshUi(); }} onUi={(opts) => { if (opts.idle_min != null) idleMin.current = opts.idle_min; refreshUi(); }} />,
   };
   return (<View style={{ flex: 1 }} onTouchStart={() => { lastTouch.current = Date.now(); }}>

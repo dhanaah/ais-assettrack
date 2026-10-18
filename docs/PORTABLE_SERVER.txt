@@ -7,7 +7,7 @@ It contains the official, signed Python runtime from python.org (python folder) 
    You get:  python\   server\   START_ASSETTRACK.bat   Restart_AssetTrack_Server.bat   AssetTrack_Server_App.bat
    An existing server\pallet.db (your data) is NOT in the zip, so it is kept.
 2. Double-click START_ASSETTRACK.bat. The AT icon appears near the clock and the web page opens
-   (http://localhost:8001 - first login admin / Admin@123, then change the password).
+   (http://localhost:8001 - first login admin / Admin@123 on this PC only, then set a new password).
 3. HHTs: tray icon > "HHT setup QR" and scan it on each HHT (Setup > 1. Server).
 4. Update to a new version: unzip the new zip over the same folder (data stays), then Restart_AssetTrack_Server.bat.
 5. Start with Windows: Win+R, shell:startup, put a shortcut to START_ASSETTRACK.bat there.

@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - custapi.js. Developed by DT
 // Customer device (Option A return slips at the customer's site). Paired once by a QR from the AIS web (Customers >
 // HHT pairing): customer, plant, a device key and two kinds of address -
 //   * AIS network: the AssetTrack server name / IPs (used when the HHT is on AIS Wi-Fi / VPN - direct, fastest)

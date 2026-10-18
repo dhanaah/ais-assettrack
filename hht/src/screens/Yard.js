@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - Yard.js. Developed by DT
 // Yard in-ward: scan the return slip (RTS) - the screen recognises Option A or Option B and follows that process:
 //   Option A (customer's slip, pallet list): scan each pallet, ticked against the slip list -> reconcile with the list -> close.
 //   Option B (count made at the IN gate + customer document photo): 1 view the document photo, 2 scan each pallet (matched
@@ -5,7 +6,7 @@
 //   Other-plant challan (our pallets back from another AIS plant, registered at the IN gate): scan each pallet against the challan -> close.
 // Developed by DT
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Switch, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, TextInput } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen } from '../ui/kit';
 import { listSlips, getSlip, enqueue, addLocalScan, localScans, setPalletLocal, kv } from '../lib/db';
 import { validateYardScan } from '../lib/rules';

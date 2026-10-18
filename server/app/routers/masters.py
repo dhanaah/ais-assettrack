@@ -493,7 +493,7 @@ def list_batches(p: Principal = Depends(current_user), db: Session = Depends(get
     for b in q.all():
         d = row(b)
         counts = {}
-        for s, c in db.query(models.Tag.status, models.Tag.tag_no).filter(models.Tag.batch_no == b.batch_no).all():
+        for s, _c in db.query(models.Tag.status, models.Tag.tag_no).filter(models.Tag.batch_no == b.batch_no).all():
             counts[s] = counts.get(s, 0) + 1
         d["counts"] = counts; out.append(d)
     return out
@@ -517,7 +517,7 @@ def create_batch(body: BatchIn, request: Request, p: Principal = Depends(need("T
         raise HTTPException(400, "Batch exists")
     existing = db.query(models.Tag.tag_no).filter(models.Tag.tag_no.in_([str(i) for i in range(body.tag_from, body.tag_to + 1)])).count()
     if existing:
-        raise HTTPError(400, f"{existing} tags of this range already exist")
+        raise HTTPException(400, f"{existing} tags of this range already exist")
     b = models.TagBatch(batch_no=body.batch_no, plant_code=plant.code, tag_from=body.tag_from, tag_to=body.tag_to,
                         vendor=body.vendor, received_date=body.received_date, received_by=p.user_id, notes=body.notes)
     db.add(b)
@@ -527,7 +527,6 @@ def create_batch(body: BatchIn, request: Request, p: Principal = Depends(need("T
     return row(b)
 
 
-HTTPError = HTTPException
 
 
 @router.get("/tags/{tag_no}")

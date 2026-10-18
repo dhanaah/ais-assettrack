@@ -13,7 +13,7 @@ Event types handled in Phase 1/2:
 Dock scan accepts LPN or pallet (optional second scan `pallet`). Missed scans found on the way are recorded
 (scan_misses) and returned as EXCEPTION with the alert text so the HHT shows it.
 Any other type is stored with status EXCEPTION for review (forward compatible).
-"""
+Developed by DT"""
 import json
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request

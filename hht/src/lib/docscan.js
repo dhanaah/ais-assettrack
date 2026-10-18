@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - docscan.js. Developed by DT
 // Photo of the customer's manual return document (Option B at the IN gate): resize, read the text on the HHT itself
 // (Google ML Kit, offline), then the server matches the pallet numbers with the ledger (and, when IT enables it, an AI
 // reading of the photo for handwriting / unusual layouts). Without the server the text is kept and matched at sync.

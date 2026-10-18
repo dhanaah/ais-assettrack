@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - printdoc.js. Developed by DT
 // Printer-independent slip layout + converters to the printer's own language, so any Bluetooth printer can be used:
 //   ESC/POS  - most portable receipt printers (SEZNIK, Xprinter, Rongta, Epson, Bixolon, MTP, generic "58mm/80mm")
 //   CPCL     - Zebra / Honeywell / Intermec mobile printers

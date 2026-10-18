@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - Customer.js. Developed by DT
 // Customer mode (HHT at the customer's site, used by Customer Staff who sign in with their own user):
 //  * Receive delivery - scan each pallet while unloading an AIS vehicle (works offline, sent later)
 //  * Return slip (Option A) - scan the empty pallets -> slip with AIS-signed QR -> portable printer. Talks to AIS directly on the AIS network, through the internet address otherwise (see custapi).
@@ -5,9 +6,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import qrcode from 'qrcode-generator';
-import { S, C, T, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer, ButtonGroup, Enter } from '../ui/kit';
+import { S, C, Btn, Header, Page, Screen, ScanInput, Pill, useToast, Toast, Glass, Ring, Empty, Footer, ButtonGroup, Enter } from '../ui/kit';
 import { ext, findRoute, getPairing, getRoute, createSlip, sendPending, outbox, history, refreshSlip, unpair, parsePairing, savePairing, setInternetAddress, refreshMe, canPrintOffline, loadStaff, staffLogin, staffLogout, getStaff, staffCan, incoming, receive, sendReceipts, onStaffSignout } from '../lib/custapi';
 import { VehiclePicker } from '../ui/vehicle';
 import Setup from './Setup';

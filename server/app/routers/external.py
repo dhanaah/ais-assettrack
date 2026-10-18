@@ -13,7 +13,7 @@ Endpoints
 
 QR on the label: AIS1|RS|<slip_no>|<plant>|<customer>|<vehicle>|<qty>|<yyMMddHHmm>|<check code>
 The check code is signed by the server; the AIS IN gate rejects altered labels.
-"""
+Developed by DT"""
 import secrets
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
@@ -418,7 +418,6 @@ def get_slip(slip_no: str, c: models.Customer = Depends(customer_auth), db: Sess
 def slip_label(slip_no: str, t: str, db: Session = Depends(get_db)):
     """Customer prints this (browser -> Print) and sticks it on the vehicle / hands it to the driver."""
     from fastapi.responses import HTMLResponse
-    import hmac
     sl = db.get(models.ReturnSlip, slip_no)
     if not sl or not services.label_token_ok(slip_no, t, sl.created_at):
         raise HTTPException(403, "Invalid label link")

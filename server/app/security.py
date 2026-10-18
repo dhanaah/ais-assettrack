@@ -1,4 +1,5 @@
-"""Auth, roles, plant scoping."""
+"""Auth, roles, plant scoping.
+Developed by DT"""
 from datetime import datetime, timedelta
 import bcrypt, jwt
 from fastapi import Depends, HTTPException, Request, status

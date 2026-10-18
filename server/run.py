@@ -1,5 +1,6 @@
 """Dev / single-process runner.  python run.py  ->  http://localhost:8001
-Production on IIS: see web.config + README (one worker per app pool, 4 pools on 8001-8004)."""
+Production on IIS: see web.config + README (one worker per app pool, 4 pools on 8001-8004).
+Developed by DT"""
 import os, uvicorn
 if __name__ == "__main__":
     port = int(os.getenv("PALLET_PORT", os.getenv("HTTP_PLATFORM_PORT", "8001")))

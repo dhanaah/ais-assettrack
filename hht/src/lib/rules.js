@@ -116,23 +116,6 @@ export async function validateMove(scanned, toZone) {
   return { ok: true, pallet, warn };
 }
 
-export async function validateDockScan(picklist_no, scanned) {
-  const plant = (await kv.get('plant'))?.code;
-  const pk = await getPicklist(picklist_no);
-  if (!pk) return { ok: false, msg: 'Pick list not in cache - sync first' };
-  if (!['OPEN', 'SO_PENDING'].includes(pk.status)) return { ok: false, msg: `Pick list is ${pk.status}` };
-  const { tag, pallet } = await resolveTag(scanned);
-  if (!pallet && !tag) return { ok: false, msg: `Unknown tag ${scanned}` };
-  if (tag && tag.status === 'RETIRED') return { ok: false, msg: `Tag ${tag.tag} is retired` };
-  if (!pallet) return { ok: false, msg: 'Tag not assigned to a pallet' };
-  if (pallet.home !== plant) return { ok: false, msg: `Foreign pallet ${pallet.pallet_no} (${pallet.home})` };
-  if (await localScanExists(picklist_no, pallet.pallet_no)) return { ok: false, msg: 'Already scanned on this list', dup: true };
-  if (pallet.status !== 'AVAILABLE') return { ok: false, msg: `${pallet.pallet_no} is ${pallet.status}${pallet.picklist ? ' (' + pallet.picklist + ')' : ''}` };
-  const n = (await localScans(picklist_no)).length;
-  if (n >= pk.qty) return { ok: false, msg: `Pick list qty ${pk.qty} already reached` };
-  return { ok: true, pallet, count: n + 1, qty: pk.qty };
-}
-
 export async function validateYardScan(slip, scanned, acceptForeign) {
   const plant = (await kv.get('plant'))?.code;
   if (await isCard(scanned)) return { ok: false, msg: 'Pallet Yard: scan the pallet QR, not the pallet card' };
@@ -149,11 +132,4 @@ export async function validateYardScan(slip, scanned, acceptForeign) {
     if (!declared.includes(pallet.pallet_no)) exception = pallet.customer && pallet.customer !== slip.customer ? 'CROSS_CUSTOMER' : 'EXCESS';
   }
   return { ok: true, exception, pallet, msg: exception ? `${pallet.pallet_no} ${exception}` : `${pallet.pallet_no} received` };
-}
-
-export async function validateReturnPallet(customer, scanned) {
-  const { pallet } = await resolveTag(scanned);
-  if (!pallet) return { ok: true, warn: 'unknown tag - listed as declared', pallet_no: String(scanned).trim() };
-  if (pallet.customer !== customer || pallet.status !== 'AT_CUSTOMER') return { ok: true, warn: `ledger shows ${pallet.status} ${pallet.customer || ''}`.trim(), pallet_no: pallet.pallet_no };
-  return { ok: true, pallet_no: pallet.pallet_no };
 }

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput } from 'react-native';
 import { S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Glass, Ring, Screen, Segmented, Empty, ListRow } from '../ui/kit';
-import { enqueue, setPalletLocal, logActivity, resolveTag, listPicklists, listSlips, getLpn } from '../lib/db';
+import { enqueue, setPalletLocal, logActivity, listPicklists, listSlips, getLpn } from '../lib/db';
 import { validateMove, isCard, isPalletQr } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';

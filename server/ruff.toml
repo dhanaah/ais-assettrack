@@ -1,0 +1,10 @@
+# AIS AssetTrack server - lint rules checked before each release (ruff check .). Developed by DT
+line-length = 160
+target-version = "py312"
+extend-exclude = ["tests/fixtures"]
+
+[lint]
+# F = real errors (unused / undefined names), E9 = syntax errors, B = likely bugs
+select = ["F", "E9", "B"]
+# B008: FastAPI Depends() defaults are the framework's design. B904 / B905: style, not bugs here.
+ignore = ["B008", "B904", "B905"]

@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- AIS AssetTrack web - Asahi India Glass Ltd. Developed by DT -->
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -469,7 +470,7 @@ async function users(m){
   m.append(h('div',{className:'card'},h('h2',{},'Add / edit user (central admin)'),f,h('p',{className:'muted'},'Plant restricts the user to one plant. Movement rights decide which HHT routes and scans the user can do; anything not ticked is refused on the HHT.')));
   m.append(h('div',{className:'card'},h('h2',{},'Role matrix (defaults)'),table([['Role','code'],['Name','name'],['Scope','scope'],['Permissions',r=>r.perms.join(', ')]],ro.roles)))}
  const pw=h('form',{className:'row'},field('Old password','old_password','','password'),field('New password','new_password','','password'),h('button',{className:'p'},'Change password'));pw.onsubmit=async e=>{e.preventDefault();try{const r=await api('/auth/change-password',{method:'POST',body:formData(pw)});if(r.token){T=r.token;localStorage.setItem('tok',T)}ME.must_change_pw=false;msg('Password changed');pw.reset()}catch(x){msg(x.message,1)}};
- const pin=h('form',{className:'row'},field('Supervisor PIN (4+ digits)','pin','','password'),h('button',{className:'p'},'Set my PIN'));pin.onsubmit=async e=>{e.preventDefault();try{await api('/auth/set-pin',{method:'POST',body:formData(pin)});msg('PIN set');pin.reset()}catch(x){msg(x.message,1)}};
+ const pin=h('form',{className:'row'},field('Supervisor PIN (6+ digits)','pin','','password'),h('button',{className:'p'},'Set my PIN'));pin.onsubmit=async e=>{e.preventDefault();try{await api('/auth/set-pin',{method:'POST',body:formData(pin)});msg('PIN set');pin.reset()}catch(x){msg(x.message,1)}};
  m.append(h('div',{className:'card'},h('h2',{},'My account'),pw,ME.supervisor?pin:''));
  load()}
 

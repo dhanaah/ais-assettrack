@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - scanner.js. Developed by DT
 // Hardware scanner without keyboard: the device scanner sends each barcode as an Android broadcast (no text field,
 // no keystrokes). Zebra DataWedge gets its own AssetTrack profile automatically (keystroke output OFF). Urovo,
 // Newland, iData and Chainway default broadcasts are understood too; another brand can be set in Setup › Scanner.

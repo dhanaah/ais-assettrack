@@ -1,4 +1,6 @@
-# Changelog — AIS AssetTrack HHT
+# Changelog — AIS AssetTrack HHT (early history 1.0 - 1.4)
+**From HHT 1.5 onward the history of both the server and the HHT is in [`server/CHANGELOG.md`](../server/CHANGELOG.md).** Developed by DT
+
 ## 1.4.1 (2026-10-09)
 - AIS logo and AssetTrack wordmark without white background (transparent PNGs); reversed white/red versions on the gradient header
 ## 1.4.0 (2026-10-09)

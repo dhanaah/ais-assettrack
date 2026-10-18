@@ -3,3 +3,4 @@ pyinstaller==6.22.3
 pystray==0.19.5
 pillow==13.0.0
 pytest==8.4.2
+ruff==0.16.8

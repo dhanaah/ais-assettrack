@@ -2,10 +2,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ask,S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, AisLogo, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
+import { ask, S, C, Btn, Page, Header, ScanInput, Pill, useToast, Toast, Footer, Segmented, SwitchRow, Empty, ListRow } from '../ui/kit';
 import { Screen, applyTheme, T, useScanMode, setScanMode } from '../ui/kit';
 import { THEMES, THEME_KEYS } from '../ui/theme';
-import { api, getServer, setServer, APP_VERSION } from '../lib/api';
+import { api, APP_VERSION } from '../lib/api';
 import { resolveTag, enqueue, recentEvents, pendingDocs, kv, setPalletLocal, logActivity, recentActivity, getLpn, lpnsOnPallet } from '../lib/db';
 import { state as sync, syncNow, subscribe } from '../lib/sync';
 import { listPrinters, connect, connAvailable, testPrint, findLanguage, getConfig, setConfig, LANGS, CONNS, WIDTHS, IMGS } from '../lib/printer';
@@ -174,7 +174,7 @@ export function Pending({ onBack }) {
 }
 
 export function Settings({ onBack, deviceId, onTheme, onUi, customer, extra, onSetup }) {
-  const [srv, setSrv] = useState(getServer()); const [busy, setBusy] = useState(false); const [msg, toast] = useToast();
+  const [msg, toast] = useToast();
   const [sound, setSound] = useState(soundEnabled()); const [scale, setScale] = useState(T.scale || 1); const [idle, setIdle] = useState(30); const [upd, setUpd] = useState(null);
   useEffect(() => { kv.get('idle_min').then(v => setIdle(v ?? 30)); }, []);
   return (<Screen><Header title="Settings" onBack={onBack} /><Page>

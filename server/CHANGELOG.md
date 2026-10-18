@@ -1,4 +1,45 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.29.0 + HHT 2.22.0 - 2026-10-18 - approval review (security, logic, clean-up, version control)
+Full review before management / IT approval: security, vulnerabilities, logic, unwanted code, documentation and version control.
+
+**Security**
+- The server never falls back to the old public secret: if `secret.key` cannot be written it stops with a clear message, and a `PALLET_JWT_SECRET` shorter than 32 characters is refused.
+- Every sign-in token must carry the password version (tokens without it are refused).
+- Print / Excel link tickets (2 minutes) only open a link: they cannot change anything, make new tickets or act as a sign-in.
+- The FTP password of a plant is never sent to the web / HHT (shown as "••••" only); old audit entries that held it are cleaned on the first start.
+- Nobody can give access they do not have: a user admin cannot make itself central admin or reset a stronger admin's password; only the central admin changes roles.
+- New and reset passwords: at least 8 characters with letters and digits. Web users with a first / reset password must change it before anything else works.
+- First admin sign-in with the documented first password works only on the server PC itself (http://localhost:8001).
+- Supervisor PIN: at least 6 digits, simple PINs (111111, 123456) refused, PIN changes limited to 5 in 10 minutes, and the reply no longer tells whether another supervisor uses that PIN. Existing PINs keep working.
+- Excel downloads: text starting with "=" (e.g. a customer DC number) stays text and is never run as a formula.
+- Browser protections on every page (content security policy, no framing by other sites, no sniffing, no referrer). Swagger API pages are off unless `PALLET_API_DOCS=1`.
+- A blocked HHT is refused by its own device id, whatever the events carry.
+- Another plant's pallet can be looked up, but its history (users, remarks) is not shown.
+- Libraries pinned to exact tested versions; PyJWT 2.15.0 and pypdf 6.21.1 fix known vulnerabilities (pip-audit clean).
+
+**Logic**
+- OUT gate: any manual override now needs a supervisor PIN, also when the challan is right but Security has not loaded every pallet.
+- IN gate / close of another plant's challan with "/" in its number (e.g. PUN/00009) works from the HHT.
+- Pallets returned to Production (rejection / damage / lot-out) with part cards still on them cannot be made "empty" and dispatched; pallets carrying PDI-rejected glass stay LOADED and off vehicles until the glass is taken off (Yard).
+- A customer return slip never changes a pallet AIS shows inside the plant (Yard or on a vehicle being loaded) - warning only; the AIS Yard / Gate scan corrects it.
+- HHT: Dispatch Bench trips and GCS loads have no pallet-count limit (as on the server).
+- A late offline Yard scan no longer takes a pallet off a vehicle Security has already loaded (recorded as exception).
+- Every way of receiving another plant's material (pallet card, pallet QR, internal move) needs the IN gate endorsement of its challan.
+- A GCS cancelled in the ERP after loading started is held: loading, finish and OUT gate are refused until the admin removes it.
+- When the GCS names pallets only by reference (e.g. RW.3101), only those pallets are accepted at loading.
+- Pallets on a return slip that never reached AIS (3+ days) still count as held by the customer (holding report and reminders).
+- Yard scan keeps DAMAGED / UNDER_REPAIR pallets so (release after repair); Yard scans on a closed slip or closed challan are refused.
+- FGWH -> Production needs MOVE_FG_TO_PRODUCTION on every path; a pallet at a customer / in return / on a load cannot be set AVAILABLE by hand.
+- Customer receipt only for vehicles already gated out; customer holding uses the same overdue days as the reminders.
+- Challan closed short with a PIN records each missing pallet in the missed-scan register.
+- Cancelling a GCS does not turn its part cards (known only from the GCS file) into free stock; a trip cancelled in the Dispatch Bench is cancelled in AssetTrack when nothing is loaded; approve keeps the real GCS number of a GCS / Bench load; a dry reminder run no longer delays the first real email.
+
+**Clean-up and documents**
+- Unused code removed (server imports / functions, HHT screens that could not be opened, old print and check functions); "Developed by DT" in every source file; code check (ruff) added to the build.
+- Portable zip no longer carries build logs, Python caches or developer files; the local packaging script never packs the database, keys or settings.
+- Test data anonymised; duplicate and superseded documents removed or moved to `docs/archive`.
+- README, build & deploy guide, customer HHT access (VPN only - nothing on the internet) rewritten; new `docs/VERSION_CONTROL.md` (version numbers, tags, branches, release checklist); `LICENSE` (AIS proprietary).
+
 ## Server 1.28.4 + HHT 2.21.5 - 2026-10-17 - customer staff sign-in (reported by DT)
 - **Customer HHT showed staff as signed in, but AIS kept answering "sign-in required".** This happened when the saved sign-in stopped being valid: the AssetTrack server was reinstalled or replaced (new secret key), the HHT reached the other AIS server, the 30 days ran out, or AIS reset the staff password. The HHT never noticed and stayed on its home screen.
   - The server now says clearly when a sign-in is no longer valid (expired, password changed, made by another server, user disabled or moved to another customer).

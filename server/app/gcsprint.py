@@ -5,12 +5,11 @@ their part cards, the signed QR the OUT gate scans, and the SECURITY SIGN box wi
 who completed the loading. PDFs are kept in gcs_docs/ next to the database (reprint from the web any time).
 Printing: plant master -> gcs_print_mode WINDOWS (printer name, shared or network, via the Windows print verb) or
 RAW9100 (printer IP, PDF sent directly - most network laser printers accept it) or OFF. Developed by DT
-"""
+Developed by DT"""
 import io, os, socket, subprocess, sys, threading, logging
 from datetime import datetime
 from sqlalchemy.orm import Session
 from . import models, config
-from .models import utcnow
 
 log = logging.getLogger("gcsprint")
 
@@ -125,7 +124,6 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             lw, qw = (46 * mm, 32 * mm) if first else (30 * mm, 22 * mm)
             c.line(x0 + 1.5 * mm + lw, top - 1.5 * mm, x0 + 1.5 * mm + lw, top - hh + 1.5 * mm)
             c.line(x0 + tw - 1.5 * mm - qw, top - 1.5 * mm, x0 + tw - 1.5 * mm - qw, top - hh + 1.5 * mm)
-            ls = (hh - 12 * mm) if first else (hh - 6 * mm)
             if os.path.exists(logo):          # logo fills its cell (keeps proportions); it already carries the company name
                 bw, bh_ = lw - 6 * mm, hh - 3 * mm - 6 * mm
                 iw, ih = ImageReader(logo).getSize()

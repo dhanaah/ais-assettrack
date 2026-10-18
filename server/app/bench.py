@@ -5,7 +5,7 @@ picked LPNs, then challan, gate and the pallet return cycle continue in AssetTra
 Bench endpoints used: POST /api/auth/login, GET /api/dispatches/recent, GET /api/picks.
 Developed by DT
 """
-import json, logging, threading, time
+import logging, threading, time
 from datetime import datetime
 from sqlalchemy.orm import Session
 from . import models

@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - printer.js. Developed by DT
 // Return slips only (Option A customer / Option B IN gate) - GCS + challan print on the plant network printer (server).
 // Printing on whatever portable printer is at hand - not tied to one model. Settings > Printer chooses:
 //   connection : Bluetooth (classic, paired in Android)  |  Bluetooth LE (scan)  |  Android print (printer's own app/plugin)
@@ -38,7 +39,6 @@ export async function setConfig(part) {
   if (part.dots) await kv.set('printer_width', Number(part.dots) >= 576 ? '80' : '58');   // older builds read this
 }
 export async function paperDots() { return (await getConfig()).dots; }
-export async function setPaperWidth(mm) { await setConfig({ dots: String(mm) === '80' ? 576 : String(mm) === '104' ? 832 : 384 }); }
 
 /** True when a slip can actually go to a printer (else the slip is shown on screen). */
 export async function canPrint() {
@@ -184,23 +184,6 @@ export async function printSlip(slip, plant, copies = 2, qr = null) {
   if (!(await canPrint())) return { printed: false, text: slipText(slip, plant), qr: qr || slipQr(slip, plant) };
   const dots = await paperDots();
   await send(Array.from({ length: copies }, () => slipDoc(slip, plant, dots, qr)));
-  return { printed: true };
-}
-
-export async function printChallan(k, plant, lines, copies = 2) {
-  const text = [`ASAHI INDIA GLASS LTD.`, `PALLET CHALLAN (RETURNABLE)`, plant?.name || '', '-'.repeat(32), `Challan : ${k.challan_no}`, `PickList: ${k.picklist_no}`, `SO      : ${k.so_number || ''}`,
-    `Customer: ${k.customer_code}`, `Vehicle : ${k.vehicle_no || ''}`, '-'.repeat(32), ...lines.map((p, i) => pad(`${i + 1}.`, p)), '-'.repeat(32), `TOTAL PALLETS: ${lines.length}`, '', 'Returnable - property of AIS Glass', ''].join('\n');
-  const qr = `CHL|${k.challan_no}|${k.picklist_no}|${lines.length}`;
-  if (!(await canPrint())) return { printed: false, text, qr };
-  const dots = await paperDots();
-  const one = () => {
-    const p = new Doc(dots);
-    p.align('center').logo().line().bold(true).line('PALLET CHALLAN (RETURNABLE)').bold(false).line(plant?.name || '').line().qr(qr).line().align('left').rule()
-      .line(`Challan : ${k.challan_no}`).line(`PickList: ${k.picklist_no}`).line(`SO      : ${k.so_number || ''}`).line(`Customer: ${k.customer_code}`).line(`Vehicle : ${k.vehicle_no || ''}`).rule();
-    lines.forEach((x, i) => p.pad(`${i + 1}.`, x));
-    return p.rule().bold(true).line(`TOTAL PALLETS: ${lines.length}`).bold(false).line().line('Returnable - property of AIS Glass').feed(4).cut();
-  };
-  await send(Array.from({ length: copies }, one));
   return { printed: true };
 }
 

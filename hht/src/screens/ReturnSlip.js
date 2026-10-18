@@ -1,3 +1,4 @@
+// AIS AssetTrack HHT - ReturnSlip.js. Developed by DT
 // Return slip at IN gate - Option B: number of pallets only (no scan at the gate); the pallets are scanned and the
 // slip knocked off at pallet-yard receiving - works offline with device-series number, prints via BT.
 // Security can photograph the customer's manual document: the pallet numbers are read and matched with the ledger,
@@ -8,7 +9,7 @@ import { S, C, Btn, Page, Header, useToast, Toast } from '../ui/kit';
 import { Screen } from '../ui/kit';
 import { listCustomers, enqueueDoc, kv, logActivity } from '../lib/db';
 import { api } from '../lib/api';
-import { state as sync, syncNow } from '../lib/sync';
+import { state as sync } from '../lib/sync';
 import { printSlip, slipText } from '../lib/printer';
 import { fDT } from '../lib/when';
 import { readPhoto, matchPage, mergeResults, queuePhotos, sendPhotos, ocrAvailable } from '../lib/docscan';

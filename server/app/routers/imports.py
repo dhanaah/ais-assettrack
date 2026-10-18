@@ -1,10 +1,11 @@
-"""Excel master import - reads the Pallet_Tracking_Master_Template sheets."""
+"""Excel master import - reads the Pallet_Tracking_Master_Template sheets.
+Developed by DT"""
 from datetime import datetime
 from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from sqlalchemy.orm import Session
 from openpyxl import load_workbook
-from .. import models, services
+from .. import models
 from ..db import get_db
 from ..security import need, Principal, audit, hash_pw
 

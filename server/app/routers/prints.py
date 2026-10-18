@@ -1,12 +1,12 @@
 """Print-ready documents (A4): pallet challan and return slip, with AIS logo and QR.
-Open in browser -> Print / Save as PDF. A 2-minute link ticket is passed as ?tok= so the page can be opened in a new tab."""
+Open in browser -> Print / Save as PDF. A 2-minute link ticket is passed as ?tok= so the page can be opened in a new tab.
+Developed by DT"""
 import html
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
-import jwt
-from .. import models, config, services
+from .. import models, services
 from ..db import get_db
 from ..security import Principal, load_perms
 

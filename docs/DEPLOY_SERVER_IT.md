@@ -26,7 +26,7 @@ provide. Developed by DT.
 2. Copy `settings.env.example` to `settings.env` in the same folder and set `PALLET_DB_URL` (SQL Server), `PUBLIC_NAME`,
    SMTP and EBS values. Keep `PALLET_HHT_ONLY=1`.
 3. Double-click `AssetTrack_Server.exe`. A blue AT icon appears near the clock; the browser opens `http://localhost:8001`.
-   First login `admin / Admin@123` – change it at once (Users).
+   First login `admin / Admin@123` **on the server PC itself** (http://localhost:8001) – the server forces a new password at once. From any other PC this first password is refused.
 4. The program creates all tables on first start. To move pilot data from SQLite, run from the pilot PC:
    `python server\sql\migrate_sqlite_to_mssql.py` (see that file) – or re-import the masters from the Excel template.
 5. Autostart: Task Scheduler → Create Task → "Run whether user is logged on or not", trigger *At startup*, action

@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: pip install -r requirements.txt -r requirements-build.txt
+      - name: Code check (ruff - unused / undefined names, likely bugs)
+        run: ruff check .
       - name: Test suite (pytest) - the build stops here if anything fails
         run: pytest
       - name: Process flow, process rules and review fixes - the build stops here if anything fails
@@ -110,6 +112,8 @@ jobs:
           if ($left) { $left | ForEach-Object { Write-Output "::error::unsigned exe left: $($_.FullName)" }; exit 1 }
           Copy-Item -Recurse server "$root/server"
           Remove-Item -Recurse -Force "$root/server/tests", "$root/server/dist", "$root/server/build" -ErrorAction SilentlyContinue
+          # developer / EXE-build files are not needed in the portable install
+          Remove-Item -Force "$root/server/assettrack_server.spec", "$root/server/README_SERVER_EXE.txt", "$root/server/pytest.ini", "$root/server/requirements-build.txt" -ErrorAction SilentlyContinue
           Copy-Item AssetTrack_Server_App.bat, START_ASSETTRACK.bat, Restart_AssetTrack_Server.bat "$root/"
           Copy-Item docs/PORTABLE_SERVER.txt "$root/README_PORTABLE.txt"
       - name: Smoke test with the portable Python only
@@ -134,6 +138,9 @@ jobs:
         run: |
           $v = (Select-String -Path server/app/config.py -Pattern 'APP_VERSION = "([^"]+)"').Matches[0].Groups[1].Value
           "SV=$v" | Out-File -Append $env:GITHUB_ENV
+          # nothing from the smoke test goes to users: its logs and Python caches are removed first
+          Remove-Item -Force AssetTrack/run_out.txt, AssetTrack/run_err.txt -ErrorAction SilentlyContinue
+          Get-ChildItem -Recurse -Directory AssetTrack/server -Filter __pycache__ | Remove-Item -Recurse -Force
           Compress-Archive -Force -Path AssetTrack/* -DestinationPath AIS_AssetTrack_Server_Portable.zip
       - uses: actions/upload-artifact@v4
         with: { name: server-portable, path: AIS_AssetTrack_Server_Portable.zip }

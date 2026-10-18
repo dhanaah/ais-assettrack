@@ -9,8 +9,8 @@ and matched with the pallets the ledger shows at that customer, allowing for the
 Optional, for handwriting and unusual layouts: an AI vision reading of the photo on the server (only when IT sets
 PALLET_AI_API_KEY; the photo then goes to that AI service) - its pallet list is merged with the HHT's text.
 Option B stays a count; the matched list is kept with the slip and compared at pallet-yard receiving. Developed by DT
-"""
-import base64, json, logging, os, re
+Developed by DT"""
+import base64, logging, os, re
 from sqlalchemy.orm import Session
 from . import models, services
 

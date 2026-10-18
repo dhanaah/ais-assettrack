@@ -1,18 +1,13 @@
-"""SQLAlchemy models - AIS Pallet Asset Tracking (Phase 1 + Phase 2 skeleton)."""
+"""SQLAlchemy models - AIS Pallet Asset Tracking (Phase 1 + Phase 2 skeleton).
+Developed by DT"""
 from datetime import datetime, timezone
-import uuid
-from sqlalchemy import (Float, String, Integer, Boolean, DateTime, Text, ForeignKey, Index,
-                        UniqueConstraint, Numeric)
+from sqlalchemy import (Float, String, Integer, Boolean, DateTime, Text, ForeignKey, UniqueConstraint, Numeric)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
 
 def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def new_uuid():
-    return str(uuid.uuid4())
 
 
 # ---------------------------------------------------------------- masters

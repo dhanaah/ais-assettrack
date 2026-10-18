@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Alert, TextInput } from 'react-native';
 import { ask,S, C, Btn, Header, ScanInput, Pill, useToast, Toast, Ring, Glass, Screen, Page, Empty } from '../ui/kit';
-import { listPicklists, getPicklist, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity, kv } from '../lib/db';
+import { listPicklists, getPicklist, enqueue, addLocalScan, localScans, removeLocalScan, setPalletLocal, addLpnScan, lpnScans, removeLpnScans, setLpnLocal, logActivity } from '../lib/db';
 import { validateDockScan2, isCard, isPalletQr } from '../lib/rules';
 import { api } from '../lib/api';
 import { state as sync, syncNow, pushAndResult } from '../lib/sync';

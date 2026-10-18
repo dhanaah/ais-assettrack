@@ -6,7 +6,7 @@ Developed by DT · Returnable pallet tracking for AIS Glass (15 plants)
 | Area | Status |
 |---|---|
 | Masters: Plants, Roles (permission matrix), Users (plant-scoped), Customers, Transporters, Pallets, Tags, Tag batches | ✅ |
-| Excel import of `Pallet_Tracking_Master_Template_v0.4.xlsx` | ✅ |
+| Excel import of masters (template from the web Masters page) | ✅ |
 | Security: JWT login, lockout after 5 failures, forced password change, supervisor PIN, device binding/blocking, audit log | ✅ |
 | Pallet state machine + pallet history + tag change history | ✅ |
 | HHT sync: idempotent event push (`/sync/push`), reference pull (`/sync/pull`), sync monitor | ✅ |
@@ -21,7 +21,7 @@ Developed by DT · Returnable pallet tracking for AIS Glass (15 plants)
 pip install -r requirements.txt
 python run.py            # http://localhost:8001  (admin / Admin@123 — change at first login)
 ```
-Swagger: http://localhost:8001/docs
+API documentation (Swagger): set `PALLET_API_DOCS=1` in `settings.env`, then http://localhost:8001/docs (off by default)
 
 ## Production (Windows Server + IIS + SQL Server)
 1. Install Python 3.12 (64-bit), ODBC Driver 18 for SQL Server, IIS with **HttpPlatformHandler**.
@@ -40,7 +40,8 @@ Swagger: http://localhost:8001/docs
 | PALLET_JWT_SECRET | random, saved once in `secret.key` | token / QR signing secret (back up `secret.key` with the database) |
 | PALLET_INTEGRATION_MODE | STUB | STUB (fake success) · OFF (simulate outage, queues) · LIVE |
 | PALLET_EBS_SO_URL / PALLET_EBS_CHALLAN_URL / PALLET_EBS_AUTH | – | EBS endpoints (LIVE) |
-| PALLET_ADMIN_USER / PALLET_ADMIN_PASS | admin / Admin@123 | bootstrap admin (first run only) |
+| PALLET_ADMIN_USER / PALLET_ADMIN_PASS | admin / Admin@123 | bootstrap admin (first run only; the first sign-in works only on the server PC and forces a new password) |
+| PALLET_API_DOCS | 0 | 1 = show Swagger at /docs |
 
 ## API map (all under /api/v1 unless stated)
 - `POST auth/login` `{user_id,password,device_id,app_version}` → token, perms, plant

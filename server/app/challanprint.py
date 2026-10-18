@@ -113,7 +113,6 @@ def build_challan_pdf(db: Session, pk: models.PickList, user: models.User | None
             lw, qw = (46 * mm, 32 * mm) if first else (30 * mm, 22 * mm)
             c.line(x0 + 1.5 * mm + lw, top - 1.5 * mm, x0 + 1.5 * mm + lw, top - hh + 1.5 * mm)
             c.line(x0 + tw - 1.5 * mm - qw, top - 1.5 * mm, x0 + tw - 1.5 * mm - qw, top - hh + 1.5 * mm)
-            ls = (hh - 12 * mm) if first else (hh - 6 * mm)
             if os.path.exists(logo):          # logo fills its cell (keeps proportions); it already carries the company name
                 bw, bh_ = lw - 6 * mm, hh - 3 * mm - 6 * mm
                 iw, ih = ImageReader(logo).getSize()

@@ -1,4 +1,5 @@
-"""Activity log API: filtered query, summary, Excel export, HHT device-activity intake."""
+"""Activity log API: filtered query, summary, Excel export, HHT device-activity intake.
+Developed by DT"""
 from datetime import datetime, timedelta
 from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException, Query

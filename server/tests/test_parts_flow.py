@@ -472,7 +472,7 @@ with TestClient(app) as c:
     fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
     real = [(n, open(os.path.join(fx, n), "rb").read()) for n in sorted(os.listdir(fx)) if n.endswith(".csv")]
     with SessionLocal() as db:
-        db.add(models.Customer(code="WEBASTO", name="Webasto Roofsystems India Private Limited", plant_code="CHN"))
+        db.add(models.Customer(code="ROOFCO", name="Roofco Roofsystems India Private Limited", plant_code="CHN"))
         for i in range(41, 47):
             db.add(models.Pallet(pallet_no=f"CHN-P0{i}", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH"))
         # pallet QRs: type + serial match the ERP reference (F.2948 -> AIS-CHN-F-02948-..., NF7944 -> AIS-CHN-NF-07944-...)
@@ -490,11 +490,11 @@ with TestClient(app) as c:
     d = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712814", headers=W).json(); k = d["picklist"]; it = d["items"]
     check(len(it) == 1 and it[0]["cases"] == 6 and it[0]["qty_per_case"] == 120 and it[0]["qty"] == 720 and abs(it[0]["amount"] - 1105304.16) < 0.01,
           f"6 case rows -> 1 invoice line: 6 cases x 120 = 720, amount {it[0]['amount'] if it else '-'}")
-    check(k["qty"] == 6 and k["vehicle_no"] == "TN87B1498" and k["vehicle_type"] == "LCV23" and k["customer_code"] == "WEBASTO" and k["customer_location"] == "KANCHEEPURAM"
-          and k["gp_date"].startswith("2026-10-09T14:42:22") and k["transporter_name"] == "SRI RAGAVENDRA TRANSPORT" and it[0]["cust_part"] == "5711605A",
+    check(k["qty"] == 6 and k["vehicle_no"] == "TN99Z1498" and k["vehicle_type"] == "LCV23" and k["customer_code"] == "ROOFCO" and k["customer_location"] == "KANCHEEPURAM"
+          and k["gp_date"].startswith("2026-10-09T14:42:22") and k["transporter_name"] == "SRI DEMOVENDRA TRANSPORT" and it[0]["cust_part"] == "5711605A",
           "header: 6 pallets expected, vehicle, type, customer matched by name, location, entry time, transporter, customer part")
     k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
-    check(k2["qty"] == 2 and k2["customer_name"].startswith("RENAULT NISSAN") and k2["invoice_no"] == "604118430 +1", "12823: 2 invoices, 2 pallets, customer name kept")
+    check(k2["qty"] == 2 and k2["customer_name"].startswith("RENOVA NISHA") and k2["invoice_no"] == "604118430 +1", "12823: 2 invoices, 2 pallets, customer name kept")
     no20 = "GCS-CHN-FGCHN262712814"
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "AIS-CHN-F-02948-0010001"})
     check(e["status"] == "APPLIED" and "P10266528972" in e["result"], f"pallet QR scanned -> its part card from the GCS picked automatically: {e['result'][:70]}")
@@ -515,7 +515,7 @@ with TestClient(app) as c:
     check(gc.get("invoice_qty") == 720 and gc.get("loaded_qty") == 240 and any(d["diff"] == -480 for d in gc.get("qty_diff", [])),
           f"finish loading compares quantity: invoice 720, loaded 240 (short 480): {gc.get('qty_diff')}")
     rd = PdfReader(_io.BytesIO(c.get(f"/api/v1/picklists/{no20}/gcs.pdf", headers=W).content)); gt = rd.pages[0].extract_text()
-    check(all(x in gt for x in ("FGCHN2627/12814", "WEBASTO ROOFSYSTEMS", "LCV23", "5711605A", "720.00", "1,105,304.16")), "gate pass PDF from the real file")
+    check(all(x in gt for x in ("FGCHN2627/12814", "ROOFCO ROOFSYSTEMS", "LCV23", "5711605A", "720.00", "1,105,304.16")), "gate pass PDF from the real file")
     hdr, *rows = real[0][1].decode().splitlines()
     cols = hdr.split(","); ci = cols.index("CANCELLED_DATE")
     import csv as _csv
@@ -530,12 +530,12 @@ with TestClient(app) as c:
     print("21. Masters: auto-created from GCS, Excel template / upload / delete, table export, per-plant FTP folder")
     cu = {x["code"]: x for x in c.get("/api/v1/customers?plant=CHN", headers=M).json()}
     trs = {x["code"]: x for x in c.get("/api/v1/transporters", headers=M).json()}
-    check("NISSAN" in cu and cu["NISSAN"]["name"].startswith("RENAULT NISSAN") and cu["NISSAN"]["city"] == "ORAGADAM" and cu["NISSAN"]["ctype"] == "OEM",
-          f"customer NISSAN created from the GCS (code = short name in REMARKS, name / location / OEM from the file)")
-    check("ARC" in trs and "TN87D2115" in (trs["ARC"]["vehicles"] or "") and "SRIRAGAVENDR" in trs and "CHN" in (trs["ARC"]["plant_codes"] or ""),
+    check("NISHA" in cu and cu["NISHA"]["name"].startswith("RENOVA NISHA") and cu["NISHA"]["city"] == "ORAGADAM" and cu["NISHA"]["ctype"] == "OEM",
+          "customer NISHA created from the GCS (code = short name in REMARKS, name / location / OEM from the file)")
+    check("ARC" in trs and "TN99Z2115" in (trs["ARC"]["vehicles"] or "") and "SRIDEMOVENDR" in trs and "CHN" in (trs["ARC"]["plant_codes"] or ""),
           f"transporters created from the GCS with vehicle and plant: {sorted(trs)}")
     k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
-    check(k2["customer_code"] == "NISSAN" and k2["transporter_code"] == "ARC", "loading sheet linked to the new customer / transporter codes")
+    check(k2["customer_code"] == "NISHA" and k2["transporter_code"] == "ARC", "loading sheet linked to the new customer / transporter codes")
     from openpyxl import load_workbook, Workbook
     for kind in ("plants", "customers", "transporters", "pallet-types", "pallets"):
         r = c.get(f"/api/v1/masters/{kind}/template.xlsx", headers=M)
@@ -547,20 +547,20 @@ with TestClient(app) as c:
     wb = Workbook(); ws = wb.active
     ws.append(["Code *", "Name (as on GCS) *", "Plant *", "Type (OEM/OES/AFM)", "City", "GSTIN", "Hold Days", "Chargeable (Y/N)", "Active (Y/N)"])
     ws.append(["tvsm", "TVS MOTOR COMPANY LTD", "CHN", "OEM", "Hosur", "33AAACT0000A1Z1", 30, "Y", "Y"])
-    ws.append(["NISSAN", "RENAULT NISSAN AUTOMOTIVE INDIA PVT. LTD.", "CHN", "OEM", "Oragadam", "33AAACR0000A1Z9", 45, "N", "Y"])
+    ws.append(["NISHA", "RENOVA NISHA AUTOMOTIVE INDIA PVT. LTD.", "CHN", "OEM", "Oragadam", "33AAACR0000A1Z9", 45, "N", "Y"])
     ws.append(["BAD", "", "CHN", "", "", "", "x", "", ""])
     ws.append(["XYZ", "Unknown plant cust", "ZZZ", "", "", "", "", "", ""])
     b = _io.BytesIO(); wb.save(b)
     res = c.post("/api/v1/masters/customers/upload", headers=M, files={"file": ("c.xlsx", b.getvalue())}).json()
     cu = {x["code"]: x for x in c.get("/api/v1/customers?plant=CHN", headers=M).json()}
-    check(res["inserted"] == 1 and res["updated"] == 1 and len(res["errors"]) == 2 and "TVSM" in cu and cu["NISSAN"]["gstin"] == "33AAACR0000A1Z9"
-          and cu["NISSAN"]["holding_limit_days"] == 45 and cu["NISSAN"]["chargeable"] is False, f"upload: 1 added, 1 updated, 2 row errors listed: {res['errors']}")
+    check(res["inserted"] == 1 and res["updated"] == 1 and len(res["errors"]) == 2 and "TVSM" in cu and cu["NISHA"]["gstin"] == "33AAACR0000A1Z9"
+          and cu["NISHA"]["holding_limit_days"] == 45 and cu["NISHA"]["chargeable"] is False, f"upload: 1 added, 1 updated, 2 row errors listed: {res['errors']}")
     r = c.get("/api/v1/masters/customers/data.xlsx", headers=M)
     check(r.status_code == 200 and "TVSM" in str([x for x in load_workbook(_io.BytesIO(r.content)).worksheets[0].iter_rows(values_only=True)]), "current customers downloaded in the template layout")
     d = c.delete(f"/api/v1/masters/customers/{cu['TVSM']['id']}", headers=M).json()
-    d2 = c.delete(f"/api/v1/masters/customers/{cu['NISSAN']['id']}", headers=M).json()
+    d2 = c.delete(f"/api/v1/masters/customers/{cu['NISHA']['id']}", headers=M).json()
     cu = {x["code"]: x for x in c.get("/api/v1/customers?plant=CHN", headers=M).json()}
-    check(d["result"] == "deleted" and "TVSM" not in cu and d2["result"] == "deactivated" and cu["NISSAN"]["active"] is False,
+    check(d["result"] == "deleted" and "TVSM" not in cu and d2["result"] == "deactivated" and cu["NISHA"]["active"] is False,
           f"delete: unused customer removed; customer with gate passes set inactive ({d2['message']})")
     dp = c.delete("/api/v1/masters/pallets/CHN-P001", headers=M).json()
     check(dp.get("result") == "deactivated" or "cannot be removed now" in str(dp), f"pallet with history -> DISCONTINUED or refused while out (never removed): {dp}")
@@ -789,11 +789,11 @@ with TestClient(app) as c:
     t = c.get("/api/v1/masters/transporters/template.xlsx", headers=W2)
     check(t.status_code == 200 and t.content[:2] == b"PK", "plant logistics user downloads the transporter template")
     check(c.get("/api/v1/masters/customers/template.xlsx", headers=W2).status_code == 403, "other masters stay central")
-    csvb = "Code,Name,Plants (; separated),Vehicles (; separated),Active (Y/N)\nSRIRAGAVENDR,SRI RAGAVENDRA TRANSPORT,CHN,TN87B1498;TN22AA0001,Y\nNEWTR1,NEW TRANSPORT CO,PUN,TN01ZZ0001,Y\n"
+    csvb = "Code,Name,Plants (; separated),Vehicles (; separated),Active (Y/N)\nSRIDEMOVENDR,SRI DEMOVENDRA TRANSPORT,CHN,TN99Z1498;TN22AA0001,Y\nNEWTR1,NEW TRANSPORT CO,PUN,TN01ZZ0001,Y\n"
     r = c.post("/api/v1/masters/transporters/upload", headers=W2, files={"file": ("t.csv", csvb, "text/csv")}).json()
     check(r["inserted"] == 1 and r["updated"] == 1 and not r["errors"], f"plant user upload: {r}")
     tl = {x["code"]: x for x in c.get("/api/v1/transporters", headers=W2).json()}
-    check(set(tl["SRIRAGAVENDR"]["plant_codes"].split(";")) == {"CHN", "PUN"} and "TN22AA0001" in tl["SRIRAGAVENDR"]["vehicles"], "shared transporter keeps PUN, vehicle added")
+    check(set(tl["SRIDEMOVENDR"]["plant_codes"].split(";")) == {"CHN", "PUN"} and "TN22AA0001" in tl["SRIDEMOVENDR"]["vehicles"], "shared transporter keeps PUN, vehicle added")
     check(tl["NEWTR1"]["plant_codes"] == "CHN", "new transporter from a plant user is put on that plant")
     check(c.get("/api/v1/import/template.xlsx", headers=M).status_code == 200, "full master template downloads on the Import page")
     print("31. Yard: Option B closes only when the yard count matches the gate count (or supervisor PIN)")

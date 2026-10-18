@@ -6,9 +6,9 @@ PALLET_SMTP_TLS (1). Without SMTP_HOST the run is a dry run: emails are prepared
 Developed by DT
 """
 import os, html, logging, smtplib
-from datetime import datetime, timedelta
+from datetime import datetime
 from email.message import EmailMessage
-from sqlalchemy import String, Integer, DateTime, Text, Boolean
+from sqlalchemy import String, Integer, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column, Session
 from .db import Base
 from . import models, config

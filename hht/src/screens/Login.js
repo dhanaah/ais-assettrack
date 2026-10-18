@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { S, C, Btn, Page, useToast, Toast, Footer, Screen, setNet } from '../ui/kit';
-import { login, setServer, getServer, APP_VERSION, api, getActiveServer, setPlant, getPlant, saveLogin, me as getMe } from '../lib/api';
+import { login, getServer, APP_VERSION, api, getActiveServer, setPlant, getPlant, saveLogin, me as getMe } from '../lib/api';
 import { startAutoSync, stopAutoSync } from '../lib/sync';
 import { saveCred, checkCred } from '../lib/localauth';
 import { kv, pendingCount } from '../lib/db';
@@ -12,7 +12,7 @@ import { canPrint, testPrint } from '../lib/printer';
 
 export default function Login({ onDone, deviceId, locked, user, onCustomer, onSetup }) {
   const [pbusy, setPbusy] = useState(false);
-  const [u, setU] = useState(user || ''); const [p, setP] = useState(''); const [srv, setSrv] = useState(getServer() || ''); const [busy, setBusy] = useState(false); const [test, setTest] = useState(null); const [showPw, setShowPw] = useState(false); const [msg, toast] = useToast();
+  const [u, setU] = useState(user || ''); const [p, setP] = useState(''); const [busy, setBusy] = useState(false); const [showPw, setShowPw] = useState(false); const [msg, toast] = useToast();
   useEffect(() => { if (!user) kv.get('last_user').then(x => x && setU(x)); }, []);
   const [srvOk, setSrvOk] = useState(null);
   const [choose, setChoose] = useState(null);

@@ -1,4 +1,5 @@
-"""Business rules: pallet state machine, tag resolution, sequences."""
+"""Business rules: pallet state machine, tag resolution, sequences.
+Developed by DT"""
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -153,21 +154,6 @@ def resolve_tag(db: Session, scanned: str) -> tuple[models.Tag | None, models.Pa
         tag = db.get(models.Tag, pallet.current_tag) if pallet.current_tag else None
         return tag, pallet
     return None, None
-
-
-def validate_scan_for_dispatch(db: Session, scanned: str, plant: str) -> models.Pallet:
-    tag, pallet = resolve_tag(db, scanned)
-    if tag is None and pallet is None:
-        raise RuleError(f"Unknown tag {scanned}")
-    if tag is not None and tag.status == "RETIRED":
-        raise RuleError(f"Tag {tag.tag_no} is retired")
-    if pallet is None:
-        raise RuleError(f"Tag {scanned} not assigned to any pallet")
-    if pallet.home_plant != plant:
-        raise RuleError(f"Foreign pallet: {pallet.pallet_no} belongs to {pallet.home_plant}")
-    if pallet.status != AVAILABLE:
-        raise RuleError(f"Pallet {pallet.pallet_no} is {pallet.status}" + (f" ({pallet.picklist_no})" if pallet.picklist_no else ""))
-    return pallet
 
 
 def move(db: Session, pallet: models.Pallet, to_status: str, *, event_type: str, user_id: str | None = None,

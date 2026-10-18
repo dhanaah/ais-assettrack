@@ -5,7 +5,7 @@ Phase 1: stubs controlled by PALLET_INTEGRATION_MODE
   OFF             - every call fails => documents queue for retry (tests contingency path)
   LIVE            - real HTTP calls (fill in the endpoints below in Phase 3/4)
 Every call is logged in integration_log for the Sync Monitor / retry job.
-"""
+Developed by DT"""
 import os, json
 from datetime import datetime
 from sqlalchemy import String, Integer, DateTime, Text

@@ -2,7 +2,7 @@ AIS AssetTrack Server  (Developed by DT)
 =======================================
 1. Copy the AssetTrack_Server folder to E:\AssetTrack\ (or any folder you can write to). No admin rights needed.
 2. Double-click AssetTrack_Server.exe. The AIS icon appears in the system tray and the browser opens
-   http://localhost:8001  (first login: admin / Admin@123, then change the password).
+   http://localhost:8001  (first login on this PC: admin / Admin@123, then set a new password).
 3. HHTs connect to the address shown under tray icon > "About / HHT address".
 4. Data: pallet.db and assettrack_server.log stay in this folder. On first start, an existing
    ..\server\pallet.db (from the earlier START_ASSETTRACK setup) is copied in, so your data carries over.
