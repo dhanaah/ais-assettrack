@@ -1,0 +1,5 @@
+# Build-only tools (EXE / portable packaging and tests) - exact versions. Developed by DT
+pyinstaller==6.22.3
+pystray==0.19.5
+pillow==13.0.0
+pytest==8.4.2

@@ -11,8 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
-      - run: pip install -r requirements.txt pytest
+        with: { python-version: '3.12' }
+      - run: pip install -r requirements.txt -r requirements-build.txt
       - name: Test suite (80+ end-to-end checks) - the build stops here if anything fails
         run: pytest
       - name: Process flow (226 checks) and review fixes - the build stops here if anything fails
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - run: pip install -r requirements.txt pyinstaller pystray pillow
+      - run: pip install -r requirements.txt -r requirements-build.txt
       - run: pyinstaller --noconfirm assettrack_server.spec
       - name: Smoke test the EXE build (import only)
         shell: pwsh
@@ -96,7 +96,7 @@ jobs:
           Expand-Archive py.zip "$root/python"
           # search path: stdlib zip, Lib (tkinter), site-packages, the app folder; "import site" enables the libraries
           Set-Content "$root/python/python312._pth" "python312.zip`n.`nLib`nLib\site-packages`n..\server`nimport site" -Encoding ascii
-          python -m pip install --disable-pip-version-check --only-binary=:all: --target "$root/python/Lib/site-packages" -r server/requirements.txt pystray pillow
+          python -m pip install --disable-pip-version-check --only-binary=:all: --target "$root/python/Lib/site-packages" -r server/requirements.txt pystray==0.19.5 pillow==13.0.0
           # tkinter (password box when stopping the server) is not in the embeddable runtime: copy it from the same Python version
           $py = Split-Path (Get-Command python).Source
           Copy-Item -Recurse "$py/Lib/tkinter" "$root/python/Lib/tkinter"
@@ -162,7 +162,7 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - name: Accept Android SDK licences (SDK is pre-installed on ubuntu runners)
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund        # exact versions from package-lock.json
       - name: Prebuild native project
         run: npx expo prebuild -p android --no-install
       - name: ARM devices only (HHTs / phones) - drops emulator x86 libraries, keeps the APK small
