@@ -9,6 +9,9 @@ Versions are not repeated here: the server version is `APP_VERSION` in `server/a
 - **Back up** `pallet.db` (SQLite) **and** `secret.key` together, every day. Without `secret.key`, printed QR labels and signed-in HHTs are no longer valid.
 - Change the bootstrap admin password at first login (the server forces it).
 
+## One package
+Release `server-v<version>` → **`AIS_AssetTrack_Package.zip`** holds everything below (server for both ways, HHT APK, guides). Open `README_FIRST.txt` in it.
+
 ## 2. Server on an AIS PC — Portable zip (recommended)
 For PCs without Python, without admin rights, or with antivirus that removes self-built EXE files. The zip contains only the official, signed python.org runtime and the server source.
 1. From release `server-v<version>` download `AIS_AssetTrack_Server_Portable.zip`.
@@ -59,6 +62,7 @@ cd android && ./gradlew assembleRelease
 1. Server tests (end-to-end flow, process rules, review fixes, pytest) - on SQLite and again on SQL Server 2022. **Nothing is built if a test fails.**
 2. Server Windows EXE and Portable zip → GitHub release `server-v<APP_VERSION>`.
 3. HHT APK → GitHub release `hht-v<version>` and the fixed latest link.
-4. The portable zip is installed on IIS + SQL Server Express with `iis\Setup_IIS.ps1` (both IIS modules) and used: sign in, change password, add a plant, restart, update run.
+4. `AIS_AssetTrack_Package.zip` (portable server + IIS installer + APK + guides) → the same server release.
+5. The portable zip is installed on IIS + SQL Server Express with `iis\Setup_IIS.ps1` (both IIS modules) and used: sign in, change password, add a plant, restart, update run.
 
 How to cut a release: `docs/VERSION_CONTROL.md`.

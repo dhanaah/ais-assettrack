@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.30.1 - 2026-10-18 (HHT unchanged 2.22.0) - one complete package (requested by DT)
+- New download **`AIS_AssetTrack_Package.zip`** on every server release: the portable server (way A, tray + SQLite), the IIS + SQL Server installer (way B, `iis` folder), the HHT app (`HHT\AIS_AssetTrack_HHT.apk`), the guides and the master-data template (`docs`), `README_FIRST.txt` (which way to choose, step by step) and `VERSION.txt`.
+- Unzipping the package over an existing installation keeps its data and settings (database, `secret.key`, `settings.env`, IIS `web.config` are never in it).
+- The separate Portable zip, EXE zip and APK downloads stay as before.
+
 ## Server 1.30.0 - 2026-10-18 (HHT unchanged 2.22.0) - IIS + SQL Server as a second way to host (requested by DT)
 The tray / portable server with SQLite is **unchanged** and stays supported. The same portable zip can now also be installed on IIS with SQL Server:
 - **`iis\Setup_IIS.ps1`** (IT, as Administrator, in a folder of its own such as `C:\AssetTrack_IIS`): checks IIS (adds it if missing) and the IIS module (HttpPlatformHandler or the ASP.NET Core Module), the ODBC driver, creates the SQL Server database and login (`-CreateDatabase`), writes `server\web.config`, makes the app pool (always running, never idle-stopped) and the site, sets folder rights and the firewall rule, starts it and checks the health. Running it again after unzipping a new version = update; `web.config` with the settings is kept (not in the zip any more).

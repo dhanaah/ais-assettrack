@@ -367,3 +367,44 @@ jobs:
           choco list 2>&1 | Select-Object -Last 15 | ForEach-Object { Write-Output "::warning::$_" }
           Get-ChildItem C:\AssetTrack_IIS\server\logs -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "--- $($_.Name)"; Get-Content $_.FullName -Tail 40 }
           Get-Content C:\AssetTrack_IIS\server\web.config -ErrorAction SilentlyContinue
+
+  package:
+    # ONE download with everything: portable server (tray) + IIS / SQL Server installer + HHT APK + guides. Developed by DT
+    needs: [server-portable, hht-apk]
+    if: github.ref == 'refs/heads/main'
+    permissions: { contents: write }
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: server-portable, path: dl }
+      - uses: actions/download-artifact@v4
+        with: { name: hht-apk, path: dl }
+      - name: Assemble the package
+        run: |
+          set -e
+          SV=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' server/app/config.py)
+          HV=$(node -p "require('./hht/app.json').expo.version")
+          mkdir -p pkg && cd pkg
+          unzip -q ../dl/AIS_AssetTrack_Server_Portable.zip
+          mkdir -p HHT docs
+          cp ../dl/AIS_AssetTrack_HHT_v${HV}.apk HHT/AIS_AssetTrack_HHT.apk
+          cp ../package/README_FIRST.txt .
+          cp ../docs/PORTABLE_SERVER.txt ../docs/DEPLOY_IIS_SQLSERVER.md ../docs/DEPLOY_SERVER_IT.md ../docs/CUSTOMER_HHT_ACCESS.md \
+             ../docs/Customer_Return_Slip_API.md ../docs/VERSION_CONTROL.md ../docs/Pallet_Tracking_Master_Template_v0.4.xlsx \
+             ../docs/AssetTrack_HHT_Screens_and_Challan.pdf ../BUILD_AND_DEPLOY.md ../LICENSE docs/
+          cp ../server/CHANGELOG.md docs/CHANGELOG.md
+          printf 'AIS AssetTrack package\r\nServer %s\r\nHHT app %s\r\nBuilt %s from commit %s\r\nDeveloped by DT\r\n' "$SV" "$HV" "$(date -u +%d-%b-%Y)" "${GITHUB_SHA::7}" > VERSION.txt
+          test -f START_ASSETTRACK.bat && test -f iis/Setup_IIS.ps1 && test -f python/python.exe && test -f server/run.py
+          test ! -f server/web.config && test ! -f server/pallet.db && test ! -f server/secret.key
+          zip -q -r -9 ../AIS_AssetTrack_Package.zip .
+          cd .. && unzip -l AIS_AssetTrack_Package.zip | tail -1
+          echo "SV=$SV" >> "$GITHUB_ENV"
+      - name: Publish with the server release server-v<version>
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: server-v${{ env.SV }}
+          target_commitish: ${{ github.sha }}
+          files: AIS_AssetTrack_Package.zip
+          make_latest: false
+

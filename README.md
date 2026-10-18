@@ -30,5 +30,6 @@ See [`docs/DEPLOY_SERVER_IT.md`](docs/DEPLOY_SERVER_IT.md).
 | Make a release / version rules | [`docs/VERSION_CONTROL.md`](docs/VERSION_CONTROL.md) |
 
 ## Downloads (GitHub releases)
+- **Everything in one zip:** release `server-v<version>` → `AIS_AssetTrack_Package.zip` (tray server, IIS + SQL Server installer, HHT APK, guides; start with `README_FIRST.txt`).
 - HHT APK, always the newest: `releases/latest/download/AIS_AssetTrack_HHT.apk`
 - Server: release `server-v<version>` → `AIS_AssetTrack_Server_Portable.zip` (recommended on AIS PCs, no self-built EXE; the same zip installs on IIS) or `AIS_AssetTrack_Server_EXE.zip`.
