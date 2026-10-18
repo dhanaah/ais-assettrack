@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "AIS AssetTrack"
-APP_VERSION = "1.29.1"
+APP_VERSION = "1.30.0"
 API_MIN_CLIENT = os.getenv("PALLET_MIN_CLIENT", "1.6.0")   # HHT app must be >= this (settings.env PALLET_MIN_CLIENT) - older apps are told to update
 DEVELOPER = "Developed by DT"
 
@@ -93,4 +93,7 @@ BOOTSTRAP_ADMIN_PASS = os.getenv("PALLET_ADMIN_PASS", "Admin@123")
 PICKLIST_SOURCE = os.getenv("PALLET_PICKLIST_SOURCE", "BENCH").upper()
 
 PUBLIC_API_URL = os.getenv("PALLET_PUBLIC_API_URL", "").strip().rstrip("/")   # internet address of the customer API (IT reverse proxy), e.g. https://assettrack.aisglass.com
-SERVER_PORTS = []   # filled by the tray app: every port the server listens on (HHT failover)
+# every port the server listens on (HHT failover): filled by the tray app; on IIS set PALLET_SERVER_PORTS (e.g. "80" or "80,8001")
+SERVER_PORTS = [int(x) for x in os.getenv("PALLET_SERVER_PORTS", "").replace(";", ",").split(",") if x.strip().isdigit()]
+# 1 = this process runs the 5-minute job itself (EBS / GCS retries, reminders, event purge) - used on IIS. The tray app runs its own.
+RETRY_JOB = os.getenv("PALLET_RETRY_JOB", "0") == "1"

@@ -12,3 +12,4 @@ It contains the official, signed Python runtime from python.org (python folder) 
 4. Update to a new version: unzip the new zip over the same folder (data stays), then Restart_AssetTrack_Server.bat.
 5. Start with Windows: Win+R, shell:startup, put a shortcut to START_ASSETTRACK.bat there.
 Run only ONE AssetTrack server for all plants.
+6. IIS + SQL Server instead of the tray: see iis\README_IIS.txt in this zip (unzip into a folder of its own; this tray server is not changed).

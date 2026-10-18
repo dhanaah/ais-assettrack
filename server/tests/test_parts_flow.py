@@ -1,16 +1,17 @@
 """End-to-end regression for v1.4: WMS stock, blanket, LPN<->pallet dock scan, PDI + double-confirmed sub-inventory
 transfer, SO after PDI, invoice + challan, loaded/empty, internal moves, other-plant receipt, empty return + e-way bill,
 missed-scan detection. Run:  python -m tests.test_parts_flow   (from server/, uses a temp SQLite db)"""
-import os, sys, uuid, tempfile
+import os, sys, uuid
 from datetime import datetime, timedelta
-DB = os.getenv("KEEP") or os.path.join(tempfile.gettempdir(), f"at_test_{uuid.uuid4().hex[:6]}.db")
-os.environ["PALLET_DB_URL"] = f"sqlite:///{DB}"
+sys.path.insert(0, os.path.dirname(__file__))
+from testdb import fresh_db_url  # noqa: E402
+os.environ["PALLET_DB_URL"] = ("sqlite:///" + os.environ["KEEP"]) if os.getenv("KEEP") else fresh_db_url("flow")
 os.environ["PALLET_INTEGRATION_MODE"] = "STUB"
 os.environ["PALLET_BENCH_SCHEDULER"] = "0"
 from fastapi.testclient import TestClient
 from app.main import app
 from app import models
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.security import hash_pw
 
 ok_n = 0
@@ -824,4 +825,6 @@ with TestClient(app) as c:
     check(cl["status"] == "CLOSED" and "PUN-P001" not in cl["short"], f"closed with PIN: {cl}")
     check(not [x for x in c.get("/api/v1/sync/pull", headers=P).json()["slips"] if x["slip_no"] == cno], "closed challan leaves the yard list")
 print(f"\nALL {ok_n} CHECKS PASSED")
-os.remove(DB) if os.path.exists(DB) and not os.getenv("KEEP") else print("db kept:", DB)
+_db = os.environ["PALLET_DB_URL"]
+if _db.startswith("sqlite:///") and not os.getenv("KEEP") and os.path.exists(_db[10:]):
+    engine.dispose(); os.remove(_db[10:])

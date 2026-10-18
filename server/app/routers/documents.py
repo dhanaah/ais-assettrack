@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 import json
 from pydantic import BaseModel
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 from .. import models, services, integration, lpn as lpnsvc
 from ..db import get_db
@@ -258,7 +259,7 @@ def gcs_open(body: GcsOpenIn, request: Request, p: Principal = Depends(hht()), d
     no = (q["gcs_no"] if q and q.get("gcs_no") else body.gcs_no).strip().upper()
     if q and not q.get("valid"):
         raise HTTPException(400, q["error"])
-    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.gcs_no == no).order_by((models.PickList.status == "LINKED").asc()).first()
+    k = db.query(models.PickList).filter(models.PickList.plant_code == p.plant, models.PickList.gcs_no == no).order_by(case((models.PickList.status == "LINKED", 1), else_=0)).first()   # case(): works on SQL Server too
     if k and k.status == "LINKED" and k.linked_picklist and db.get(models.PickList, k.linked_picklist):
         k = db.get(models.PickList, k.linked_picklist)          # GCS joined with its Bench trip: work on the one record
     if not k:

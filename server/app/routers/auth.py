@@ -55,7 +55,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(401, "Invalid user or password")
     if (u.must_change_pw and u.user_id == config.BOOTSTRAP_ADMIN_USER and body.password == config.BOOTSTRAP_ADMIN_PASS
-            and (request.client.host if request.client else "") not in ("127.0.0.1", "::1", "localhost", "testclient")):
+            and not _is_local(request.client.host if request.client else "")):
         # the documented first password works only on the server PC itself, so nobody on the network can take the admin first
         raise HTTPException(403, "First admin sign-in only on the server PC (http://localhost:8001) - set a new password there")
     if u.customer_code:                       # told only after a right password: the reply never reveals who is customer staff
@@ -103,6 +103,22 @@ def change_pw(body: ChangePwIn, p: Principal = Depends(current_user), db: Sessio
     audit(db, p, "CHANGE_PASSWORD", "user", u.user_id)
     db.commit()
     return {"ok": True, "token": make_token(u)}        # old sign-ins stop; this browser continues with the new token
+
+
+def _is_local(host: str) -> bool:
+    """Request made on the server PC itself (direct, or through IIS on the same server; IIS may add [::1]:port)."""
+    import ipaddress
+    h = (host or "").strip()
+    if h in ("localhost", "testclient"):
+        return True
+    if h.startswith("["):
+        h = h[1:].split("]")[0]
+    elif h.count(":") == 1:
+        h = h.split(":")[0]
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
 
 
 _SETPIN_TRIES: dict[int, list[float]] = {}

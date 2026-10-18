@@ -1,11 +1,12 @@
 """Checks for the fixes from the 13-Oct-2026 full review (server 1.23.0). Run:
     PYTHONPATH=. PALLET_BENCH_SCHEDULER=0 PALLET_PICKLIST_SOURCE=APP python3 tests/audit_fixes_check.py
 Developed by DT"""
-import os, sys, uuid, tempfile, json, base64, threading, time
+import os, sys, uuid, json, base64, threading, time
 from datetime import datetime, timezone
 
-DB = os.path.join(tempfile.gettempdir(), f"at_audit_{uuid.uuid4().hex[:6]}.db")
-os.environ["PALLET_DB_URL"] = f"sqlite:///{DB}"
+sys.path.insert(0, os.path.dirname(__file__))
+from testdb import fresh_db_url  # noqa: E402
+os.environ["PALLET_DB_URL"] = fresh_db_url("audit")
 os.environ["PALLET_INTEGRATION_MODE"] = "STUB"
 os.environ["PALLET_BENCH_SCHEDULER"] = "0"
 os.environ.setdefault("PALLET_PICKLIST_SOURCE", "APP")

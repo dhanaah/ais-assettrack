@@ -226,7 +226,7 @@ def list_lpns(plant: str | None = None, status: str | None = None, part: str | N
     if picklist:
         q = q.filter((models.Lpn.picklist_no == picklist) | (models.Lpn.reserved_for == picklist))
     if flagged:
-        q = q.filter(models.Lpn.wms_missing.is_(True))
+        q = q.filter(models.Lpn.wms_missing == True)  # noqa: E712  (= 1; SQL Server does not accept IS 1)
     out = []
     now = utcnow()
     for l in q.order_by(models.Lpn.updated_at.desc()).limit(3000).all():
@@ -433,14 +433,15 @@ def plant_receipt(body: ReceiptIn, request: Request, p: Principal = Depends(hht(
 def zone_view(plant: str | None = None, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
     """Pallets physically in the plant by zone x loaded/empty, own vs other-plant."""
     pl = _plant(p, plant)
-    q = db.query(models.Pallet.zone, models.Pallet.load_state, (models.Pallet.home_plant == pl).label("own"), func.count()).filter(
+    # grouped by plain columns only (SQL Server cannot group by a true/false expression)
+    q = db.query(models.Pallet.zone, models.Pallet.load_state, models.Pallet.home_plant, func.count()).filter(
         models.Pallet.location_plant == pl, models.Pallet.status.notin_(["DISCONTINUED"])).group_by(
-        models.Pallet.zone, models.Pallet.load_state, "own")
+        models.Pallet.zone, models.Pallet.load_state, models.Pallet.home_plant)
     grid = {z: {"LOADED": 0, "EMPTY": 0, "other_plant": 0} for z in lpnsvc.ZONES}
-    for z, ls, own, n in q.all():
+    for z, ls, home, n in q.all():
         g = grid.setdefault(z or "YARD", {"LOADED": 0, "EMPTY": 0, "other_plant": 0})
         g[ls or "EMPTY"] += n
-        if not own:
+        if home != pl:
             g["other_plant"] += n
     yard_loaded = db.query(models.Pallet).filter(models.Pallet.location_plant == pl, models.Pallet.zone == "YARD",
                                                  models.Pallet.load_state == "LOADED").count()

@@ -22,6 +22,38 @@ if DB_URL.startswith("sqlite"):
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
+# ---- SQL Server: text columns hold any language / symbol (NVARCHAR), and an over-long text is cut to its column
+# instead of failing the whole transaction ("String or binary data would be truncated"). SQLite never limited lengths,
+# so both databases now behave the same.
+from sqlalchemy import String, Text  # noqa: E402
+from sqlalchemy.ext.compiler import compiles  # noqa: E402
+from sqlalchemy.orm import Session as _Session  # noqa: E402
+
+
+@compiles(String, "mssql")
+def _mssql_string(type_, compiler, **kw):
+    return f"NVARCHAR({type_.length or 'max'})"
+
+
+@compiles(Text, "mssql")
+def _mssql_text(type_, compiler, **kw):
+    return "NVARCHAR(max)"
+
+
+@event.listens_for(_Session, "before_flush")
+def _cut_long_text(session, flush_context, instances):
+    for obj in list(session.new) + list(session.dirty):
+        mapper = getattr(obj, "__mapper__", None)
+        if mapper is None:
+            continue
+        for attr in mapper.column_attrs:
+            col = attr.columns[0]
+            n = getattr(col.type, "length", None)
+            if n and isinstance(col.type, String):
+                v = getattr(obj, attr.key, None)
+                if isinstance(v, str) and len(v) > n:
+                    setattr(obj, attr.key, v[:n])
+
 
 class Base(DeclarativeBase):
     pass
@@ -56,4 +88,5 @@ def add_missing_columns():
                     if engine.dialect.name == "mssql":
                         default += " WITH VALUES"
                 kw = "ADD" if engine.dialect.name == "mssql" else "ADD COLUMN"
-                conn.execute(text(f'ALTER TABLE {t.name} {kw} {col.name} {ctype}{default}'))
+                q = engine.dialect.identifier_preparer       # quoted names: safe on SQL Server for words like key / user
+                conn.execute(text(f"ALTER TABLE {q.format_table(t)} {kw} {q.quote(col.name)} {ctype}{default}"))
