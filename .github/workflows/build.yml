@@ -333,6 +333,22 @@ jobs:
           & C:\AssetTrack_IIS\python\python.exe -c "import pyodbc; c=pyodbc.connect('DRIVER={ODBC Driver 18 for SQL Server};SERVER=.\\SQLEXPRESS;DATABASE=PalletDB;Trusted_Connection=yes;TrustServerCertificate=yes'); print('plants in SQL Server:', c.execute('select code, name from plants').fetchall())"
           if ($LASTEXITCODE) { throw "SQL check" }
           Write-Host "IIS + SQL Server installation works ($((Invoke-RestMethod "$u/api/v1/health").version))"
+      - name: Migration script - a SQL database that already holds data is never overwritten
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          New-Item -ItemType Directory -Force C:\traydata | Out-Null
+          $env:PALLET_DB_URL = "sqlite:///C:/traydata/pallet.db"; $env:PALLET_BENCH_SCHEDULER = "0"
+          Push-Location C:\AssetTrack_IIS\server
+          & C:\AssetTrack_IIS\python\python.exe -c "from fastapi.testclient import TestClient; from app.main import app; c=TestClient(app); c.__enter__(); print('tray-style SQLite database made')"
+          Pop-Location
+          Remove-Item Env:\PALLET_DB_URL
+          $out = powershell -ExecutionPolicy Bypass -File C:\AssetTrack_IIS\iis\Migrate_SQLite_to_SQLServer.ps1 -SQLiteFile C:\traydata\pallet.db *>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "already holds AssetTrack data") { Write-Output "::error::migration did not refuse a filled database%0A$($out -replace "`r?`n", "%0A")"; exit 1 }
+          $h = Invoke-RestMethod http://localhost/api/v1/health
+          if ($h.db -ne "ok") { Write-Output "::error::site not running after the refused migration"; exit 1 }
+          Write-Host "refused as expected, site running again"
       - name: Update run - the same script again keeps web.config and the data
         shell: powershell
         run: |
