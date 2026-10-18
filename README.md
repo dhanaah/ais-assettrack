@@ -1,28 +1,33 @@
 # AIS AssetTrack — Returnable Pallet Tracking
 **TRACK · MONITOR · CONTROL** · Asahi India Glass Ltd. · Developed by DT
 
-| Folder | What | Version |
+AssetTrack tracks AIS returnable pallets from production through dispatch, the customer and back to the yard.
+It has one central server (web admin + API) and an Android app for hand-held terminals (HHTs).
+
+| Folder | What | Current version |
 |---|---|---|
-| `server/` | FastAPI + SQLite / SQL Server API, admin web UI, customer API, tray app (Windows) | 1.16.0 |
-| `hht/` | Android HHT app (Expo): offline outbox, scanner / camera, any Bluetooth printer, customer HHT mode | 2.5.3 |
-| `docs/` | Flow charts (overview, 8 process flows, management view) as PDF + HTML source | v0.4 |
+| `server/` | Python FastAPI server: API, admin web pages, print pages, customer API, Windows tray app. SQLite (default) or SQL Server | see `server/app/config.py` (`APP_VERSION`) |
+| `hht/` | Android HHT app (Expo / React Native): offline outbox, scanner and camera, Bluetooth printing, customer HHT mode | see `hht/app.json` (`version`, `versionCode`) |
+| `docs/` | Process flows, management deck, deployment guides for IT, master-data Excel template, sample documents | – |
+| `.github/workflows/build.yml` | CI: tests, server EXE + portable zip, HHT APK, GitHub releases | – |
 
-## Versioning
-- Semantic versions, one tag per release: `server-v1.1.0`, `hht-v1.1.0`.
-- `server/CHANGELOG.md`, `hht/CHANGELOG.md` and `hht/app.json` (`version` + `versionCode`) are bumped on every release.
-- Branches: `main` = releasable; feature work on `feat/<name>`, merged by PR.
+The release history of **both** server and HHT is in [`server/CHANGELOG.md`](server/CHANGELOG.md).
 
-## Quick start
-See `server/README.md` and `hht/README.md`.
+## Network rule
+AssetTrack runs **inside the AIS network only. Nothing is published to the internet.**
+Customer HHTs reach the server over the AIS SSL-VPN (FortiClient, restricted account that can reach only the AssetTrack server port).
+See [`docs/DEPLOY_SERVER_IT.md`](docs/DEPLOY_SERVER_IT.md).
 
-## CI / APK build (GitHub Actions)
-- Every push to `main` runs the server smoke test and builds a debug-signed HHT APK (download from the workflow's Artifacts).
-- Pushing a tag `hht-v*` also attaches the APK to a GitHub Release.
-- For a store/production-signed APK add a keystore and `signingConfigs` via repository secrets.
+## Where to start
+| You want to… | Read |
+|---|---|
+| Install / update the server on an AIS PC | [`BUILD_AND_DEPLOY.md`](BUILD_AND_DEPLOY.md), [`docs/PORTABLE_SERVER.txt`](docs/PORTABLE_SERVER.txt) |
+| Install on Windows Server + IIS + SQL Server | [`docs/DEPLOY_IIS_SQLSERVER.md`](docs/DEPLOY_IIS_SQLSERVER.md) |
+| Connect customer HHTs | [`docs/CUSTOMER_HHT_ACCESS.md`](docs/CUSTOMER_HHT_ACCESS.md) |
+| Understand server settings and the API | [`server/README.md`](server/README.md) |
+| Build or install the HHT app | [`hht/README.md`](hht/README.md) |
+| Make a release / version rules | [`docs/VERSION_CONTROL.md`](docs/VERSION_CONTROL.md) |
 
-## Push to GitHub (first time)
-```
-# create an empty private repo dhanaah/ais-assettrack on github.com, then:
-git remote add origin https://github.com/dhanaah/ais-assettrack.git
-git push -u origin main --tags
-```
+## Downloads (GitHub releases)
+- HHT APK, always the newest: `releases/latest/download/AIS_AssetTrack_HHT.apk`
+- Server: release `server-v<version>` → `AIS_AssetTrack_Server_Portable.zip` (recommended on AIS PCs, no self-built EXE) or `AIS_AssetTrack_Server_EXE.zip`.

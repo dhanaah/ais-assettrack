@@ -1,7 +1,8 @@
-# AIS AssetTrack — Server v1.0.0
+# AIS AssetTrack — Server
+(version: `APP_VERSION` in `app/config.py`; history: `CHANGELOG.md`)
 Developed by DT · Returnable pallet tracking for AIS Glass (15 plants)
 
-## What is in this drop (Phase 1 + Phase 2 skeleton)
+## Main functions
 | Area | Status |
 |---|---|
 | Masters: Plants, Roles (permission matrix), Users (plant-scoped), Customers, Transporters, Pallets, Tags, Tag batches | ✅ |
@@ -14,7 +15,6 @@ Developed by DT · Returnable pallet tracking for AIS Glass (15 plants)
 | External customer API (`/api/ext/v1`, X-API-Key) for Mode A push from outside the network | ✅ |
 | Reports: availability, customer holding/aging, overdue, pallet history, tag history, tag stock, Excel export | ✅ |
 | Integration retry queue + scheduler hook | ✅ (STUB / OFF / LIVE modes) |
-| Android HHT app, plant edge service, reminder mails, live EBS/GCS adapters | next drops |
 
 ## Quick start (dev, SQLite)
 ```
@@ -24,20 +24,20 @@ python run.py            # http://localhost:8001  (admin / Admin@123 — change 
 Swagger: http://localhost:8001/docs
 
 ## Production (Windows Server + IIS + SQL Server)
-1. Install Python 3.11 (64-bit), ODBC Driver 18 for SQL Server, IIS with **HttpPlatformHandler**.
+1. Install Python 3.12 (64-bit), ODBC Driver 18 for SQL Server, IIS with **HttpPlatformHandler**.
 2. `sql/create_db.sql` on SQL Server (creates PalletDB with snapshot isolation).
 3. Copy this folder to `C:\inetpub\pallet_server`, `pip install -r requirements.txt`.
 4. Edit `web.config`: python path, `PALLET_DB_URL`, `PALLET_JWT_SECRET`.
 5. IIS: new site → physical path = this folder → binding :443 with certificate.
    For 4 workers create 4 sites/app pools (ports are assigned by IIS) behind an ARR server farm, or run one site first (handles 50 users easily).
 6. Task Scheduler: `scheduler.ps1` every 5 minutes (EBS/GCS retry queue).
-7. Expose **only** `/api/ext/v1/*` to the internet (DMZ reverse proxy rule); everything else LAN only.
+7. Nothing is published to the internet. Customer HHTs reach the server over the AIS SSL-VPN (FortiClient) restricted to the server port - see `docs/CUSTOMER_HHT_ACCESS.md`.
 
 ## Environment variables
 | Var | Default | Meaning |
 |---|---|---|
 | PALLET_DB_URL | sqlite:///pallet.db | SQLAlchemy URL (see config.py for SQL Server forms) |
-| PALLET_JWT_SECRET | change-me | token signing secret |
+| PALLET_JWT_SECRET | random, saved once in `secret.key` | token / QR signing secret (back up `secret.key` with the database) |
 | PALLET_INTEGRATION_MODE | STUB | STUB (fake success) · OFF (simulate outage, queues) · LIVE |
 | PALLET_EBS_SO_URL / PALLET_EBS_CHALLAN_URL / PALLET_EBS_AUTH | – | EBS endpoints (LIVE) |
 | PALLET_ADMIN_USER / PALLET_ADMIN_PASS | admin / Admin@123 | bootstrap admin (first run only) |

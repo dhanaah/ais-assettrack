@@ -28,3 +28,7 @@ server/server.pid
 server/apk/
 server/job.key
 **/job.key
+**/settings.env
+*.db
+*.db-shm
+*.db-wal

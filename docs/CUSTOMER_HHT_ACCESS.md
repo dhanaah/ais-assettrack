@@ -1,34 +1,27 @@
 # Customer HHT (Option A return slips) - network access
 AIS AssetTrack · Developed by DT
 
+**AIS rule: nothing is published to the internet.** Customer HHTs reach the AssetTrack server only through the AIS SSL-VPN.
+
 ## How the customer HHT connects
 The HHT at the customer site is paired once by QR (web: Masters › Customers › 📱 HHT). On every call it:
-1. tries the **AIS network** addresses (server name / PC name / IPs) - all at once, 2.5 s wait. Used when the HHT is on AIS Wi-Fi or AIS VPN (sister plants, customers on the AIS network): **direct to the AIS server**.
-2. otherwise uses the **internet address** of the customer API (below).
-3. with no network at all, the slip is kept on the HHT and sent automatically later (never doubled).
+1. tries the **AIS network** addresses from the pairing QR (server name / PC name / IPs) - all at once, short wait. These are reachable when the HHT is on AIS Wi-Fi or connected to the **AIS VPN (FortiClient)**.
+2. with no connection, the slip is kept on the HHT and sent automatically later (never doubled).
 
-Only the customer API is used: `/api/ext/v1/...` with the device key in the `X-API-Key` header. The customer sees only its own pallets and can only create Option A return slips.
+Only the customer API is used: `/api/ext/v1/...` with the device key in the `X-API-Key` header. The customer sees only its own pallets and can only create Option A return slips and, where enabled, customer receipts.
+Customer staff sign in on the HHT with their own user; a sign-in that is no longer valid (expired, password reset by AIS, server replaced) is signed out automatically with the reason.
 
-## Recommended setup for outside access (for AIS IT)
-**Publish only `/api/ext/` through the company reverse proxy / WAF in the DMZ, over HTTPS.** The AssetTrack server itself stays inside the AIS network.
-
+## Setup for AIS IT
 | Item | Setting |
 |---|---|
-| Public name | e.g. `https://assettrack.aisglass.com` (company TLS certificate) |
-| Forward | `https://assettrack.aisglass.com/api/ext/*` → `http://<AssetTrack server>:8001/api/ext/*` |
-| Block | every other path (`/`, `/api/v1/*`, `/print/*`, `/static/*`) - not reachable from the internet |
-| Firewall | inbound 443 to the proxy only; proxy → AssetTrack server port 8001 inside |
-| Limits | rate limit (e.g. 60 requests/min per IP), request size 1 MB |
-| Logging | proxy access log kept 90 days |
+| VPN | FortiClient SSL-VPN account per customer site (or per HHT) |
+| Access | that VPN account may reach **only** the AssetTrack server, TCP port 8001 (or 443 if IIS is used) |
+| Other AIS systems | not reachable from the customer VPN account |
+| Logging | VPN connection log kept 90 days |
 
-Then put the address in `server\settings.env`:
-```
-PALLET_PUBLIC_API_URL=https://assettrack.aisglass.com
-```
-and restart the server. New pairing QRs carry it; HHTs paired before can take it in Settings › AIS connection.
+On the HHT: install FortiClient, sign in to the VPN, then open AssetTrack. Nothing else is configured on the HHT; the addresses come from the pairing QR.
 
-Why this way: the server is never exposed (only two read / one create endpoints are), every customer HHT has its own key that AIS can remove at once (web: Customers › 📱 HHT › Remove), and the same HHT works on AIS Wi-Fi without the internet.
-
-Alternatives if the reverse proxy is not available yet:
-- **AIS VPN / APN SIM** on the customer HHT: it then counts as "AIS network" and talks to the server directly.
-- **Until then**: customers without AIS network use Option B (slip made by AIS Security at the IN gate). A customer HHT without any network keeps its slips and sends them later, but the slip with the AIS-signed QR prints only after it has reached AIS.
+## Security
+- Every customer HHT has its own key; AIS can remove it at once (web: Customers › 📱 HHT › Remove).
+- Return-slip QR codes are signed by the AssetTrack server and checked at the AIS IN gate.
+- Customers without VPN use Option B (slip made by AIS Security at the IN gate).

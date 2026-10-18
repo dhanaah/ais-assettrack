@@ -1,4 +1,5 @@
-# AIS AssetTrack HHT — Android app v1.1.0
+# AIS AssetTrack HHT — Android app
+(version: `app.json`; history: `../server/CHANGELOG.md`)
 Developed by DT · React Native / Expo · works on rugged Android HHTs (keyboard-wedge scanners) and ordinary phones (camera)
 
 ## Screens (shown by role permission)
@@ -29,7 +30,7 @@ Optional native module `react-native-bluetooth-escpos-printer` (ESC/POS 2"/3"). 
 
 ## Build
 ```
-npm install
+npm ci
 npx expo prebuild -p android          # generates android/ with the printer native module
 npx expo run:android                   # debug APK on a connected device
 # or cloud build:

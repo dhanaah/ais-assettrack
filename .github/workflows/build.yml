@@ -13,9 +13,9 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: pip install -r requirements.txt -r requirements-build.txt
-      - name: Test suite (80+ end-to-end checks) - the build stops here if anything fails
+      - name: Test suite (pytest) - the build stops here if anything fails
         run: pytest
-      - name: Process flow (226 checks) and review fixes - the build stops here if anything fails
+      - name: Process flow, process rules and review fixes - the build stops here if anything fails
         env: { PYTHONPATH: ".", PALLET_BENCH_SCHEDULER: "0", PALLET_PICKLIST_SOURCE: "APP" }
         run: |
           python tests/test_parts_flow.py

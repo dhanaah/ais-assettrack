@@ -1,56 +1,58 @@
-# AIS AssetTrack — Build & Deploy Guide (v1.3.0)
+# AIS AssetTrack — Build & Deploy Guide
 Developed by DT · Asahi India Glass Ltd.
 
-## Package contents
-| Path | What |
-|---|---|
-| `server/` | FastAPI API + admin web UI + print pages + external customer API. `README.md` inside has the full API map and env vars |
-| `hht/` | Android HHT app (Expo / React Native). `README.md` inside has screens, offline design, build commands |
-| `docs/` | Flow charts (PDF + HTML), management deck, master-upload Excel template, sample challan / return slip, screen mock-ups |
-| `.github/workflows/build.yml` | CI: server smoke test + automatic APK build (artifact on every push; attached to a Release on `hht-v*` tags) |
-| `server/sql/create_db.sql` | SQL Server database creation (snapshot isolation) |
-| `server/web.config` | IIS HttpPlatformHandler config |
-| `server/scheduler.ps1` | 5-minute retry job for EBS / GCS queue |
+Versions are not repeated here: the server version is `APP_VERSION` in `server/app/config.py`, the HHT version is in `hht/app.json`. What changed in each release is in `server/CHANGELOG.md`.
 
-## 1. Server — development / pilot (SQLite, 5 minutes)
+## 1. Rules that always apply
+- **One AssetTrack server for all plants.** All HHTs and web users connect to it.
+- **Inside the AIS network only.** Nothing is published to the internet. Customer HHTs use the AIS SSL-VPN (FortiClient) restricted to the AssetTrack server port (default 8001).
+- **Back up** `pallet.db` (SQLite) **and** `secret.key` together, every day. Without `secret.key`, printed QR labels and signed-in HHTs are no longer valid.
+- Change the bootstrap admin password at first login (the server forces it).
+
+## 2. Server on an AIS PC — Portable zip (recommended)
+For PCs without Python, without admin rights, or with antivirus that removes self-built EXE files. The zip contains only the official, signed python.org runtime and the server source.
+1. From release `server-v<version>` download `AIS_AssetTrack_Server_Portable.zip`.
+2. Unzip into the AssetTrack folder (e.g. `E:\AssetTrack`). Existing data (`server\pallet.db`, `server\secret.key`, `server\settings.env`) is not in the zip and is kept.
+3. Run `START_ASSETTRACK.bat`. The AT tray icon appears and the web page opens at `http://localhost:8001`.
+4. **Update:** unzip the new zip over the same folder, then run `Restart_AssetTrack_Server.bat`.
+5. Start with Windows: put a shortcut to `START_ASSETTRACK.bat` in `shell:startup`.
+
+Details: `docs/PORTABLE_SERVER.txt`. The `AIS_AssetTrack_Server_EXE.zip` is an alternative; it is unsigned, so strict antivirus may remove it unless IT whitelists it.
+
+## 3. Server on Windows Server + IIS + SQL Server (IT)
+See `docs/DEPLOY_IIS_SQLSERVER.md` (Python 3.12 x64, ODBC Driver 18, HttpPlatformHandler, `server/sql/create_db.sql`, `web.config`, `scheduler.ps1` every 5 minutes).
+
+## 4. Settings
+Copy `server/settings.env.example` to `server/settings.env` and set what is needed (database URL, integration mode `STUB` / `OFF` / `LIVE`, EBS URLs, SMTP, port). Restart the server after a change. The full list is in `server/README.md`.
+
+## 5. HHT app
+- **Install:** download `AIS_AssetTrack_HHT.apk` from the latest GitHub release (or from the server's HHT download page) and install it on the HHT.
+- **Connect:** on the server PC, tray icon → *HHT setup QR*; scan it on the HHT (Setup → 1. Server). Log in with a plant user.
+- **Customer HHT:** pair from the web page Masters → Customers → 📱 HHT. See `docs/CUSTOMER_HHT_ACCESS.md`.
+- Bluetooth printer: pair in Android settings, then select it in the app Settings.
+
+## 6. Building from source (developers)
+The CI on GitHub builds everything; local builds are only for development.
+
+Server (Python 3.12):
 ```
 cd server
-pip install -r requirements.txt
-python run.py                     # http://localhost:8001
+pip install -r requirements.txt -r requirements-build.txt
+python run.py                                   # http://localhost:8001
+PALLET_BENCH_SCHEDULER=0 python -m pytest -q tests
 ```
-Login `admin` / `Admin@123` → change password → Masters → Import → upload `docs/Pallet_Tracking_Master_Template_v0.4.xlsx` (filled).
-
-## 2. Server — production (Windows Server + IIS + SQL Server)
-1. Install Python 3.11 x64, **ODBC Driver 18 for SQL Server**, IIS + **HttpPlatformHandler**.
-2. Run `server/sql/create_db.sql` on SQL Server.
-3. Copy `server/` to `C:\inetpub\pallet_server`, run `pip install -r requirements.txt`.
-4. Edit `web.config`: `processPath` (python.exe), `PALLET_DB_URL`, `PALLET_JWT_SECRET` (long random), `PALLET_INTEGRATION_MODE` (`STUB` until endpoints are live, then `LIVE`), EBS URLs.
-5. IIS → new site → physical path = that folder → HTTPS binding. Start. Check `https://server/api/v1/health`.
-6. Task Scheduler → `scheduler.ps1` every 5 minutes.
-7. DMZ / reverse proxy: publish **only** `/api/ext/v1/*` to the internet.
-8. Backups: SQL Server full nightly + 15-min log backups (or Always On Basic AG on a second instance).
-
-## 3. HHT app — build the APK
-Option A (no local toolchain): push to GitHub → Actions builds `AIS_AssetTrack_HHT_*.apk` → download from the workflow artifacts (or Releases on an `hht-v*` tag).
-
-Option B (local, Node 20 + JDK 17 + Android SDK):
+HHT (Node 20, JDK 17, Android SDK):
 ```
 cd hht
-npm install
+npm ci
 npx expo prebuild -p android
-npx expo run:android            # debug build on a connected device
-# or: cd android && ./gradlew assembleRelease  → android/app/build/outputs/apk/release/app-release.apk
+cd android && ./gradlew assembleRelease
 ```
-Option C (Expo cloud): `npx eas build -p android --profile preview`.
 
-Install the APK on the HHT, open the app, set the server URL (e.g. `http://10.10.5.20:8001` or the edge service), log in with a plant user.
-Bluetooth printer: pair in Android settings → Settings in app → List paired printers → select.
+## 7. CI and releases
+`.github/workflows/build.yml` runs on every push to `main`:
+1. Server tests (end-to-end flow, process rules, review fixes, pytest). **Nothing is built if a test fails.**
+2. Server Windows EXE and Portable zip → GitHub release `server-v<APP_VERSION>`.
+3. HHT APK → GitHub release `hht-v<version>` and the fixed latest link.
 
-## 4. Go-live checklist (Chennai, target 30 Nov 2026)
-- [ ] Plants / users / customers / transporters / tag batches imported (template)
-- [ ] Tags fixed on all Chennai pallets, census imported (sheet 6_Pallets) — opening stock correct
-- [ ] Customer API key issued to HMIL (Masters → Customers → API key) and shared securely
-- [ ] EBS SO + challan endpoints and GCS endpoint configured; `PALLET_INTEGRATION_MODE=LIVE`
-- [ ] HHTs registered (first login binds device), supervisors set their PIN
-- [ ] "Pull the cable" test passed: scans offline → sync → no loss, no duplicates
-- [ ] Parallel run 17–28 Nov; day-end check green 3 days running
+How to cut a release: `docs/VERSION_CONTROL.md`.
