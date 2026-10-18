@@ -108,6 +108,10 @@ if ($UseSQLite) {
         $DbUrl = "mssql+pyodbc://@$SqlServer/$Database" + "?driver=$drv&trusted_connection=yes&TrustServerCertificate=yes"
     }
     if ($CreateDatabase) {
+        if (-not $SqlUser -and -not ((AC list apppool /name:$Pool) -match "^APPPOOL ")) {
+            AC add apppool /name:$Pool | Out-Null      # the pool's Windows login exists only once the pool exists
+            Say "app pool $Pool created (its Windows login is given access to the database)"
+        }
         Say "preparing SQL Server (database, settings, login) with your Windows login..."
         $a = @("$Server\sql\sqlserver_setup.py", "--server", $SqlServer, "--database", $Database, "--driver", $Driver)
         if ($SqlUser) { $a += @("--sql-user", $SqlUser, "--sql-password", $SqlPassword) }
@@ -117,8 +121,10 @@ if ($UseSQLite) {
             $local = $sqlHost -in @(".", "localhost", "(local)", "127.0.0.1", $env:COMPUTERNAME)
             $a += @("--app-login", $(if ($local) { "IIS APPPOOL\$Pool" } else { "$env:USERDOMAIN\$env:COMPUTERNAME$" }))
         }
-        & $Python @a
-        if ($LASTEXITCODE) { Fail "SQL Server preparation failed (see above) - or let the DBA run server\sql\create_db.sql" }
+        $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+        & $Python @a 2>&1 | ForEach-Object { Say "$_" }
+        $rc = $LASTEXITCODE; $ErrorActionPreference = $old
+        if ($rc) { Fail "SQL Server preparation failed (see above) - or let the DBA run server\sql\create_db.sql" }
     }
 } elseif (-not (Test-Path $WebConfig) -or $Reconfigure) {
     Fail "give -SqlServer <server\instance> (production), or -UseSQLite for a test installation"
