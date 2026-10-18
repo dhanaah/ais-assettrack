@@ -370,7 +370,7 @@ jobs:
 
   package:
     # ONE download with everything: portable server (tray) + IIS / SQL Server installer + HHT APK + guides. Developed by DT
-    needs: [server-portable, hht-apk]
+    needs: [server-portable, server-exe, hht-apk]
     if: github.ref == 'refs/heads/main'
     permissions: { contents: write }
     runs-on: ubuntu-latest
@@ -380,6 +380,8 @@ jobs:
         with: { name: server-portable, path: dl }
       - uses: actions/download-artifact@v4
         with: { name: hht-apk, path: dl }
+      - uses: actions/download-artifact@v4
+        with: { name: server-exe, path: dl/exe/AssetTrack_Server }
       - name: Assemble the package
         run: |
           set -e
@@ -387,7 +389,9 @@ jobs:
           HV=$(node -p "require('./hht/app.json').expo.version")
           mkdir -p pkg && cd pkg
           unzip -q ../dl/AIS_AssetTrack_Server_Portable.zip
-          mkdir -p HHT docs
+          mkdir -p HHT docs EXE
+          cp -r ../dl/exe/AssetTrack_Server EXE/          # optional way C: the EXE build (only where IT has whitelisted it)
+          test -f EXE/AssetTrack_Server/AssetTrack_Server.exe
           cp ../dl/AIS_AssetTrack_HHT_v${HV}.apk HHT/AIS_AssetTrack_HHT.apk
           cp ../package/README_FIRST.txt .
           cp ../docs/PORTABLE_SERVER.txt ../docs/DEPLOY_IIS_SQLSERVER.md ../docs/DEPLOY_SERVER_IT.md ../docs/CUSTOMER_HHT_ACCESS.md \

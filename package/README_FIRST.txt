@@ -7,6 +7,7 @@ What is inside
   START_ASSETTRACK.bat, Restart_AssetTrack_Server.bat   way A - tray server (portable)
   python\  server\                                       the server itself (Python included - nothing to install)
   iis\                                                   way B - IIS + SQL Server installer
+  EXE\AssetTrack_Server\                                 way C - optional EXE build of the same server
   HHT\AIS_AssetTrack_HHT.apk                             Android app for the HHTs
   docs\                                                  guides for users and IT, master-data Excel template
 
@@ -26,6 +27,11 @@ B) IIS + SQL Server on a Windows server  (IT, administrator)
    3. Data of a tray server (once): iis\Migrate_SQLite_to_SQLServer.ps1 -SQLiteFile E:\AssetTrack\server\pallet.db
    Update: unzip the new package over C:\AssetTrack_IIS, run Setup_IIS.ps1 again (no options).
    Guide: docs\DEPLOY_IIS_SQLSERVER.md and iis\README_IIS.txt
+
+C) EXE server  (optional - only on a PC where IT has whitelisted it; antivirus often removes self-built EXE files)
+   1. Copy the EXE\AssetTrack_Server folder to e.g. D:\AssetTrack_EXE and run AssetTrack_Server.exe (tray icon).
+   2. It keeps its own data in that folder. Prefer way A on AIS PCs: same server, no EXE.
+   Guide: EXE\AssetTrack_Server\README_SERVER_EXE.txt
 
 Use one server for daily work and point every HHT at it.
 

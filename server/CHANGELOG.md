@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.30.2 - 2026-10-18 (HHT unchanged 2.22.0) - EXE inside the package (requested by DT)
+- `AIS_AssetTrack_Package.zip` now also carries the EXE build in `EXE\AssetTrack_Server` (way C, optional - for PCs where IT has whitelisted it). `README_FIRST.txt` explains the three ways; way A (portable, no EXE) stays the recommended one on AIS PCs.
+
 ## Server 1.30.1 - 2026-10-18 (HHT unchanged 2.22.0) - one complete package (requested by DT)
 - New download **`AIS_AssetTrack_Package.zip`** on every server release: the portable server (way A, tray + SQLite), the IIS + SQL Server installer (way B, `iis` folder), the HHT app (`HHT\AIS_AssetTrack_HHT.apk`), the guides and the master-data template (`docs`), `README_FIRST.txt` (which way to choose, step by step) and `VERSION.txt`.
 - Unzipping the package over an existing installation keeps its data and settings (database, `secret.key`, `settings.env`, IIS `web.config` are never in it).
