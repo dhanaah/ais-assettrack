@@ -111,6 +111,9 @@ async def _limit_body(request: Request, call_next):
     n = request.headers.get("content-length")
     if n and n.isdigit() and int(n) > MAX_UPLOAD_MB * 1024 * 1024:
         return JSONResponse({"detail": f"File too large (max {MAX_UPLOAD_MB} MB)"}, status_code=413)
+    if not n and request.method in ("POST", "PUT") and "chunked" in (request.headers.get("transfer-encoding") or "").lower():
+        # browsers and the HHT always send the size; a body without it could bypass the limit
+        return JSONResponse({"detail": "Upload size missing (Content-Length required)"}, status_code=411)
     return await call_next(request)
 
 _SEC_HEADERS = {

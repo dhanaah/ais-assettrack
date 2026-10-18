@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.29.1 - 2026-10-18 (HHT unchanged 2.22.0) - remaining review points
+- Web sign-in no longer tells whether a user name belongs to customer staff before the password is right.
+- Dashboard chart tips show customer / plant names as plain text (names from GCS files can never run as page code).
+- Uploads must state their size (a body without it could bypass the 30 MB limit).
+
 ## Server 1.29.0 + HHT 2.22.0 - 2026-10-18 - approval review (security, logic, clean-up, version control)
 Full review before management / IT approval: security, vulnerabilities, logic, unwanted code, documentation and version control.
 

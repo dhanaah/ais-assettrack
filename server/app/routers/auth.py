@@ -47,8 +47,6 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         require_client_version(body.app_version)
     if u.locked_until and u.locked_until > datetime.utcnow():
         raise HTTPException(423, f"Account locked until {u.locked_until:%H:%M} UTC")
-    if u.customer_code:
-        raise HTTPException(403, "Customer staff sign in on the customer HHT (paired by AIS) only")
     if not check_pw(body.password, u.password_hash):
         u.failed_logins += 1
         if u.failed_logins >= config.MAX_FAILED_LOGINS:
@@ -60,6 +58,8 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
             and (request.client.host if request.client else "") not in ("127.0.0.1", "::1", "localhost", "testclient")):
         # the documented first password works only on the server PC itself, so nobody on the network can take the admin first
         raise HTTPException(403, "First admin sign-in only on the server PC (http://localhost:8001) - set a new password there")
+    if u.customer_code:                       # told only after a right password: the reply never reveals who is customer staff
+        raise HTTPException(403, "Customer staff sign in on the customer HHT (paired by AIS) only")
     u.failed_logins = 0; u.locked_until = None; u.last_login = datetime.utcnow()
     if body.device_id:
         if u.device_id and u.device_id != body.device_id:
