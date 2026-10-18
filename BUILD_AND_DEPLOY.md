@@ -19,8 +19,13 @@ For PCs without Python, without admin rights, or with antivirus that removes sel
 
 Details: `docs/PORTABLE_SERVER.txt`. The `AIS_AssetTrack_Server_EXE.zip` is an alternative; it is unsigned, so strict antivirus may remove it unless IT whitelists it.
 
-## 3. Server on Windows Server + IIS + SQL Server (IT)
-See `docs/DEPLOY_IIS_SQLSERVER.md` (Python 3.12 x64, ODBC Driver 18, HttpPlatformHandler, `server/sql/create_db.sql`, `web.config`, `scheduler.ps1` every 5 minutes).
+## 3. Server on IIS + SQL Server (IT) - second way, the portable server stays as it is
+The same portable zip, unzipped into a folder of its own (e.g. `C:\AssetTrack_IIS`), installed with one script:
+```
+powershell -ExecutionPolicy Bypass -File iis\Setup_IIS.ps1 -SqlServer SQLSRV01\PALLET -CreateDatabase
+```
+Data of the portable server is brought over with `iis\Migrate_SQLite_to_SQLServer.ps1` (QRs and sign-ins stay valid).
+Full guide: `docs/DEPLOY_IIS_SQLSERVER.md` (needs IIS HttpPlatformHandler or ASP.NET Core Module, ODBC Driver 18, SQL Server 2016+).
 
 ## 4. Settings
 Copy `server/settings.env.example` to `server/settings.env` and set what is needed (database URL, integration mode `STUB` / `OFF` / `LIVE`, EBS URLs, SMTP, port). Restart the server after a change. The full list is in `server/README.md`.
@@ -51,8 +56,9 @@ cd android && ./gradlew assembleRelease
 
 ## 7. CI and releases
 `.github/workflows/build.yml` runs on every push to `main`:
-1. Server tests (end-to-end flow, process rules, review fixes, pytest). **Nothing is built if a test fails.**
+1. Server tests (end-to-end flow, process rules, review fixes, pytest) - on SQLite and again on SQL Server 2022. **Nothing is built if a test fails.**
 2. Server Windows EXE and Portable zip → GitHub release `server-v<APP_VERSION>`.
 3. HHT APK → GitHub release `hht-v<version>` and the fixed latest link.
+4. The portable zip is installed on IIS + SQL Server Express with `iis\Setup_IIS.ps1` (both IIS modules) and used: sign in, change password, add a plant, restart, update run.
 
 How to cut a release: `docs/VERSION_CONTROL.md`.

@@ -23,15 +23,9 @@ python run.py            # http://localhost:8001  (admin / Admin@123 — change 
 ```
 API documentation (Swagger): set `PALLET_API_DOCS=1` in `settings.env`, then http://localhost:8001/docs (off by default)
 
-## Production (Windows Server + IIS + SQL Server)
-1. Install Python 3.12 (64-bit), ODBC Driver 18 for SQL Server, IIS with **HttpPlatformHandler**.
-2. `sql/create_db.sql` on SQL Server (creates PalletDB with snapshot isolation).
-3. Copy this folder to `C:\inetpub\pallet_server`, `pip install -r requirements.txt`.
-4. Edit `web.config`: python path, `PALLET_DB_URL`, `PALLET_JWT_SECRET`.
-5. IIS: new site → physical path = this folder → binding :443 with certificate.
-   For 4 workers create 4 sites/app pools (ports are assigned by IIS) behind an ARR server farm, or run one site first (handles 50 users easily).
-6. Task Scheduler: `scheduler.ps1` every 5 minutes (EBS/GCS retry queue).
-7. Nothing is published to the internet. Customer HHTs reach the server over the AIS SSL-VPN (FortiClient) restricted to the server port - see `docs/CUSTOMER_HHT_ACCESS.md`.
+## Production on IIS + SQL Server
+Installed from the portable zip with `iis\Setup_IIS.ps1` (IIS app pool + site, `web.config`, SQL Server database and login,
+folder rights, health check). Guide: `docs/DEPLOY_IIS_SQLSERVER.md`. The tray / portable server is the other way and stays supported.
 
 ## Environment variables
 | Var | Default | Meaning |
@@ -42,6 +36,8 @@ API documentation (Swagger): set `PALLET_API_DOCS=1` in `settings.env`, then htt
 | PALLET_EBS_SO_URL / PALLET_EBS_CHALLAN_URL / PALLET_EBS_AUTH | – | EBS endpoints (LIVE) |
 | PALLET_ADMIN_USER / PALLET_ADMIN_PASS | admin / Admin@123 | bootstrap admin (first run only; the first sign-in works only on the server PC and forces a new password) |
 | PALLET_API_DOCS | 0 | 1 = show Swagger at /docs |
+| PALLET_RETRY_JOB | 0 | 1 = run the 5-minute job (EBS / GCS retries, reminders) inside the server - set on IIS |
+| PALLET_SERVER_PORTS | (tray fills it) | ports the HHT setup QR offers, e.g. `80` on IIS |
 
 ## API map (all under /api/v1 unless stated)
 - `POST auth/login` `{user_id,password,device_id,app_version}` → token, perms, plant
