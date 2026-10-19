@@ -287,12 +287,12 @@ jobs:
           Write-Host "IIS module ok: $want"
           iisreset | Out-Null
           exit 0
-      - name: SQL Server Express and ODBC Driver 18
+      - name: SQL Server Express and ODBC Driver (18, or 17 as on the runner)
         shell: powershell
         run: |
           $ErrorActionPreference = "Continue"
           function Have-Sql { [bool](Get-Service 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue) }
-          function Have-Odbc { Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server" }
+          function Have-Odbc { (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server") -or (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 17 for SQL Server") }
           $out = @()
           for ($try = 1; $try -le 4 -and -not ((Have-Sql) -and (Have-Odbc)); $try++) {   # the Chocolatey feed is sometimes busy (503): wait and retry
             if ($try -gt 1) { Write-Host "retry $try in 60 s"; Start-Sleep 60 }
@@ -303,12 +303,12 @@ jobs:
           Get-ChildItem "HKLM:\SOFTWARE\ODBC\ODBCINST.INI" | Select-Object -ExpandProperty PSChildName
           if (-not (Have-Sql) -or -not (Have-Odbc)) {
             $log = Get-Content "C:\ProgramData\chocolatey\logs\chocolatey.log" -Tail 40 -ErrorAction SilentlyContinue
-            Write-Output ("::error::SQL Express ($(Have-Sql)) / ODBC 18 ($(Have-Odbc)) not installed on this runner%0A" + ((($out | Select-Object -Last 20) + $log) -join "%0A"))
+            Write-Output ("::error::SQL Express ($(Have-Sql)) / ODBC 18 or 17 ($(Have-Odbc)) not installed on this runner%0A" + ((($out | Select-Object -Last 20) + $log) -join "%0A"))
             exit 1
           }
           Start-Service 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue
           Get-Service 'SQLBrowser' -ErrorAction SilentlyContinue | Set-Service -StartupType Automatic -PassThru | Start-Service -ErrorAction SilentlyContinue
-          Write-Host "SQL Express and ODBC Driver 18 ok"
+          Write-Host "SQL Express and ODBC driver ok"
           exit 0
       - name: Setup_IIS.ps1 (as IT runs it)
         shell: powershell
@@ -335,7 +335,7 @@ jobs:
           $t = (Invoke-RestMethod -Method Post "$u/api/v1/auth/login" -ContentType "application/json" -Body '{"user_id":"admin","password":"IisTest#2026"}').token
           $p = Invoke-RestMethod "$u/api/v1/plants" -Headers @{Authorization="Bearer $t"}
           if (-not ($p | Where-Object { $_.code -eq "CHN" })) { throw "plant not kept after restart" }
-          & C:\AssetTrack_IIS\python\python.exe -c "import pyodbc; c=pyodbc.connect('DRIVER={ODBC Driver 18 for SQL Server};SERVER=.\\SQLEXPRESS;DATABASE=PalletDB;Trusted_Connection=yes;TrustServerCertificate=yes'); print('plants in SQL Server:', c.execute('select code, name from plants').fetchall())"
+          & C:\AssetTrack_IIS\python\python.exe -c "import pyodbc; c=pyodbc.connect('DRIVER={'+[d for d in pyodbc.drivers() if d.startswith('ODBC Driver 1')][-1]+'};SERVER=.\\SQLEXPRESS;DATABASE=PalletDB;Trusted_Connection=yes;TrustServerCertificate=yes'); print('plants in SQL Server:', c.execute('select code, name from plants').fetchall())"
           if ($LASTEXITCODE) { throw "SQL check" }
           Write-Host "IIS + SQL Server installation works ($((Invoke-RestMethod "$u/api/v1/health").version))"
       - name: Migration script - a SQL database that already holds data is never overwritten
