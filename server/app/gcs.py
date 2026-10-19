@@ -363,8 +363,10 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
                              qty=0, part_qty=0, status="OPEN", created_by="GCS_INBOX", load_point="VEHICLE")
         db.add(pk); db.flush(); what = "created"
     else:
-        if pk.status not in ("OPEN",):
+        tr = db.get(models.PickList, pk.linked_picklist) if pk.status == "LINKED" and pk.linked_picklist else None
+        if pk.status != "OPEN" and not (tr and tr.status == "OPEN"):
             return "skipped", pk                   # already loaded / dispatched: frozen
+        # a re-issued GCS whose Bench trip is still being loaded: its cards / invoices are updated on the trip too
         what = "updated"
     if cancelled:                                  # GCS cancelled in the ERP
         if db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count() == 0:
@@ -449,7 +451,13 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
         pk.qty = _int(f.get("pallets")) or pk.qty
     pk.remarks = (f"GCS from {source_file}" if source_file else pk.remarks)
     try:
-        db.flush(); link_bench_trip(db, pk)
+        db.flush()
+        if pk.status == "LINKED" and pk.linked_picklist:
+            tr = db.get(models.PickList, pk.linked_picklist)
+            if tr and tr.status == "OPEN":
+                copy_gcs_to_trip(db, pk, tr, replace=True)
+        else:
+            link_bench_trip(db, pk)
     except Exception as e:                       # never stops reading the GCS file
         log.warning("bench link %s: %s", pk.picklist_no, e)
     return what, pk
@@ -458,41 +466,45 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
 BENCH_SOURCES = ("DISPATCH_BENCH", "HMIL_BENCH")
 
 
-def link_bench_trip(db: Session, g: models.PickList) -> str | None:
-    """Join a GCS loading sheet with the Dispatch Bench trip of the same vehicle, so trip > PDI > GCS > loading > gate is
-    ONE record. Matched by the part cards they share (the Bench picked / PDI'd them, the GCS lists them); if the GCS file
-    has no part cards, by vehicle + customer when exactly one open trip fits.
+def trip_cards(db: Session, trip_no: str, active: bool = True) -> dict:
+    """PDI check sheet of a Bench trip: {card: BenchTripCard}; active = on the trip now (PDI passed), else removed ones."""
+    q = db.query(models.BenchTripCard).filter_by(trip_no=trip_no)
+    q = q.filter(models.BenchTripCard.removed_at.is_(None)) if active else q.filter(models.BenchTripCard.removed_at.isnot(None))
+    return {c.lpn_no: c for c in q.all()}
+
+
+def _open_trips(db: Session, plant: str):
+    from datetime import timedelta
+    return db.query(models.PickList).filter(models.PickList.plant_code == plant, models.PickList.source.in_(BENCH_SOURCES),
+                                            models.PickList.status.notin_(["CANCELLED", "LINKED", "DISPATCHED", "CLOSED"]),
+                                            models.PickList.linked_picklist.is_(None),
+                                            models.PickList.created_at >= utcnow() - timedelta(days=10)).all()
+
+
+def link_bench_trip(db: Session, g: models.PickList, trip: models.PickList | None = None, mode: str = "CARDS") -> str | None:
+    """Join a GCS loading sheet with its Dispatch Bench trip, so trip > PDI > GCS > loading > gate is ONE record.
+    Automatic (mode CARDS) ONLY when EVERY part card of the GCS is on the PDI check sheet of exactly one open Bench trip
+    of the plant. A GCS without part cards, or whose cards prove no single trip, is never linked automatically: a supervisor
+    raises a link request and an admin approves it (mode ADMIN, trip given).
       * trip not loaded yet  -> loading happens on the GCS sheet; the trip is closed as LINKED, its reserved cards move over
       * trip already loaded  -> the trip carries on (it gets the GCS no, invoice lines and card list); the GCS sheet is LINKED
     Returns the trip number or None."""
-    from datetime import timedelta
     if g.source != "GCS" or g.status != "OPEN" or g.linked_picklist:
         return g.linked_picklist
-    since = utcnow() - timedelta(days=10)
-    trips = db.query(models.PickList).filter(models.PickList.plant_code == g.plant_code, models.PickList.source.in_(BENCH_SOURCES),
-                                             models.PickList.status.notin_(["CANCELLED", "LINKED"]), models.PickList.linked_picklist.is_(None),
-                                             models.PickList.created_at >= since).all()
-    if not trips:
-        return None
     cards = {x.lpn_no for x in db.query(models.GcsLpn).filter_by(picklist_no=g.picklist_no).all()}
-    best, score = None, 0
-    if cards:
-        for t in trips:
-            mine = {x.lpn_no for x in db.query(models.PickListLpn).filter_by(picklist_no=t.picklist_no).all()}
-            mine |= {x.lpn_no for x in db.query(models.Lpn).filter((models.Lpn.reserved_for == t.picklist_no) | (models.Lpn.picklist_no == t.picklist_no)).all()}
-            n = len(cards & mine) + (0.5 if g.vehicle_no and t.vehicle_no == g.vehicle_no else 0)
-            if len(cards & mine) and n > score:
-                best, score = t, n
-    if best is None and g.vehicle_no:
-        fit = [t for t in trips if t.vehicle_no == g.vehicle_no and t.status == "OPEN" and (t.customer_code == g.customer_code or g.customer_code in (None, "?"))
-               and t.created_at >= utcnow() - timedelta(days=3)]
-        if len(fit) == 1:
-            best = fit[0]
-    if best is None:
-        return None
+    if trip is None:
+        if not cards:
+            return None                          # no part cards: only an approved link request can join it
+        fits = [t for t in _open_trips(db, g.plant_code) if cards <= set(trip_cards(db, t.picklist_no))]
+        if len(fits) != 1:
+            return None                          # no trip carries every card, or more than one does: not proven
+        best = fits[0]
+    else:
+        best = trip
     t = best
     loaded = db.query(models.PickListLine).filter_by(picklist_no=t.picklist_no).count() > 0 or t.status != "OPEN"
     g.linked_picklist, t.linked_picklist = t.picklist_no, g.picklist_no
+    g.link_mode = t.link_mode = mode
     g.pdi_sign = g.pdi_sign or t.pdi_sign; g.supervisor_sign = g.supervisor_sign or t.supervisor_sign
     if not loaded:                                # load on the GCS sheet
         for l in db.query(models.Lpn).filter_by(reserved_for=t.picklist_no, status="RESERVED").all():
@@ -507,17 +519,135 @@ def link_bench_trip(db: Session, g: models.PickList) -> str | None:
     t.customer_name = g.customer_name or t.customer_name; t.transporter_name = g.transporter_name or t.transporter_name
     t.vehicle_type = g.vehicle_type or t.vehicle_type; t.gp_date = g.gp_date or t.gp_date; t.gr_lr_no = g.gr_lr_no or t.gr_lr_no
     t.vehicle_no = t.vehicle_no or g.vehicle_no
-    if not db.query(models.PickListItem).filter_by(picklist_no=t.picklist_no).count():
-        for it in db.query(models.PickListItem).filter_by(picklist_no=g.picklist_no).all():
-            db.add(models.PickListItem(**{c.name: getattr(it, c.name) for c in it.__table__.columns if c.name not in ("id", "picklist_no")}, picklist_no=t.picklist_no))
-    db.query(models.GcsLpn).filter_by(picklist_no=t.picklist_no).delete()
-    for x in db.query(models.GcsLpn).filter_by(picklist_no=g.picklist_no).all():
-        db.add(models.GcsLpn(**{c.name: getattr(x, c.name) for c in x.__table__.columns if c.name not in ("id", "picklist_no")}, picklist_no=t.picklist_no))
+    copy_gcs_to_trip(db, g, t, replace=False)
     for l in db.query(models.Lpn).filter_by(reserved_for=g.picklist_no, status="RESERVED").all():
         l.reserved_for = t.picklist_no
     g.status = "LINKED"
     g.remarks = (f"Linked to Bench trip {t.ext_ref or ''} ({t.picklist_no}) - already loaded there " + (g.remarks or ""))[:250]
     return t.picklist_no
+
+
+def copy_gcs_to_trip(db: Session, g: models.PickList, t: models.PickList, replace: bool):
+    """The GCS invoice lines and part cards onto the Bench trip that carries on (replace=True: a re-issued GCS)."""
+    if replace:
+        db.query(models.PickListItem).filter_by(picklist_no=t.picklist_no).delete()
+    if replace or not db.query(models.PickListItem).filter_by(picklist_no=t.picklist_no).count():
+        for it in db.query(models.PickListItem).filter_by(picklist_no=g.picklist_no).all():
+            db.add(models.PickListItem(**{c.name: getattr(it, c.name) for c in it.__table__.columns if c.name not in ("id", "picklist_no")}, picklist_no=t.picklist_no))
+    db.query(models.GcsLpn).filter_by(picklist_no=t.picklist_no).delete()
+    for x in db.query(models.GcsLpn).filter_by(picklist_no=g.picklist_no).all():
+        db.add(models.GcsLpn(**{c.name: getattr(x, c.name) for c in x.__table__.columns if c.name not in ("id", "picklist_no")}, picklist_no=t.picklist_no))
+    db.flush()
+
+
+def relink_open(db: Session, plants: set | None = None) -> int:
+    """Link from both sides: after new Bench trips / changed PDI check sheets, try again every open, unlinked GCS sheet."""
+    q = db.query(models.PickList).filter(models.PickList.source == "GCS", models.PickList.status == "OPEN",
+                                         models.PickList.linked_picklist.is_(None))
+    if plants:
+        q = q.filter(models.PickList.plant_code.in_(list(plants)))
+    n = 0
+    for g in q.all():
+        try:
+            if link_bench_trip(db, g):
+                n += 1
+        except Exception as e:                   # one bad sheet never stops the others
+            log.warning("relink %s: %s", g.picklist_no, e)
+    return n
+
+
+def trip_of(db: Session, k: models.PickList) -> models.PickList | None:
+    """The Bench trip behind a loading record (the trip itself, or the trip linked to a GCS sheet)."""
+    if (k.source or "") in BENCH_SOURCES:
+        return k
+    return db.get(models.PickList, k.linked_picklist) if k.linked_picklist else None
+
+
+def reconcile(db: Session, k: models.PickList) -> dict:
+    """PDI check sheet (Bench) against the GCS (invoiced cards), card by card.
+    ok = True only when: a Bench trip is linked, every GCS card is on its check sheet (PDI passed), every check-sheet
+    card is on the GCS (invoiced), and item / qty agree. Anything else blocks finish, challan and the QR gate pass."""
+    t = trip_of(db, k)
+    gcs_rows = db.query(models.GcsLpn).filter_by(picklist_no=k.picklist_no).all()
+    if not gcs_rows and k.linked_picklist and (k.source or "") in BENCH_SOURCES:
+        gcs_rows = db.query(models.GcsLpn).filter_by(picklist_no=k.linked_picklist).all()
+    gcs = {r.lpn_no: r for r in gcs_rows}
+    out = {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "trip_no": t.picklist_no if t else None,
+           "bench_ref": (t.ext_ref if t else None), "link_mode": (t.link_mode if t else None) or k.link_mode,
+           "pdi_sign": (t.pdi_sign if t else None) or k.pdi_sign, "cards": [], "issues": [], "ok": False,
+           "counts": {"ok": 0, "not_pdi": 0, "removed": 0, "not_invoiced": 0, "differs": 0}}
+    if t is None:
+        out["issues"].append("No Dispatch Bench PDI check sheet matches this GCS (every GCS part card must be on one Bench trip)"
+                             if gcs else "GCS file has no part cards - link it to its Bench trip by a link request (admin approval)")
+        out["cards"] = [{"lpn_no": r.lpn_no, "pallet": r.pallet_ref, "invoice": r.invoice_no, "gcs_part": r.part_no, "gcs_qty": r.qty,
+                         "status": "NO_TRIP"} for r in gcs_rows]
+        return out
+    act, rem = trip_cards(db, t.picklist_no), trip_cards(db, t.picklist_no, active=False)
+    for lpn, r in gcs.items():
+        c = act.get(lpn)
+        row = {"lpn_no": lpn, "pallet": r.pallet_ref, "invoice": r.invoice_no, "gcs_part": r.part_no, "gcs_qty": r.qty,
+               "bench_part": c.part_no if c else None, "bench_qty": c.qty if c else None}
+        if c is None:
+            row["status"] = "REMOVED" if lpn in rem else "NOT_PDI"
+            out["counts"]["removed" if lpn in rem else "not_pdi"] += 1
+        elif (r.part_no and c.part_no and r.part_no != c.part_no) or (r.qty and c.qty and int(r.qty) != int(c.qty)):
+            row["status"] = "DIFFERS"; out["counts"]["differs"] += 1
+        else:
+            row["status"] = "OK"; out["counts"]["ok"] += 1
+        out["cards"].append(row)
+    if gcs:
+        for lpn, c in act.items():
+            if lpn not in gcs:
+                out["cards"].append({"lpn_no": lpn, "pallet": None, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
+                                     "status": "NOT_INVOICED"}); out["counts"]["not_invoiced"] += 1
+    elif not (t.link_mode == "ADMIN" or (k.source == "GCS" and k.linked_picklist)):
+        out["issues"].append("No GCS (invoice / gate pass) received for this Bench trip yet")
+        return out
+    else:                                        # approved link, GCS without cards: compare item totals with the invoice lines
+        inv = {}
+        for it in db.query(models.PickListItem).filter_by(picklist_no=k.picklist_no).all():
+            inv[it.part_no] = inv.get(it.part_no, 0) + int(it.qty or 0)
+        ben = {}
+        for c in act.values():
+            ben[c.part_no] = ben.get(c.part_no, 0) + int(c.qty or 0)
+        for part in sorted(set(inv) | set(ben), key=str):
+            st = "OK" if inv.get(part) == ben.get(part) else "DIFFERS"
+            out["counts"]["ok" if st == "OK" else "differs"] += 1
+            out["cards"].append({"lpn_no": None, "item_level": True, "gcs_part": part, "gcs_qty": inv.get(part), "bench_part": part,
+                                 "bench_qty": ben.get(part), "status": st})
+    for lpn, c in rem.items():
+        if lpn not in gcs:
+            out["cards"].append({"lpn_no": lpn, "bench_part": c.part_no, "bench_qty": c.qty, "removed_at": c.removed_at, "status": "REMOVED"})
+    n = out["counts"]
+    if n["not_pdi"]:
+        out["issues"].append(f"{n['not_pdi']} GCS card(s) not on the Bench PDI check sheet")
+    if n["removed"] and any(x["status"] == "REMOVED" and x.get("invoice") for x in out["cards"]):
+        out["issues"].append("GCS lists card(s) the Bench removed (PDI reject / alternate) - GCS must be re-issued")
+    if n["not_invoiced"]:
+        out["issues"].append(f"{n['not_invoiced']} card(s) PDI passed but not in the GCS (not invoiced) - remove from the trip in the Bench or re-issue the GCS")
+    if n["differs"]:
+        out["issues"].append(f"{n['differs']} line(s) item / qty differ between Bench and GCS")
+    out["ok"] = not out["issues"]
+    return out
+
+
+def card_block(db: Session, k: models.PickList, lpn_nos: list[str], pallet_no: str | None = None) -> str | None:
+    """Loading check for the cards being loaded (a card, or every card on a pallet): message if any must stay off."""
+    t = trip_of(db, k)
+    if t is None:
+        return "No Dispatch Bench PDI check sheet matches this GCS - HARD STOP, no loading (link request / admin approval needed)"
+    act, rem = trip_cards(db, t.picklist_no), trip_cards(db, t.picklist_no, active=False)
+    cards = set(lpn_nos)
+    if pallet_no:
+        cards |= {x.lpn_no for x in db.query(models.Lpn).filter_by(pallet_no=pallet_no).all() if x.lpn_no in rem}
+    bad = [c for c in cards if c in rem and c not in act]
+    if bad:
+        return f"STOP: card {', '.join(sorted(bad)[:3])} was removed from the trip by the Bench (PDI reject / alternate) - keep it off the vehicle"
+    if t.link_mode != "ADMIN":
+        notpdi = [c for c in lpn_nos if c not in act]
+        if notpdi:
+            return f"STOP: card {', '.join(sorted(notpdi)[:3])} is not on the Bench PDI check sheet - keep it off the vehicle"
+    return None
 
 
 def _ftp(cfg):

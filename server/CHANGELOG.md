@@ -1,4 +1,15 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.31.0 / HHT 2.23.0 - 2026-10-19 - strict Bench PDI check sheet ↔ GCS (FTP) matching (requested by DT)
+- **Match by part cards only.** A GCS is linked to a Dispatch Planning Bench trip automatically only when EVERY part card in the GCS is on exactly one open Bench trip's PDI check sheet. The old "same vehicle" automatic link is removed.
+- **PDI result = OK or Reject.** Cards on the Bench trip are PDI passed. When the Bench rejects a card and adds an alternate, AssetTrack sees the new card list on the next Bench pull and keeps the removed card on record.
+- **Removed card / pallet scanned at loading = STOP + alert** (counted as a miss, PDI_CHECK, blocked).
+- **PDI done, not invoiced** (Bench card not in the GCS), a card in the GCS that is not PDI OK, or item / qty different: shown in red, and **no challan push to Oracle and no QR gate pass** until fixed (no override). A re-issued GCS or a Bench change is matched again automatically.
+- **One GCS can carry several invoices**; one Bench trip has one GCS.
+- **GCS with no matching Bench trip = HARD STOP** for loading.
+- **Vehicle-only link** (GCS without part cards): a supervisor raises a link request (trip + reason) in GCS inbox → 🔎 PDI match; an admin with "GCS link approve" (PADMIN / CADMIN) approves it - not the same person. Item totals are then still compared with the invoice lines. Admins can unlink while nothing is loaded.
+- Web: GCS inbox → **🔎 PDI match** per sheet (card table, counts, block reason, link requests); link requests list with Approve / Reject.
+- HHT 2.23.0: Vehicle loading shows "⛔ PDI / GCS check not clean" on the list and a red card on the loading screen.
+
 ## Server 1.30.3 - 2026-10-18 (HHT unchanged 2.22.0) - complete release in one step
 - The build now publishes each GitHub release once, with all its files (Package, Portable, EXE), and only after every check has passed (SQLite, SQL Server, IIS, EXE, portable, APK). Releases 1.30.1 and 1.30.2 were left incomplete by the old step-by-step publishing - use 1.30.3. Contents as 1.30.2.
 

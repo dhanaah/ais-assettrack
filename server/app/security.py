@@ -17,7 +17,7 @@ PERMS = [
     "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN",
     "CUST_RECEIVE", "CUST_RETURN", "TRANSPORTER_MASTER",
     "YARD_IN_PLANT", "YARD_TO_PACKING", "PACK_RECEIPT", "PACK_DISPATCH", "PACK_PDI", "VEHICLE_LOAD",
-    "MOVE_TO_DISPATCH", "MOVE_FG_TO_PRODUCTION",
+    "MOVE_TO_DISPATCH", "MOVE_FG_TO_PRODUCTION", "GCS_LINK_REQUEST", "GCS_LINK_APPROVE",
 ]
 # What a central admin can switch on/off per user (grouped for the screen)
 # HHT groups = the button groups on the HHT home screen (one permission per button)
@@ -30,13 +30,14 @@ PERM_GROUPS = {
     "HHT - Packing · Dispatch (pallet card)": ["PACK_DISPATCH", "PACK_PDI", "PACK_RECEIPT"],
     "HHT - Security · Loading & Gate-Out": ["VEHICLE_LOAD", "OUT_GATE_SCAN"],
     "HHT - all internal moves (old, covers every move)": ["INTERNAL_MOVE"],
-    "Web - documents": ["PICKLIST_CREATE", "CHALLAN_REQUEST", "LOGISTICS_APPROVE", "WMS_UPLOAD"],
+    "Web - documents": ["PICKLIST_CREATE", "CHALLAN_REQUEST", "LOGISTICS_APPROVE", "WMS_UPLOAD", "GCS_LINK_REQUEST", "GCS_LINK_APPROVE"],
     "Web - masters & admin": ["GLOBAL_MASTERS", "TRANSPORTER_MASTER", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "PLANT_USERS_ADMIN", "USER_ADMIN", "INTEGRATION_CONFIG"],
     "Web - reports": ["REPORTS_PLANT", "REPORTS_ALL", "AUDIT_LOG"],
     "Customer HHT (customer staff)": ["CUST_RECEIVE", "CUST_RETURN"],
 }
 NEW_PERMS = {"WMS_UPLOAD", "BLANKET_MASTER", "EMPTY_RETURN", "PDI_CHECK", "INTERNAL_MOVE", "PLANT_RECEIPT", "CHALLAN_REQUEST",
-             "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN", "TRANSPORTER_MASTER"}   # added to existing roles on upgrade
+             "MOVE_TO_PRODUCTION", "MOVE_TO_FGWH", "MOVE_TO_PACKING", "MOVE_TO_YARD", "USER_ADMIN", "TRANSPORTER_MASTER",
+             "GCS_LINK_REQUEST", "GCS_LINK_APPROVE"}   # added to existing roles on upgrade
 # 1.26 (one time, at the first start): whoever had the old permission for a function also gets the new button's permission,
 # so nobody loses access when a function is split into its own permission. Admin removals afterwards are kept.
 IMPLIED_1_26 = {"YARD_SCAN": ["YARD_IN_PLANT"], "INTERNAL_MOVE": ["YARD_TO_PACKING"], "PLANT_RECEIPT": ["PACK_RECEIPT"],
@@ -53,8 +54,8 @@ ROLE_SEED = {
     "PROD":    ("Production", "PLANT", ["MOVE_TO_FGWH", "REPORTS_PLANT"]),      # Production -> FGWH only (FGWH is the centre)
     "PACK":    ("Packing Section", "PLANT", ["MOVE_TO_YARD", "PLANT_RECEIPT", "PACK_RECEIPT", "PACK_DISPATCH", "REPORTS_PLANT"]),
     "QA":      ("QA / PDI", "PLANT", ["PDI_CHECK", "PACK_PDI", "DAMAGE_MARK", "REPORTS_PLANT"]),
-    "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "TRANSPORTER_MASTER", "REPORTS_PLANT"]),
-    "PADMIN":  ("Plant Admin", "PLANT", ["PLANT_USERS_ADMIN", "TRANSPORTER_MASTER", "REPORTS_PLANT", "AUDIT_LOG"]),
+    "LOG":     ("Logistics", "PLANT", ["LOGISTICS_APPROVE", "CHALLAN_REQUEST", "EMPTY_RETURN", "TRANSPORTER_MASTER", "GCS_LINK_REQUEST", "REPORTS_PLANT"]),
+    "PADMIN":  ("Plant Admin", "PLANT", ["PLANT_USERS_ADMIN", "TRANSPORTER_MASTER", "GCS_LINK_APPROVE", "REPORTS_PLANT", "AUDIT_LOG"]),
     "MASTER":  ("Master Maintenance (central)", "ALL", ["GLOBAL_MASTERS", "TRANSPORTER_MASTER", "BLANKET_MASTER", "TAG_SERIES", "DISCONTINUE_PALLET", "REPORTS_ALL"]),
     "CADMIN":  ("Central Admin", "ALL", PERMS),
     "MGMT":    ("Management (view only)", "ALL", ["REPORTS_ALL"]),

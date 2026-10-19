@@ -5,7 +5,7 @@ import os, sys, uuid, json, base64, threading, time
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
-from testdb import fresh_db_url  # noqa: E402
+from testdb import fresh_db_url, bench_trip_for  # noqa: E402
 os.environ["PALLET_DB_URL"] = fresh_db_url("audit")
 os.environ["PALLET_INTEGRATION_MODE"] = "STUB"
 os.environ["PALLET_BENCH_SCHEDULER"] = "0"
@@ -281,6 +281,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
         db.add(models.GcsLpn(picklist_no="CHN-GCS-RW", lpn_no="RW31LPN", lpn_label="RW.3100.P555", pallet_ref="RW.3100", pallet_no=None, part_no="WS-1", qty=5))
         db.add(models.GcsLpn(picklist_no="CHN-GCS-RW", lpn_no="RW32LPN", lpn_label="RW.3101.P556", pallet_ref="RW.3101", pallet_no=None, part_no="WS-1", qty=5))
         db.add(models.Lpn(lpn_no="RW31LPN", plant_code="CHN", part_no="WS-1", qty=5, status="RESERVED", reserved_for="CHN-GCS-RW")); db.commit()
+        bench_trip_for(db, "CHN-GCS-RW")
     qr = _json.dumps({"uniquePalletID": "AIS-CHN-RW-3100-10001", "ownerPlant": "CHN", "palletType": "RW", "typeSerial": "3100", "globalSerial": "10001"})
     r = c.post("/api/v1/picklists/CHN-GCS-RW/load", headers=HY, json={"scanned": qr})
     check(r.status_code == 200 and r.json()["loaded"] == 1, f"new label registered and loaded against GCS line RW.3100 ({r.status_code} {r.text[:90]})")
@@ -329,6 +330,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
         db.add(models.GcsLpn(picklist_no="CHN-GCS-LT", lpn_no="LT1", lpn_label="LT.700.P1", pallet_ref="LT.700", pallet_no=None, part_no="WS-1", qty=5))
         db.add(models.Pallet(pallet_no="AIS-CHN-LT-700-20001", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED"))
         db.commit()
+        bench_trip_for(db, "CHN-GCS-LT")
     r = c.post("/api/v1/picklists/CHN-GCS-LT/load", headers=HY, json={"scanned": "AIS-CHN-LT-700-20001"})
     j = r.json() if r.status_code == 200 else {}
     check(r.status_code == 200 and j.get("finished") and j.get("challan_no"), f"accepted, and the only pallet finished the loading (challan {j.get('challan_no')}) ({r.status_code} {r.text[:80]})")
@@ -417,6 +419,75 @@ with TestClient(app, raise_server_exceptions=False) as c:
     check(r.status_code == 400 and _st("CHN-X001") == "AT_CUSTOMER", "AT_CUSTOMER pallet cannot be set AVAILABLE by hand")
     r = c.post("/api/v1/slips/" + "PUN%2F00009" + "/gate-in", headers=H, json={"qr": "CHL|PUN/00009|X|1"})
     check(r.status_code != 404 or "Not Found" not in r.text, f"challan number with '/' reaches the gate-in route ({r.status_code} {r.text[:60]})")
+
+    print("29. Dispatch Bench PDI check sheet <-> GCS: strict card match, reject + alternate, not invoiced, hard stops")
+    from app import bench as _bn, gcs as _gc
+    with SessionLocal() as db:
+        for sn in (9101, 9102, 9103, 9104):
+            db.add(models.Pallet(pallet_no=f"AIS-CHN-F-0{sn}-00{sn}0", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED", pallet_type="F"))
+        db.commit()
+    def bench_pull(trips):
+        disp = {"dispatches": [{"id": i, "trip_id": i, "plant": "CHN", "vehicle": v, "dispatch_status": "Completed", "sent_at": now()} for i, v, _ in trips]}
+        fk = {"/api/dispatches/recent?limit=300": disp} | {f"/api/picks?dispatch_id={i}": {"picks": [{"picked_lpn": cd, "item_code": "WS-1", "qty": 10} for cd in cards]} for i, _, cards in trips}
+        with SessionLocal() as db:
+            for k_, v_ in (("bench_plant", "CHN"),):
+                row_ = db.get(models.Setting, k_) or models.Setting(key=k_); row_.value = v_; db.add(row_)
+            db.commit()
+            _bn.pull(db, fetch=lambda path: fk[path]); db.commit()
+    def gcs_in(no, vehicle, cards):
+        with SessionLocal() as db:
+            _gc.apply_gcs(db, "CHN", {"gcs_no": no, "vehicle_no": vehicle, "customer_code": "HMIL"}, "t",
+                          [{"lpn_no": f"F.{sn}.{cd}", "invoice_no": f"INV-{i % 2}", "part_no": "WS-1", "part_qty": 10} for i, (sn, cd) in enumerate(cards)]); db.commit()
+        return "GCS-CHN-" + no.replace("/", "")
+    # trip 901 on vehicle V1 carries A1 (pallet F.9101) and A2 (pallet F.9102)
+    bench_pull([(901, "TN01V1", ["A1", "A2"])])
+    g1 = gcs_in("G901", "TN01V1", [(9101, "A1"), (9102, "A2")])
+    m = c.get(f"/api/v1/picklists/{g1}/pdi-match", headers=HY).json()
+    check(m["trip_no"] == "DB-CHN-901" and m["ok"], f"every GCS card on the Bench trip: linked automatically, clean ({m['issues']})")
+    # PDI reject of A2 in the Bench, alternate A3 on another pallet (F.9103) - Bench handles it, AssetTrack only sees the new list
+    bench_pull([(901, "TN01V1", ["A1", "A3"])])
+    m = c.get(f"/api/v1/picklists/{g1}/pdi-match", headers=HY).json()
+    st = {x["lpn_no"]: x["status"] for x in m["cards"]}
+    check(not m["ok"] and st.get("A2") == "REMOVED" and st.get("A3") == "NOT_INVOICED", f"after reject + alternate the old GCS no longer matches: {st}")
+    r = c.post(f"/api/v1/picklists/{g1}/load", headers=HY, json={"scanned": "AIS-CHN-F-09102-0091020"})
+    check(r.status_code == 400 and "removed from the trip by the Bench" in r.text, f"rejected card's pallet scanned at loading: STOP ({r.text[:90]})")
+    with SessionLocal() as db:
+        al = db.query(models.ScanMiss).filter_by(missed_point="PDI_CHECK", action="BLOCKED").count()
+    check(al >= 1, "and an alert is recorded in the exception register")
+    r = c.post(f"/api/v1/picklists/{g1}/load", headers=HY, json={"scanned": "AIS-CHN-F-09101-0091010"})
+    check(r.status_code == 200 and not r.json().get("finished"), f"good card loads; finishing is held back ({r.json().get('finish_error', '')[:80]})")
+    r = c.post(f"/api/v1/picklists/{g1}/confirm", headers=HY)
+    check(r.status_code == 400 and "no challan" in r.text, f"finish / challan / QR refused while Bench and GCS differ: {r.text[:120]}")
+    # GCS re-issued from the ERP with the alternate card
+    gcs_in("G901", "TN01V1", [(9101, "A1"), (9103, "A3")])
+    m = c.get(f"/api/v1/picklists/{g1}/pdi-match", headers=HY).json()
+    check(m["ok"], f"re-issued GCS lists the alternate: clean again ({m['issues']})")
+    r = c.post(f"/api/v1/picklists/{g1}/load", headers=HY, json={"scanned": "AIS-CHN-F-09103-0091030"}).json()
+    check(r.get("finished") and r.get("challan_no"), f"alternate loaded: loading finished, challan + QR made ({r.get('challan_no')})")
+    # not invoiced: Bench trip has a card the GCS does not list -> linked (GCS cards all on the trip) but blocked
+    bench_pull([(902, "TN01V2", ["B1", "B2"])])
+    g2 = gcs_in("G902", "TN01V2", [(9104, "B1")])
+    m = c.get(f"/api/v1/picklists/{g2}/pdi-match", headers=HY).json()
+    check(m["trip_no"] == "DB-CHN-902" and not m["ok"] and m["counts"]["not_invoiced"] == 1, f"PDI done but not invoiced: shown, blocks challan / QR ({m['issues']})")
+    r = c.post(f"/api/v1/picklists/{g2}/load", headers=HY, json={"scanned": "AIS-CHN-F-09104-0091040"}).json()
+    check(not r.get("finished") and r.get("pdi_ok") is False and "not invoiced" in (r.get("pdi_msg") or "") and not r.get("can_finish"),
+          f"last pallet loaded but NOT finished, HHT shows why: {(r.get('pdi_msg') or '')[:90]}")
+    # GCS card on no Bench trip -> no link, hard stop at loading
+    g3 = gcs_in("G903", "TN01V3", [(9104, "Z9")])
+    m = c.get(f"/api/v1/picklists/{g3}/pdi-match", headers=HY).json()
+    check(m["trip_no"] is None and not m["ok"], "GCS card on no Bench trip: not linked")
+    with SessionLocal() as db:
+        db.get(models.Pallet, "AIS-CHN-F-09104-0091040").status = "AVAILABLE"; db.commit()
+    r = c.post(f"/api/v1/picklists/{g3}/load", headers=HY, json={"scanned": "AIS-CHN-F-09104-0091040"})
+    check(r.status_code == 400 and "HARD STOP" in r.text, f"loading against it: HARD STOP ({r.text[:90]})")
+    # ambiguous: two open trips both carry every GCS card -> no automatic link
+    bench_pull([(903, "TN01V4", ["D1"]), (904, "TN01V5", ["D1"])])
+    g4 = gcs_in("G904", "TN01V4", [(9104, "D1")])
+    with SessionLocal() as db:
+        check(db.get(models.PickList, g4).linked_picklist is None, "two Bench trips carry the same card: not linked (needs a request)")
+    # admin unlink of a wrong link
+    r = c.post(f"/api/v1/picklists/{g2}/unlink", headers=CA, json={})
+    check(r.status_code == 400 and "loaded" in r.text, "unlink refused once pallets are loaded")
 
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")

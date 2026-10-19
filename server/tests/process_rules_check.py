@@ -6,7 +6,7 @@ import os, sys, uuid
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
-from testdb import fresh_db_url  # noqa: E402
+from testdb import fresh_db_url, bench_trip_for  # noqa: E402
 os.environ["PALLET_DB_URL"] = fresh_db_url("rules")
 os.environ["PALLET_INTEGRATION_MODE"] = "STUB"
 os.environ["PALLET_BENCH_SCHEDULER"] = "0"
@@ -213,6 +213,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
                 db.add(models.GcsLpn(picklist_no=no, lpn_no=f"PC-{i}", pallet_no=f"CHN-P{i:03d}", part_no="WS-1", qty=10))
         u = models.User(user_id="secload", full_name="secload", plant_code="CHN", password_hash=hash_pw("x"), must_change_pw=False)
         u.perms_override = "VEHICLE_LOAD"; db.add(u); db.commit()
+        bench_trip_for(db, "CHN-GCS-11"); bench_trip_for(db, "CHN-GCS-12")      # their Dispatch Bench PDI check sheets
     SL = tok(c, "secload")
     r = c.post("/api/v1/picklists/gcs-open", headers=SL, json={"gcs_no": "GCS-11"})
     check(r.status_code == 200, f"Security (VEHICLE_LOAD only) opens the GCS at the vehicle ({r.status_code})")
@@ -255,6 +256,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
         db.add(models.GcsLpn(picklist_no="CHN-GCS-13", lpn_no="PC-14", pallet_no="CHN-P014", part_no="WS-1", qty=10))
         u = models.User(user_id="prodmove", full_name="prodmove", plant_code="CHN", password_hash=hash_pw("x"), must_change_pw=False)
         u.perms_override = "MOVE_TO_PRODUCTION"; db.add(u); db.commit()
+        bench_trip_for(db, "CHN-GCS-13")
     r = c.post("/api/v1/picklists/CHN-GCS-13/load", headers=SL, json={"scanned": "CHN-P013"})
     check(r.status_code == 400 and "NOT in GCS" in r.text, "pallet not named in the GCS file: refused (not just a warning)")
     r = c.post("/api/v1/picklists/CHN-GCS-13/load", headers=SL, json={"scanned": "CHN-P014"})

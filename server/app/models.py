@@ -258,6 +258,7 @@ class PickList(Base):
     __tablename__ = "picklists"
     picklist_no: Mapped[str] = mapped_column(String(40), primary_key=True)
     linked_picklist: Mapped[str | None] = mapped_column(String(40), index=True)   # Dispatch Bench trip <-> its GCS loading sheet
+    link_mode: Mapped[str | None] = mapped_column(String(10))       # CARDS = every GCS part card is on the Bench trip; ADMIN = approved link request
     plant_code: Mapped[str] = mapped_column(ForeignKey("plants.code"), index=True)
     customer_code: Mapped[str] = mapped_column(String(20))
     transporter_code: Mapped[str | None] = mapped_column(String(20))
@@ -487,6 +488,38 @@ class LpnTxn(Base):
     message: Mapped[str | None] = mapped_column(String(300))
     created_by: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class BenchTripCard(Base):
+    """The PDI check sheet of a Dispatch Planning Bench trip, card by card: every part card the Bench has on the trip
+    (= picked and PDI passed). A card the Bench takes off the trip (PDI reject, replaced by an alternate) stays here with
+    removed_at, so a scan of it at loading is stopped and alerted."""
+    __tablename__ = "bench_trip_cards"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trip_no: Mapped[str] = mapped_column(String(40), index=True)          # AssetTrack pick list no of the Bench trip (DB-<plant>-<id>)
+    lpn_no: Mapped[str] = mapped_column(String(40), index=True)
+    part_no: Mapped[str | None] = mapped_column(String(40))
+    qty: Mapped[int | None] = mapped_column(Integer)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime)       # set when the Bench no longer has the card on the trip
+    __table_args__ = (UniqueConstraint("trip_no", "lpn_no", name="uq_bench_card"),)
+
+
+class GcsLinkRequest(Base):
+    """A GCS whose part cards do not prove its Bench trip (e.g. no cards in the file) is linked only on request:
+    a supervisor raises it, an admin approves or rejects it."""
+    __tablename__ = "gcs_link_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    gcs_picklist: Mapped[str] = mapped_column(String(40), index=True)
+    trip_no: Mapped[str] = mapped_column(String(40))
+    plant_code: Mapped[str] = mapped_column(String(10), index=True)
+    reason: Mapped[str | None] = mapped_column(String(250))
+    status: Mapped[str] = mapped_column(String(10), default="PENDING", index=True)   # PENDING APPROVED REJECTED
+    requested_by: Mapped[str | None] = mapped_column(String(40))
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    decided_by: Mapped[str | None] = mapped_column(String(40))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    decision_note: Mapped[str | None] = mapped_column(String(250))
 
 
 class ScanMiss(Base):

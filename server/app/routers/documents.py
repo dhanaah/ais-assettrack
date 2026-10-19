@@ -327,6 +327,8 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
         # Finish loading against a GCS: quantity = what was loaded; challan now; the GCS (made after invoicing) is the gate pass
         if scanned < 1:
             raise HTTPException(400, "Scan at least one pallet")
+        if k.dispatch_type in lpnsvc.PART_TYPES:
+            _pdi_gate(db, k)                     # Bench PDI check sheet = GCS, card by card - else no challan, no QR (hard stop)
         # loading vs the GCS file: part cards listed but not scanned / scanned but not listed (warning, recorded in the audit)
         exp = {g.lpn_no for g in db.query(models.GcsLpn).filter_by(picklist_no=no).all()}
         got = {r.lpn_no for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all()}
@@ -453,6 +455,182 @@ def challan_pdf(no: str, p: Principal = Depends(current_user), db: Session = Dep
     return FileResponse(path, media_type="application/pdf", filename=os.path.basename(path))
 
 
+def _pdi_gate(db, k):
+    """Hard stop (no override): challan and QR gate pass only when the Bench PDI check sheet and the GCS agree card by card."""
+    from .. import gcs as _gp
+    r = _gp.reconcile(db, k)
+    if not r["ok"]:
+        raise HTTPException(400, "PDI / GCS check not clean - no challan, no QR gate pass: " + "; ".join(r["issues"]))
+
+
+@router.get("/picklists/{no}/pdi-match")
+def pdi_match(no: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Card-by-card match of the Dispatch Bench PDI check sheet with the GCS (web GCS inbox / HHT loading)."""
+    from .. import gcs as _gp
+    k = db.get(models.PickList, no)
+    if not k:
+        raise HTTPException(404, "Not found")
+    p.require_plant(k.plant_code)
+    if k.status == "LINKED" and k.linked_picklist and db.get(models.PickList, k.linked_picklist):
+        k2 = db.get(models.PickList, k.linked_picklist)
+        if k2.status != "LINKED":
+            k = k2                                  # work on the record that is being loaded
+    r = _gp.reconcile(db, k)
+    loaded = {l.pallet_no for l in db.query(models.PickListLine).filter_by(picklist_no=k.picklist_no).all() if l.loaded_at}
+    pal_of = {g.lpn_no: g.pallet_no for g in db.query(models.GcsLpn).filter_by(picklist_no=k.picklist_no).all()}
+    for c in r["cards"]:
+        c["loaded"] = bool(c.get("lpn_no") and pal_of.get(c["lpn_no"]) in loaded)
+    reqs = db.query(models.GcsLinkRequest).filter((models.GcsLinkRequest.gcs_picklist == k.picklist_no) |
+                                                  (models.GcsLinkRequest.gcs_picklist == (k.linked_picklist or "-"))).order_by(models.GcsLinkRequest.id.desc()).all()
+    r["requests"] = [{c.name: getattr(x, c.name) for c in x.__table__.columns} for x in reqs]
+    r["vehicle_no"], r["customer_code"], r["status"] = k.vehicle_no, k.customer_code, k.status
+    r["invoices"] = sorted({i.invoice_no for i in db.query(models.PickListItem).filter_by(picklist_no=k.picklist_no).all() if i.invoice_no})
+    return r
+
+
+# ---------------------------------------------------------------- GCS <-> Bench trip: link request (supervisor) + approval (admin)
+class LinkReqIn(BaseModel):
+    trip_no: str
+    reason: str
+
+
+class DecideIn(BaseModel):
+    note: str | None = None
+
+
+def _gcs_sheet(db, no, p):
+    k = db.get(models.PickList, no)
+    if not k:
+        raise HTTPException(404, "Not found")
+    p.require_plant(k.plant_code)
+    if not lpnsvc.is_gcs(k):
+        raise HTTPException(400, "Not a GCS loading sheet")
+    return k
+
+
+@router.get("/picklists/{no}/trip-candidates")
+def trip_candidates(no: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Open Dispatch Bench trips of the plant a GCS could belong to (same vehicle first) - for a link request."""
+    from .. import gcs as _gp
+    k = _gcs_sheet(db, no, p)
+    out = []
+    for t in _gp._open_trips(db, k.plant_code):
+        cards = _gp.trip_cards(db, t.picklist_no)
+        out.append({"trip_no": t.picklist_no, "bench_ref": t.ext_ref, "vehicle_no": t.vehicle_no, "customer_code": t.customer_code,
+                    "cards": len(cards), "qty": sum(int(c.qty or 0) for c in cards.values()), "pdi_sign": t.pdi_sign,
+                    "same_vehicle": bool(k.vehicle_no and t.vehicle_no == k.vehicle_no), "created_at": t.created_at})
+    return sorted(out, key=lambda x: (not x["same_vehicle"], str(x["trip_no"])))
+
+
+@router.post("/picklists/{no}/link-request")
+def link_request(no: str, body: LinkReqIn, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Supervisor: ask to join a GCS (no part-card proof, e.g. a file without cards) with a Bench trip. Admin approves."""
+    if not (p.user.supervisor_allowed or p.has("GCS_LINK_REQUEST")):
+        raise HTTPException(403, "Only a supervisor (or GCS_LINK_REQUEST) can raise a link request")
+    k = _gcs_sheet(db, no, p)
+    if k.status != "OPEN" or k.linked_picklist:
+        raise HTTPException(400, f"GCS is {k.status}" + (f", already linked to {k.linked_picklist}" if k.linked_picklist else ""))
+    t = db.get(models.PickList, body.trip_no)
+    if not t or t.plant_code != k.plant_code or not lpnsvc.is_bench(t) or t.status in ("CANCELLED", "LINKED", "DISPATCHED", "CLOSED") or t.linked_picklist:
+        raise HTTPException(400, "Choose an open Dispatch Bench trip of this plant that is not linked yet")
+    if len((body.reason or "").strip()) < 5:
+        raise HTTPException(400, "Give the reason (why the GCS part cards cannot prove the trip)")
+    if db.query(models.GcsLinkRequest).filter_by(gcs_picklist=no, status="PENDING").count():
+        raise HTTPException(400, "A request for this GCS is already waiting for the admin")
+    r = models.GcsLinkRequest(gcs_picklist=no, trip_no=t.picklist_no, plant_code=k.plant_code, reason=body.reason.strip()[:250], requested_by=p.user_id)
+    db.add(r)
+    audit(db, p, "GCS_LINK_REQUEST", "picklist", no, None, {"trip": t.picklist_no, "reason": body.reason}, request)
+    db.commit()
+    return {c.name: getattr(r, c.name) for c in r.__table__.columns}
+
+
+@router.get("/link-requests")
+def link_requests(status: str | None = "PENDING", p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    q = db.query(models.GcsLinkRequest)
+    if p.plant:
+        q = q.filter(models.GcsLinkRequest.plant_code == p.plant)
+    if status:
+        q = q.filter(models.GcsLinkRequest.status == status.upper())
+    out = []
+    for x in q.order_by(models.GcsLinkRequest.id.desc()).limit(200).all():
+        d = {c.name: getattr(x, c.name) for c in x.__table__.columns}
+        g, t = db.get(models.PickList, x.gcs_picklist), db.get(models.PickList, x.trip_no)
+        d |= {"gcs_no": g.gcs_no if g else None, "gcs_vehicle": g.vehicle_no if g else None, "trip_vehicle": t.vehicle_no if t else None,
+              "bench_ref": t.ext_ref if t else None}
+        out.append(d)
+    return out
+
+
+@router.post("/link-requests/{rid}/{action}")
+def decide_link(rid: int, action: str, body: DecideIn, request: Request, p: Principal = Depends(need("GCS_LINK_APPROVE")),
+                db: Session = Depends(get_db)):
+    """Admin: approve (the GCS is joined with the trip, item totals still checked against the invoice) or reject."""
+    from .. import gcs as _gp
+    if action not in ("approve", "reject"):
+        raise HTTPException(404, "Not found")
+    r = db.get(models.GcsLinkRequest, rid)
+    if not r:
+        raise HTTPException(404, "Request not found")
+    p.require_plant(r.plant_code)
+    if r.status != "PENDING":
+        raise HTTPException(400, f"Request is already {r.status}")
+    if r.requested_by == p.user_id:
+        raise HTTPException(403, "The person who raised the request cannot approve it")
+    r.decided_by, r.decided_at, r.decision_note = p.user_id, models.utcnow(), (body.note or "")[:250] or None
+    if action == "reject":
+        r.status = "REJECTED"
+    else:
+        g, t = db.get(models.PickList, r.gcs_picklist), db.get(models.PickList, r.trip_no)
+        if not g or g.status != "OPEN" or g.linked_picklist:
+            raise HTTPException(400, "GCS is no longer open / already linked")
+        if not t or t.status in ("CANCELLED", "LINKED", "DISPATCHED", "CLOSED") or t.linked_picklist:
+            raise HTTPException(400, "Bench trip is no longer open / already linked")
+        _gp.link_bench_trip(db, g, trip=t, mode="ADMIN")
+        r.status = "APPROVED"
+    audit(db, p, "GCS_LINK_" + r.status, "picklist", r.gcs_picklist, None, {"trip": r.trip_no, "request": rid, "note": body.note}, request)
+    db.commit()
+    return {c.name: getattr(r, c.name) for c in r.__table__.columns}
+
+
+@router.post("/picklists/{no}/pdi-relink")
+def pdi_relink(no: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """Refresh match: try the automatic (all part cards) link again for an open GCS."""
+    from .. import gcs as _gp
+    k = _gcs_sheet(db, no, p)
+    t = _gp.link_bench_trip(db, k)
+    db.commit()
+    return {"linked_to": t}
+
+
+@router.post("/picklists/{no}/unlink")
+def unlink(no: str, request: Request, p: Principal = Depends(need("GCS_LINK_APPROVE")), db: Session = Depends(get_db)):
+    """Admin: undo a wrong GCS <-> trip link while nothing has been loaded on either."""
+    k = db.get(models.PickList, no)
+    if not k or not k.linked_picklist:
+        raise HTTPException(400, "Not linked")
+    p.require_plant(k.plant_code)
+    o = db.get(models.PickList, k.linked_picklist)
+    g, t = (k, o) if lpnsvc.is_gcs(k) else (o, k)
+    if not g or not t:
+        raise HTTPException(400, "Linked record not found")
+    for x in (g, t):
+        if db.query(models.PickListLine).filter_by(picklist_no=x.picklist_no).count() or x.challan_no:
+            raise HTTPException(400, f"{x.picklist_no} already has pallets loaded / a challan - unload it first")
+    for l in db.query(models.Lpn).filter_by(reserved_for=g.picklist_no, status="RESERVED").all():
+        l.reserved_for = t.picklist_no                       # part cards go back to the Bench trip
+    if t.gcs_no == g.gcs_no:
+        t.gcs_no = None
+        db.query(models.GcsLpn).filter_by(picklist_no=t.picklist_no).delete()
+        db.query(models.PickListItem).filter_by(picklist_no=t.picklist_no).delete()
+    for x in (g, t):
+        x.linked_picklist = None; x.link_mode = None
+        if x.status == "LINKED":
+            x.status = "OPEN"
+    audit(db, p, "GCS_UNLINK", "picklist", g.picklist_no, None, {"trip": t.picklist_no}, request)
+    db.commit()
+    return {"gcs": g.picklist_no, "trip": t.picklist_no, "unlinked": True}
+
+
 @router.post("/picklists/{no}/challan")
 def challan(no: str, request: Request, p: Principal = Depends(need("CHALLAN_REQUEST")), db: Session = Depends(get_db)):
     k = db.get(models.PickList, no)
@@ -463,6 +641,8 @@ def challan(no: str, request: Request, p: Principal = Depends(need("CHALLAN_REQU
         raise HTTPException(400, f"Challan Control: pick list is {k.status}, must be READY")
     if k.challan_no:
         raise HTTPException(400, f"Challan Control: already challaned ({k.challan_no})")
+    if (lpnsvc.is_bench(k) or lpnsvc.is_gcs(k)) and k.dispatch_type in lpnsvc.PART_TYPES:
+        _pdi_gate(db, k)                         # no challan to Oracle until the Bench PDI check sheet and the GCS agree
     plant = db.get(models.Plant, k.plant_code)
     if k.dispatch_type == "EMPTY_RETURN":     # only a challan (no SO / invoice); EBS generates challan + e-way bill
         ok, msg = _return_challan(db, k, p, request)
@@ -641,9 +821,14 @@ def _loading_row(db, k):
     pals += [{"pallet_no": x, "short": x, "loaded": False} for x in refs]
     loaded = sum(1 for x in pals if x["loaded"])
     expected = (len(exp) + len(refs)) or (k.qty if not lpnsvc.is_gcs(k) and not lpnsvc.is_bench(k) else 0) or None
+    pdi = {"pdi_ok": True, "pdi_msg": None}
+    if (lpnsvc.is_gcs(k) or lpnsvc.is_bench(k)) and k.dispatch_type in lpnsvc.PART_TYPES and k.status == "OPEN":
+        from .. import gcs as _gp
+        rc = _gp.reconcile(db, k)            # Bench PDI check sheet vs GCS: shown on the HHT, finish only when clean
+        pdi = {"pdi_ok": rc["ok"], "pdi_msg": None if rc["ok"] else "; ".join(rc["issues"]), "bench_trip": rc["trip_no"]}
     return {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "challan_no": k.challan_no, "vehicle_no": k.vehicle_no, "customer_code": k.customer_code,
             "to_plant": k.to_plant, "dispatch_type": k.dispatch_type, "status": k.status, "total": max(len(pals), expected or 0), "loaded": loaded,
-            "expected": expected, "can_finish": lpnsvc.is_gcs(k) and k.status == "OPEN" and loaded > 0, "pallets": pals}
+            "expected": expected, "can_finish": lpnsvc.is_gcs(k) and k.status == "OPEN" and loaded > 0 and pdi["pdi_ok"], "pallets": pals} | pdi
 
 
 @router.get("/loading")
@@ -693,6 +878,21 @@ def load_pallet(no: str, body: LoadIn, request: Request, p: Principal = Depends(
         audit(db, p, "QR_REGISTER_AT_LOADING", "pallet", pal.pallet_no, None, {"gcs": k.gcs_no, "linked_lines": linked}, request)
     l = db.query(models.PickListLine).filter_by(picklist_no=no, pallet_no=pal.pallet_no).first()
     alerts = []
+    if (lpnsvc.is_gcs(k) or lpnsvc.is_bench(k)) and k.dispatch_type in lpnsvc.PART_TYPES and not (l and l.loaded_at):
+        # PDI check sheet (Dispatch Bench) against the GCS: only PDI-passed, invoiced cards go on the vehicle
+        from .. import gcs as _gp
+        _gp.relink_pallet(db, pal); db.flush()
+        on_pal = [x.lpn_no for x in db.query(models.GcsLpn).filter_by(picklist_no=no, pallet_no=pal.pallet_no).all()]
+        named = db.query(models.GcsLpn).filter_by(picklist_no=no).count()
+        # a pallet the GCS does not name is refused below with "NOT in GCS / belongs to GCS ..."; here: the PDI check sheet
+        why = _gp.card_block(db, k, on_pal, pal.pallet_no) if (on_pal or not named) else None
+        if why:
+            lpnsvc.record_miss(db, pallet=pal, plant=k.plant_code, detected_at="VEHICLE_LOAD", missed_point="PDI_CHECK",
+                               expected=f"PDI passed + invoiced for GCS {k.gcs_no or no}", action="BLOCKED", user_id=p.user_id,
+                               current_ref=k.gcs_no or no, message=f"{services.short_ref(pal.pallet_no)}: {why}")
+            audit(db, p, "LOAD_BLOCKED_PDI", "picklist", no, None, {"pallet": pal.pallet_no, "why": why}, request)
+            db.commit()                         # the alert stays even though the load is refused
+            raise HTTPException(400, f"{services.short_ref(pal.pallet_no)}: {why}")
     if not l and k.status == "OPEN" and lpnsvc.is_gcs(k) and k.dispatch_type in lpnsvc.PART_TYPES and k.load_point != "YARD":
         from .. import gcs as _g
         _g.relink_pallet(db, pal); db.flush()      # pallet registered after the GCS file came: its GCS lines point at it now

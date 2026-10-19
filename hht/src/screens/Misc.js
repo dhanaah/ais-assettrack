@@ -113,12 +113,13 @@ export function VehicleLoad({ onBack }) {
   if (!k) return (<Screen><Header title="Vehicle loading" sub="Security · scan each pallet QR into the vehicle" onBack={onBack} /><Page onRefresh={load}>
     <View style={S.card}><Text style={S.mute}>Scan the GCS or challan QR of the vehicle, or pick it below</Text><ScanInput autoFocus={false} onScan={pick} placeholder="Scan GCS / challan QR" /></View>
     {lists.length === 0 ? <Empty icon="car-outline" text="No vehicle being loaded" hint="Scan the GCS made by the Dispatch Planning Bench to start loading." /> : null}
-    {lists.map((x) => <ListRow key={x.picklist_no} title={`${x.vehicle_no || '—'} · ${x.customer_code || x.to_plant || ''}`} sub={`GCS ${x.gcs_no || '-'} · challan ${x.challan_no || 'pending'}`} right={<Pill s={x.total && x.loaded >= x.total ? 'DONE' : 'PENDING'} label={`${x.loaded}/${x.total || '?'}`} />} onPress={() => setK(x)} />)}
+    {lists.map((x) => <ListRow key={x.picklist_no} title={`${x.vehicle_no || '—'} · ${x.customer_code || x.to_plant || ''}`} sub={`GCS ${x.gcs_no || '-'} · challan ${x.challan_no || 'pending'}${x.pdi_ok === false ? ' · ⛔ PDI / GCS check not clean' : ''}`} right={<Pill s={x.pdi_ok === false ? 'FAILED' : x.total && x.loaded >= x.total ? 'DONE' : 'PENDING'} label={`${x.loaded}/${x.total || '?'}`} />} onPress={() => setK(x)} />)}
     <Btn title="Refresh" secondary icon="refresh" onPress={load} /></Page><Toast msg={msg} /></Screen>);
   const left = k.pallets.filter((p) => !p.loaded);
   const fin = k.can_finish !== undefined ? k.can_finish : (k.status === 'OPEN' && !!k.gcs_no && k.loaded > 0);   // older servers do not send can_finish
   return (<Screen><Header title={`Loading ${k.vehicle_no || ''}`} sub={`GCS ${k.gcs_no || '-'} · ${k.loaded} of ${k.total || '?'} loaded`} onBack={() => { setK(null); load(); }} /><Page>
     {!['DISPATCHED', 'CANCELLED', 'CLOSED'].includes(k.status) ? <View style={S.card}><ScanInput onScan={onScan} placeholder="Scan the pallet QR" /></View> : null}
+    {k.pdi_ok === false ? <View style={[S.card, { borderLeftWidth: 5, borderLeftColor: C.warn }]}><Text style={[S.body, { color: C.warn, fontWeight: '700' }]}>⛔ Bench PDI check sheet and GCS do not agree - no challan, no QR gate pass</Text><Text style={S.mute}>{k.pdi_msg}</Text></View> : null}
     {fin ? <Btn title={`Finish loading (${k.loaded}${k.expected ? ' of ' + k.expected : ''})`} icon="checkmark-done" onPress={finish} disabled={busy} /> : null}
     {!fin && k.loaded > 0 && left.length === 0 ? <Text style={[S.body, { textAlign: 'center', fontWeight: '700', color: C.ok, marginVertical: 8 }]}>All {k.loaded} pallet(s) loaded - send the vehicle to the OUT gate</Text> : left.length ? <Text style={S.h2}>To load ({left.length})</Text> : null}
     {left.map((p) => <ListRow key={p.pallet_no} big title={p.short} sub={p.pallet_no} right={<Pill s="PENDING" />} />)}

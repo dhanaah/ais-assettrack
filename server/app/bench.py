@@ -83,6 +83,26 @@ def customer_for(cfg, bench_code: str) -> str:
 PLANT_KEYS = ("ais_plant", "aisplant", "plant_code", "from_plant", "source_plant", "dispatch_plant", "ship_from", "org_code", "organization", "warehouse")
 
 
+def sync_trip_cards(db: Session, trip_no: str, picks: dict) -> bool:
+    """Keep the trip's PDI check sheet (BenchTripCard) equal to the Bench: new cards added, cards the Bench took off
+    marked removed (PDI reject / alternate), a card put back made active again. Returns True when anything changed."""
+    have = {c.lpn_no: c for c in db.query(models.BenchTripCard).filter_by(trip_no=trip_no).all()}
+    changed = False
+    for lpn, pr in picks.items():
+        q = int(float(pr.get("qty") or 0))
+        c = have.get(lpn)
+        if c is None:
+            db.add(models.BenchTripCard(trip_no=trip_no, lpn_no=lpn, part_no=(pr.get("item_code") or None), qty=q)); changed = True
+        elif c.removed_at is not None or c.qty != q or (pr.get("item_code") and c.part_no != pr.get("item_code")):
+            c.removed_at = None; c.qty = q; c.part_no = pr.get("item_code") or c.part_no; changed = True
+    for lpn, c in have.items():
+        if lpn not in picks and c.removed_at is None:
+            c.removed_at = utcnow(); changed = True
+    if changed:
+        db.flush()
+    return changed
+
+
 def plant_for(db: Session, cfg: dict, d: dict) -> str | None:
     """AIS plant of a Bench dispatch (plant-wise planning on one Bench): a plant field of the dispatch, translated by
     bench_plant_map ('3001=CHN;CHENNAI=CHN;TALOJA=TLJ') or taken as it is when it is an AssetTrack plant code; otherwise
@@ -110,7 +130,7 @@ def pull(db: Session, fetch=None) -> dict:
         if not cfg["bench_url"] or not cfg["bench_user"]:
             raise RuntimeError("Dispatch Bench link not configured (URL / user)")
         fetch = lambda path: _get(cfg, path)
-    created = updated = n_lpn = no_plant = 0; per_plant = {}
+    created = updated = n_lpn = no_plant = 0; per_plant = {}; changed_trips: set[str] = set()
     disp = fetch("/api/dispatches/recent?limit=300").get("dispatches", [])
     for d in disp:
         did = str(d.get("id") or d.get("dispatch_id"))
@@ -140,14 +160,19 @@ def pull(db: Session, fetch=None) -> dict:
         pk = (db.query(models.PickList).filter(models.PickList.plant_code == plant, models.PickList.ext_ref == did,
                                                models.PickList.source.in_(["DISPATCH_BENCH", "HMIL_BENCH"])).first())
         no = pk.picklist_no if pk else f"DB-{plant}-{did}"
-        if pk and pk.status not in ("OPEN",):
-            continue                 # already confirmed / dispatched in AssetTrack: frozen
+        if pk and pk.status in ("DISPATCHED", "CLOSED", "CANCELLED"):
+            continue                 # gone out / closed in AssetTrack: frozen
         picks = fetch(f"/api/picks?dispatch_id={did}").get("picks", [])
         lp = {}
         for pr in picks:
             lpn = (pr.get("picked_lpn") or "").strip()
             if lpn:
                 lp[lpn] = pr        # last pick wins (repicks replace)
+        if pk:
+            if sync_trip_cards(db, no, lp):          # the PDI check sheet changed (e.g. reject -> alternate card)
+                changed_trips.add(no)
+            if pk.status != "OPEN":
+                continue             # loaded / linked: the card list is kept current, the rest is frozen
         if not pk:
             pk = models.PickList(picklist_no=no, plant_code=plant, customer_code=customer_for(cfg, bench_customer(d)), dispatch_type="CUSTOMER",
                                  source="DISPATCH_BENCH", ext_ref=did, qty=0, part_qty=0, status="OPEN", created_by="DISPATCH_BENCH",
@@ -176,9 +201,15 @@ def pull(db: Session, fetch=None) -> dict:
         for l in db.query(models.Lpn).filter_by(reserved_for=no, status="RESERVED").all():
             if l.lpn_no not in lp:
                 l.status, l.reserved_for, l.reserved_at = "AVAILABLE", None, None
+        if sync_trip_cards(db, no, lp):
+            changed_trips.add(no)
         bound = sum(r.qty for r in db.query(models.PickListLpn).filter_by(picklist_no=no).all())
         pk.part_qty = max(total, bound)
         pk.qty = max(pk.qty or 0, db.query(models.PickListLine).filter_by(picklist_no=no).count(), 1)
+    db.flush()
+    if changed_trips:                                # a new / changed Bench trip may now prove an open GCS (link from both sides)
+        from . import gcs as gcssvc
+        gcssvc.relink_open(db, plants={db.get(models.PickList, t).plant_code for t in changed_trips if db.get(models.PickList, t)})
     db.commit()
     err = (f"{no_plant} dispatch(es) without a known AIS plant - set the plant map or default plant" if no_plant else None)
     _state.update(last_ok=utcnow(), last_error=err, created=created, updated=updated, lpns=n_lpn, plants=per_plant, no_plant=no_plant)

@@ -269,8 +269,17 @@ with TestClient(app) as c:
     check(e1["status"] != "REJECTED" and e2["status"] != "REJECTED", f"2 Bench LPN bound to one pallet: {e2['result'][:60]}")
     r = c.post("/api/v1/picklists/DB-CHN-501/confirm", headers=H).json()
     check(r["status"] == "READY", "Bench trip skips AssetTrack PDI/SO -> READY")
+    r = c.post("/api/v1/picklists/DB-CHN-501/challan", headers=W)
+    check(r.status_code == 400 and "No GCS" in r.text, f"no challan before the GCS (invoice / gate pass) of the trip: {r.text[:90]}")
+    from app import gcs as _g13
+    with SessionLocal() as db:
+        _g13.apply_gcs(db, "CHN", {"gcs_no": "GCS/501", "vehicle_no": "TN22X9", "customer_code": "HMIL"}, "t",
+                       [{"lpn_no": "F.1.BL1", "invoice_no": "INV-501", "part_no": "WS-9", "part_qty": 20},
+                        {"lpn_no": "F.1.BL2", "invoice_no": "INV-502", "part_no": "DR-3", "part_qty": 30}]); db.commit()
+    m = c.get("/api/v1/picklists/DB-CHN-501/pdi-match", headers=W).json()
+    check(m["ok"] and m["counts"]["ok"] == 2 and m["link_mode"] == "CARDS", f"GCS (2 invoices) linked by its part cards, PDI check sheet = GCS: {m['issues']}")
     r = c.post("/api/v1/picklists/DB-CHN-501/challan", headers=W).json()
-    check(r.get("challan_no"), f"challan {r.get('challan_no')} without EBS invoice wait")
+    check(r.get("challan_no"), f"challan {r.get('challan_no')} once Bench PDI and GCS agree (no EBS invoice wait)")
     z = c.get("/api/v1/zones", headers=H).json()
     check("FGWH" in z["zones"], f"zone view: {z['zones']}")
     print("14. Empty pallet return loaded at the Pallet Yard")
@@ -379,6 +388,26 @@ with TestClient(app) as c:
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no, "scanned": "PC-000123", "pallet": "CHN-P032"})
     check(e["status"] in ("APPLIED", "EXCEPTION") and "PC-000123" in e["result"], f"unknown part card + pallet loaded: {e['result'][:60]}")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no, "scanned": "CHN-P033"})
+    r = c.post(f"/api/v1/picklists/{no}/confirm", headers=H)
+    check(r.status_code == 400 and "no QR" in r.text and "part cards" in r.text, f"GCS without part cards and no Bench trip: HARD STOP, no challan / QR: {r.text[:100]}")
+    from app import bench as _b17
+    with SessionLocal() as db:
+        _b17.pull(db, fetch=lambda path: {"/api/dispatches/recent?limit=300": {"dispatches": [{"id": 1781, "trip_id": 81, "plant": "HVF1", "vehicle": "TN09AB1234", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()}]},
+                                          "/api/picks?dispatch_id=1781": {"picks": [{"picked_lpn": "BL81", "item_code": "WS-1", "qty": 60, "sub_inv": "HMIL-FG"}]}}[path]); db.commit()
+    with SessionLocal() as db:
+        lnk = db.get(models.PickList, no).linked_picklist
+    check(lnk is None, "same vehicle alone never links a GCS automatically")
+    cand = c.get(f"/api/v1/picklists/{no}/trip-candidates", headers=W).json()
+    check(cand and cand[0]["trip_no"] == "DB-CHN-1781" and cand[0]["same_vehicle"], f"link request offers the Bench trips, same vehicle first: {[x['trip_no'] for x in cand][:3]}")
+    r = c.post(f"/api/v1/picklists/{no}/link-request", headers=W, json={"trip_no": "DB-CHN-1781", "reason": "GCS file without part cards"})
+    check(r.status_code == 200 and r.json()["status"] == "PENDING", "supervisor raises the link request")
+    rid = r.json()["id"]
+    check(c.post(f"/api/v1/link-requests/{rid}/approve", headers=W, json={}).status_code == 403, "the requester cannot approve own request")
+    check(len(c.get("/api/v1/link-requests", headers=A).json()) >= 1, "admin sees the waiting request")
+    r = c.post(f"/api/v1/link-requests/{rid}/approve", headers=A, json={"note": "checked with WH"})
+    check(r.status_code == 200 and r.json()["status"] == "APPROVED", f"admin approves -> GCS joined with the trip: {r.text[:80]}")
+    m = c.get(f"/api/v1/picklists/{no}/pdi-match", headers=W).json()
+    check(m["ok"] and m["link_mode"] == "ADMIN" and m["trip_no"] == "DB-CHN-1781", f"approved link: item totals Bench = invoice (WS-1 x 60): {m['issues']}")
     r = c.post(f"/api/v1/picklists/{no}/confirm", headers=H).json()
     check(r["status"] == "APPROVED" and r["challan_no"] and r["gcs_qr"].startswith("AIS1|GCS|GCS-CHN-7781|CHN|HMIL|TN09AB1234|3|"), f"finish loading -> challan {r.get('challan_no')} + signed GCS QR, ready for the gate")
     qr = r["gcs_qr"]
@@ -497,6 +526,14 @@ with TestClient(app) as c:
     k2 = c.get("/api/v1/picklists/GCS-CHN-FGCHN262712823", headers=W).json()["picklist"]
     check(k2["qty"] == 2 and k2["customer_name"].startswith("RENOVA NISHA") and k2["invoice_no"] == "604118430 +1", "12823: 2 invoices, 2 pallets, customer name kept")
     no20 = "GCS-CHN-FGCHN262712814"
+    cards20 = ["P10266528972", "P10266528883", "P10266528885", "P10266530728", "P10266528952", "P10266528888"]
+    from app import bench as _b20
+    with SessionLocal() as db:                  # the Bench PDI check sheet of this vehicle arrives after the GCS file
+        _b20.pull(db, fetch=lambda path: {"/api/dispatches/recent?limit=300": {"dispatches": [{"id": 2001, "trip_id": 201, "plant": "HVF1", "vehicle": "TN99Z1498", "dispatch_status": "Completed", "sent_at": datetime.now().isoformat()}]},
+                                          "/api/picks?dispatch_id=2001": {"picks": [{"picked_lpn": x, "item_code": "FG.KS3.SRA.Y003900000", "qty": 120} for x in cards20]}}[path]); db.commit()
+    m = c.get(f"/api/v1/picklists/{no20}/pdi-match", headers=W).json()
+    check(m["trip_no"] == "DB-CHN-2001" and m["link_mode"] == "CARDS" and m["ok"] and m["counts"]["ok"] == 6,
+          f"Bench trip arriving AFTER the GCS links it (all 6 cards on the PDI check sheet): {m['trip_no']} {m['issues']}")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "AIS-CHN-F-02948-0010001"})
     check(e["status"] == "APPLIED" and "P10266528972" in e["result"], f"pallet QR scanned -> its part card from the GCS picked automatically: {e['result'][:70]}")
     e = ev(c, H, "PALLET_SCAN_DOCK", {"picklist_no": no20, "scanned": "F.3655.P10266528883"})
