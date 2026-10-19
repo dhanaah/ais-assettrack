@@ -91,7 +91,20 @@ Windows login and a SQL Server on **another** server: the app pool signs in as t
 - Logs: `C:\AssetTrack_IIS\server\logs` (server log and `iis_stdout*`).
 - HTTPS: add an HTTPS binding with the AIS internal certificate in IIS Manager (recommended - see the approval report).
 
-## 7. Running both
+## 7. Dispatch Planning Bench on the same SQL Server (read the Bench from SQL)
+When the Bench runs on SQL Server too (its own database, e.g. `BenchDB`), AssetTrack can read it straight from there instead of the Bench web server:
+1. The Bench creates two views in its database: `dbo.assettrack_trips` and `dbo.assettrack_trip_cards`.
+   Columns and meanings: `server\sql\bench_views_contract.sql` (part 1).
+2. The DBA gives the AssetTrack login (`IIS APPPOOL\AssetTrack`, the server's computer account, or `pallet_app`) **SELECT on those two views only**
+   (same file, part 2). AssetTrack never writes into the Bench database.
+3. Web page Masters › Dispatch Bench link: *Read the Bench from* = **SQL**, *Bench SQL database* = `BenchDB`
+   (Bench SQL Server blank = the same SQL Server and login as AssetTrack) › Save › **Test SQL read** › **Pull now**.
+4. Keep the Bench URL / user filled in: if the SQL read fails, that pull uses the Bench web server and the page shows the error.
+
+Card PDI result from the Bench: **OK** loads, **HOLD** (rework) stays on the trip but is stopped at loading until it becomes OK,
+**REJECT** is off the trip for good (scanning it gives STOP with the reject reason).
+
+## 8. Running both
 The tray server (SQLite) and the IIS server (SQL Server) are independent installations with their own data.
 Point each HHT at one of them (setup QR). After the data has been brought over (step 3), use the IIS server for
 day-to-day work and keep the tray server stopped, or keep it as a stand-by / training server.

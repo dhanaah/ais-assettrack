@@ -19,6 +19,13 @@ class BenchIn(BaseModel):
     bench_customer_map: str | None = None
     bench_interval_sec: int | None = 60
     bench_days: int | None = 3
+    bench_source: str | None = "API"            # API (Bench web server) | SQL (read-only from the Bench SQL Server views)
+    bench_sql_server: str | None = None         # blank = the SQL Server AssetTrack itself uses (same login)
+    bench_sql_database: str | None = None
+    bench_sql_user: str | None = None           # blank = Windows login (IIS app pool / tray user)
+    bench_sql_password: str | None = None       # blank = keep current
+    bench_sql_trips_view: str | None = None
+    bench_sql_cards_view: str | None = None
 
 
 @router.get("/dispatch-bench")
@@ -27,7 +34,9 @@ def get_bench(p: Principal = Depends(current_user), db: Session = Depends(get_db
     if not (p.has("INTEGRATION_CONFIG") or p.has("REPORTS_ALL") or p.has("REPORTS_PLANT")):
         raise HTTPException(403, "Not allowed")
     cfg = bench.get_settings(db)
-    cfg["bench_password"] = "••••••" if cfg.get("bench_password") else ""
+    for key in bench.SECRET_KEYS:
+        cfg[key] = "••••••" if cfg.get(key) else ""
+    cfg.pop("bench_sql_url", None)
     return {"settings": cfg, "status": bench.status()}
 
 
@@ -37,8 +46,16 @@ def save_bench(body: BenchIn, request: Request, p: Principal = Depends(need("INT
     d = body.model_dump()
     if d.get("bench_plant"):
         d["bench_plant"] = d["bench_plant"].upper()
+    d["bench_source"] = (d.get("bench_source") or "API").upper()
+    if d["bench_source"] not in ("API", "SQL"):
+        raise HTTPException(400, "Bench source must be API or SQL")
+    for key in ("bench_sql_trips_view", "bench_sql_cards_view"):
+        if d.get(key) and not bench._IDENT.match(d[key].strip()):
+            raise HTTPException(400, f"View name not valid: {d[key]}")
+    if d["bench_source"] == "SQL" and not (d.get("bench_sql_database") or bench.get_settings(db).get("bench_sql_database")):
+        raise HTTPException(400, "Bench SQL database name is needed for the SQL way")
     bench.save_settings(db, d)
-    audit(db, p, "BENCH_SETTINGS", "settings", "dispatch-bench", None, body.model_dump(exclude={"bench_password"}), request)
+    audit(db, p, "BENCH_SETTINGS", "settings", "dispatch-bench", None, body.model_dump(exclude=set(bench.SECRET_KEYS)), request)
     db.commit()
     return {"ok": True}
 
@@ -54,6 +71,15 @@ def pull_now(request: Request, p: Principal = Depends(need("INTEGRATION_CONFIG")
     audit(db, p, "BENCH_PULL", "settings", "dispatch-bench", None, res, request)
     db.commit()
     return res
+
+
+@router.post("/dispatch-bench/test-sql")
+def test_sql(p: Principal = Depends(need("INTEGRATION_CONFIG")), db: Session = Depends(get_db)):
+    """Can AssetTrack read the two Bench views with the saved settings? (read only)"""
+    try:
+        return bench.sql_test(bench.get_settings(db))
+    except Exception as e:
+        raise HTTPException(502, f"Bench SQL read failed: {str(e)[:300]}")
 
 
 # ---------------------------------------------------------------- GCS inbox (FTP)

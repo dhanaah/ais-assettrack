@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.32.0 - 2026-10-19 (HHT unchanged 2.23.0) - read the Dispatch Planning Bench from SQL Server (requested by DT)
+- **Second way to read the Bench:** when the Bench runs on SQL Server, AssetTrack reads it directly, **read only**, from two fixed views the Bench publishes (`assettrack_trips`, `assettrack_trip_cards`). Column contract and the read-rights script: `server/sql/bench_views_contract.sql`. The Bench can change its own tables freely; only the two views stay fixed.
+- Same SQL Server as AssetTrack, separate database: only the Bench database name is needed (same login). Another server / SQL login can be given too.
+- **The Bench API stays** (portable / SQLite Bench) and is the automatic **fallback**: if the SQL read fails, that pull uses the API and the page shows why.
+- **Card PDI result OK / HOLD / REJECT:** OK goes on the vehicle; **HOLD** (rework) stays on the trip, is reserved, but is **stopped at loading** and blocks challan / QR if it is invoiced - once the Bench reworks it to OK it loads normally; a HOLD card not in the GCS stays back and does not block. **REJECT** is final: kept on record with its reason, never reserved, a scan gives STOP with the reject reason.
+- Web: Dispatch Bench link page - *Read the Bench from* (API / SQL), SQL database / server / login, view names, **Test SQL read**; last pull shows which way was used. PDI match panel shows HOLD and the reject / hold reason.
+- Same check suites run the SQL read against real views on SQLite and on SQL Server 2022 (CI).
+
 ## Server 1.31.0 / HHT 2.23.0 - 2026-10-19 - strict Bench PDI check sheet ↔ GCS (FTP) matching (requested by DT)
 - **Match by part cards only.** A GCS is linked to a Dispatch Planning Bench trip automatically only when EVERY part card in the GCS is on exactly one open Bench trip's PDI check sheet. The old "same vehicle" automatic link is removed.
 - **PDI result = OK or Reject.** Cards on the Bench trip are PDI passed. When the Bench rejects a card and adds an alternate, AssetTrack sees the new card list on the next Bench pull and keeps the removed card on record.

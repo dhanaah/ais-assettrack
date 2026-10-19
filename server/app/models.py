@@ -493,7 +493,8 @@ class LpnTxn(Base):
 class BenchTripCard(Base):
     """The PDI check sheet of a Dispatch Planning Bench trip, card by card: every part card the Bench has on the trip
     (= picked and PDI passed). A card the Bench takes off the trip (PDI reject, replaced by an alternate) stays here with
-    removed_at, so a scan of it at loading is stopped and alerted."""
+    removed_at, so a scan of it at loading is stopped and alerted. A card on PDI HOLD stays on the trip but may not be
+    loaded until the Bench reworks it to OK."""
     __tablename__ = "bench_trip_cards"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trip_no: Mapped[str] = mapped_column(String(40), index=True)          # AssetTrack pick list no of the Bench trip (DB-<plant>-<id>)
@@ -502,6 +503,8 @@ class BenchTripCard(Base):
     qty: Mapped[int | None] = mapped_column(Integer)
     added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime)       # set when the Bench no longer has the card on the trip
+    pdi_status: Mapped[str | None] = mapped_column(String(10))          # OK | HOLD (rework, may become OK) | REJECT (final, removed); None = OK
+    pdi_reason: Mapped[str | None] = mapped_column(String(200))         # reject / hold reason from the Bench
     __table_args__ = (UniqueConstraint("trip_no", "lpn_no", name="uq_bench_card"),)
 
 

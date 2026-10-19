@@ -575,7 +575,7 @@ def reconcile(db: Session, k: models.PickList) -> dict:
     out = {"picklist_no": k.picklist_no, "gcs_no": k.gcs_no, "trip_no": t.picklist_no if t else None,
            "bench_ref": (t.ext_ref if t else None), "link_mode": (t.link_mode if t else None) or k.link_mode,
            "pdi_sign": (t.pdi_sign if t else None) or k.pdi_sign, "cards": [], "issues": [], "ok": False,
-           "counts": {"ok": 0, "not_pdi": 0, "removed": 0, "not_invoiced": 0, "differs": 0}}
+           "counts": {"ok": 0, "not_pdi": 0, "removed": 0, "not_invoiced": 0, "differs": 0, "hold": 0}}
     if t is None:
         out["issues"].append("No Dispatch Bench PDI check sheet matches this GCS (every GCS part card must be on one Bench trip)"
                              if gcs else "GCS file has no part cards - link it to its Bench trip by a link request (admin approval)")
@@ -590,6 +590,10 @@ def reconcile(db: Session, k: models.PickList) -> dict:
         if c is None:
             row["status"] = "REMOVED" if lpn in rem else "NOT_PDI"
             out["counts"]["removed" if lpn in rem else "not_pdi"] += 1
+            if lpn in rem:
+                row.update(removed_at=rem[lpn].removed_at, pdi_status=rem[lpn].pdi_status, pdi_reason=rem[lpn].pdi_reason)
+        elif (c.pdi_status or "OK") == "HOLD":         # invoiced, but PDI on hold (rework) - may not go until the Bench says OK
+            row.update(status="HOLD", pdi_reason=c.pdi_reason); out["counts"]["hold"] += 1
         elif (r.part_no and c.part_no and r.part_no != c.part_no) or (r.qty and c.qty and int(r.qty) != int(c.qty)):
             row["status"] = "DIFFERS"; out["counts"]["differs"] += 1
         else:
@@ -598,6 +602,10 @@ def reconcile(db: Session, k: models.PickList) -> dict:
     if gcs:
         for lpn, c in act.items():
             if lpn not in gcs:
+                if (c.pdi_status or "OK") == "HOLD":    # on hold and not invoiced: not on this vehicle - shown, does not block
+                    out["cards"].append({"lpn_no": lpn, "pallet": None, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
+                                         "status": "HOLD_OUT", "pdi_reason": c.pdi_reason})
+                    continue
                 out["cards"].append({"lpn_no": lpn, "pallet": None, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
                                      "status": "NOT_INVOICED"}); out["counts"]["not_invoiced"] += 1
     elif not (t.link_mode == "ADMIN" or (k.source == "GCS" and k.linked_picklist)):
@@ -609,6 +617,10 @@ def reconcile(db: Session, k: models.PickList) -> dict:
             inv[it.part_no] = inv.get(it.part_no, 0) + int(it.qty or 0)
         ben = {}
         for c in act.values():
+            if (c.pdi_status or "OK") == "HOLD":
+                out["counts"]["hold"] += 1
+                out["cards"].append({"lpn_no": c.lpn_no, "bench_part": c.part_no, "bench_qty": c.qty, "status": "HOLD", "pdi_reason": c.pdi_reason})
+                continue
             ben[c.part_no] = ben.get(c.part_no, 0) + int(c.qty or 0)
         for part in sorted(set(inv) | set(ben), key=str):
             st = "OK" if inv.get(part) == ben.get(part) else "DIFFERS"
@@ -617,7 +629,8 @@ def reconcile(db: Session, k: models.PickList) -> dict:
                                  "bench_qty": ben.get(part), "status": st})
     for lpn, c in rem.items():
         if lpn not in gcs:
-            out["cards"].append({"lpn_no": lpn, "bench_part": c.part_no, "bench_qty": c.qty, "removed_at": c.removed_at, "status": "REMOVED"})
+            out["cards"].append({"lpn_no": lpn, "bench_part": c.part_no, "bench_qty": c.qty, "removed_at": c.removed_at, "status": "REMOVED",
+                                 "pdi_status": c.pdi_status, "pdi_reason": c.pdi_reason})
     n = out["counts"]
     if n["not_pdi"]:
         out["issues"].append(f"{n['not_pdi']} GCS card(s) not on the Bench PDI check sheet")
@@ -627,6 +640,8 @@ def reconcile(db: Session, k: models.PickList) -> dict:
         out["issues"].append(f"{n['not_invoiced']} card(s) PDI passed but not in the GCS (not invoiced) - remove from the trip in the Bench or re-issue the GCS")
     if n["differs"]:
         out["issues"].append(f"{n['differs']} line(s) item / qty differ between Bench and GCS")
+    if n["hold"]:
+        out["issues"].append(f"{n['hold']} invoiced card(s) on PDI HOLD (rework) - wait for PDI OK in the Bench, or reject it there and re-issue the GCS")
     out["ok"] = not out["issues"]
     return out
 
@@ -639,10 +654,16 @@ def card_block(db: Session, k: models.PickList, lpn_nos: list[str], pallet_no: s
     act, rem = trip_cards(db, t.picklist_no), trip_cards(db, t.picklist_no, active=False)
     cards = set(lpn_nos)
     if pallet_no:
-        cards |= {x.lpn_no for x in db.query(models.Lpn).filter_by(pallet_no=pallet_no).all() if x.lpn_no in rem}
-    bad = [c for c in cards if c in rem and c not in act]
+        cards |= {x.lpn_no for x in db.query(models.Lpn).filter_by(pallet_no=pallet_no).all() if x.lpn_no in rem or x.lpn_no in act}
+    bad = sorted(c for c in cards if c in rem and c not in act)
     if bad:
-        return f"STOP: card {', '.join(sorted(bad)[:3])} was removed from the trip by the Bench (PDI reject / alternate) - keep it off the vehicle"
+        why = next((rem[c].pdi_reason for c in bad if rem[c].pdi_reason), None)
+        how = "rejected at PDI" if any(rem[c].pdi_status == "REJECT" for c in bad) else "removed from the trip by the Bench (PDI reject / alternate)"
+        return f"STOP: card {', '.join(bad[:3])} was {how}{' - ' + why if why else ''} - keep it off the vehicle"
+    held = sorted(c for c in cards if c in act and (act[c].pdi_status or "OK") == "HOLD")
+    if held:
+        why = next((act[c].pdi_reason for c in held if act[c].pdi_reason), None)
+        return f"STOP: card {', '.join(held[:3])} is on PDI HOLD (rework){' - ' + why if why else ''} - not to be loaded until PDI OK in the Bench"
     if t.link_mode != "ADMIN":
         notpdi = [c for c in lpn_nos if c not in act]
         if notpdi:
