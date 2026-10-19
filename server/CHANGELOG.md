@@ -1,4 +1,8 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.32.1 - 2026-10-19 (HHT unchanged 2.23.0) - helper hints on the web pages (requested by DT)
+- Form fields can now carry a short helper line under the field and an ⓘ tip on the label, kept small and grey so the page stays clean. First used on the Dispatch Bench link page (every setting says what it is for and when to leave it blank) and on the PDI match buttons (Refresh match, Request link, Unlink).
+- Forms with helper lines are top-aligned, so fields line up; the Bench page intro is shorter. Contents otherwise as 1.32.0.
+
 ## Server 1.32.0 - 2026-10-19 (HHT unchanged 2.23.0) - read the Dispatch Planning Bench from SQL Server (requested by DT)
 - **Second way to read the Bench:** when the Bench runs on SQL Server, AssetTrack reads it directly, **read only**, from two fixed views the Bench publishes (`assettrack_trips`, `assettrack_trip_cards`). Column contract and the read-rights script: `server/sql/bench_views_contract.sql`. The Bench can change its own tables freely; only the two views stay fixed.
 - Same SQL Server as AssetTrack, separate database: only the Bench database name is needed (same login). Another server / SQL login can be given too.
