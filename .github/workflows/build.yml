@@ -263,10 +263,28 @@ jobs:
       - name: IIS and the IIS module
         shell: powershell
         run: |
+          $ErrorActionPreference = "Continue"
           Install-WindowsFeature Web-Server, Web-Mgmt-Console | Out-Null
-          if ("${{ matrix.module }}" -eq "httpplatformhandler") { choco install httpplatformhandler -y --no-progress }
-          else { choco install dotnet-8.0-windowshosting -y --no-progress }
-          if ($LASTEXITCODE -and $LASTEXITCODE -ne 3010) { exit 1 }
+          $hph = Join-Path $env:windir "System32\inetsrv\httpPlatformHandler.dll"
+          $ancm = Join-Path $env:ProgramFiles "IIS\Asp.Net Core Module\V2\aspnetcorev2.dll"
+          $want = if ("${{ matrix.module }}" -eq "httpplatformhandler") { $hph } else { $ancm }
+          $pkg = if ("${{ matrix.module }}" -eq "httpplatformhandler") { "httpplatformhandler" } else { "dotnet-8.0-windowshosting" }
+          $out = choco install $pkg -y --no-progress 2>&1; $out | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
+          if (-not (Test-Path $want)) {                     # once more, forced (runner images change)
+            Write-Host "module not found after choco - retry forced"
+            $out = choco install $pkg -y --no-progress --force 2>&1; $out | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
+          }
+          if (-not (Test-Path $want) -and "${{ matrix.module }}" -ne "httpplatformhandler") {   # official Microsoft download
+            Write-Host "ASP.NET Core hosting bundle from aka.ms"
+            Invoke-WebRequest "https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe" -OutFile "$env:TEMP\hosting.exe" -UseBasicParsing
+            Start-Process "$env:TEMP\hosting.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait
+          }
+          if (-not (Test-Path $want)) {
+            $log = Get-Content "C:\ProgramData\chocolatey\logs\chocolatey.log" -Tail 40 -ErrorAction SilentlyContinue
+            Write-Output ("::error::IIS module $pkg not installed on this runner (" + [Environment]::OSVersion.VersionString + ")%0A" + (($out | Select-Object -Last 20) + $log -join "%0A"))
+            exit 1
+          }
+          Write-Host "IIS module ok: $want"
           iisreset | Out-Null
           exit 0
       - name: SQL Server Express and ODBC Driver 18
