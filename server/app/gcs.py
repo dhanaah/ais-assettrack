@@ -466,6 +466,13 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
 BENCH_SOURCES = ("DISPATCH_BENCH", "HMIL_BENCH")
 
 
+WAITING = ("HOLD", "PENDING")      # on the trip but not loadable: PDI on hold (rework) / not inspected yet
+
+
+def _wait_word(st):
+    return "PDI not done yet" if st == "PENDING" else "PDI HOLD (rework)"
+
+
 def trip_cards(db: Session, trip_no: str, active: bool = True) -> dict:
     """PDI check sheet of a Bench trip: {card: BenchTripCard}; active = on the trip now (PDI passed), else removed ones."""
     q = db.query(models.BenchTripCard).filter_by(trip_no=trip_no)
@@ -592,8 +599,8 @@ def reconcile(db: Session, k: models.PickList) -> dict:
             out["counts"]["removed" if lpn in rem else "not_pdi"] += 1
             if lpn in rem:
                 row.update(removed_at=rem[lpn].removed_at, pdi_status=rem[lpn].pdi_status, pdi_reason=rem[lpn].pdi_reason)
-        elif (c.pdi_status or "OK") == "HOLD":         # invoiced, but PDI on hold (rework) - may not go until the Bench says OK
-            row.update(status="HOLD", pdi_reason=c.pdi_reason); out["counts"]["hold"] += 1
+        elif (c.pdi_status or "OK") in WAITING:       # invoiced, but PDI on hold / not done - may not go until Accepted
+            row.update(status=c.pdi_status, pdi_reason=c.pdi_reason); out["counts"]["hold"] += 1
         elif (r.part_no and c.part_no and r.part_no != c.part_no) or (r.qty and c.qty and int(r.qty) != int(c.qty)):
             row["status"] = "DIFFERS"; out["counts"]["differs"] += 1
         else:
@@ -602,9 +609,9 @@ def reconcile(db: Session, k: models.PickList) -> dict:
     if gcs:
         for lpn, c in act.items():
             if lpn not in gcs:
-                if (c.pdi_status or "OK") == "HOLD":    # on hold and not invoiced: not on this vehicle - shown, does not block
+                if (c.pdi_status or "OK") in WAITING:   # on hold / not inspected and not invoiced: stays back - shown, does not block
                     out["cards"].append({"lpn_no": lpn, "pallet": None, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
-                                         "status": "HOLD_OUT", "pdi_reason": c.pdi_reason})
+                                         "status": "HOLD_OUT", "pdi_status": c.pdi_status, "pdi_reason": c.pdi_reason})
                     continue
                 out["cards"].append({"lpn_no": lpn, "pallet": None, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
                                      "status": "NOT_INVOICED"}); out["counts"]["not_invoiced"] += 1
@@ -617,9 +624,9 @@ def reconcile(db: Session, k: models.PickList) -> dict:
             inv[it.part_no] = inv.get(it.part_no, 0) + int(it.qty or 0)
         ben = {}
         for c in act.values():
-            if (c.pdi_status or "OK") == "HOLD":
+            if (c.pdi_status or "OK") in WAITING:
                 out["counts"]["hold"] += 1
-                out["cards"].append({"lpn_no": c.lpn_no, "bench_part": c.part_no, "bench_qty": c.qty, "status": "HOLD", "pdi_reason": c.pdi_reason})
+                out["cards"].append({"lpn_no": c.lpn_no, "bench_part": c.part_no, "bench_qty": c.qty, "status": c.pdi_status, "pdi_reason": c.pdi_reason})
                 continue
             ben[c.part_no] = ben.get(c.part_no, 0) + int(c.qty or 0)
         for part in sorted(set(inv) | set(ben), key=str):
@@ -641,7 +648,7 @@ def reconcile(db: Session, k: models.PickList) -> dict:
     if n["differs"]:
         out["issues"].append(f"{n['differs']} line(s) item / qty differ between Bench and GCS")
     if n["hold"]:
-        out["issues"].append(f"{n['hold']} invoiced card(s) on PDI HOLD (rework) - wait for PDI OK in the Bench, or reject it there and re-issue the GCS")
+        out["issues"].append(f"{n['hold']} invoiced card(s) not PDI Accepted yet (Hold / Pending) - wait for Accepted in the Bench, or reject it there and re-issue the GCS")
     out["ok"] = not out["issues"]
     return out
 
@@ -660,10 +667,11 @@ def card_block(db: Session, k: models.PickList, lpn_nos: list[str], pallet_no: s
         why = next((rem[c].pdi_reason for c in bad if rem[c].pdi_reason), None)
         how = "rejected at PDI" if any(rem[c].pdi_status == "REJECT" for c in bad) else "removed from the trip by the Bench (PDI reject / alternate)"
         return f"STOP: card {', '.join(bad[:3])} was {how}{' - ' + why if why else ''} - keep it off the vehicle"
-    held = sorted(c for c in cards if c in act and (act[c].pdi_status or "OK") == "HOLD")
+    held = sorted(c for c in cards if c in act and (act[c].pdi_status or "OK") in WAITING)
     if held:
         why = next((act[c].pdi_reason for c in held if act[c].pdi_reason), None)
-        return f"STOP: card {', '.join(held[:3])} is on PDI HOLD (rework){' - ' + why if why else ''} - not to be loaded until PDI OK in the Bench"
+        return (f"STOP: card {', '.join(held[:3])} - {_wait_word(act[held[0]].pdi_status)}{' - ' + why if why else ''}"
+                " - not to be loaded until PDI Accepted in the Bench")
     if t.link_mode != "ADMIN":
         notpdi = [c for c in lpn_nos if c not in act]
         if notpdi:

@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.33.0 - 2026-10-19 (HHT unchanged 2.23.0) - SQL read uses the Bench's own views (Bench 10.2.0)
+- The SQL way now reads the three views the Dispatch Planning Bench 10.2.0 creates itself in every plant database - `vw_AT_PickList`, `vw_AT_PickedPallets`, `vw_AT_PDIResults` - with the Bench's read-only login `ais_assettrack_reader` (Bench script `deploy_iis/assettrack_readonly.sql`). The two-view draft contract of 1.32.0 is withdrawn.
+- **All plants at once:** *Bench SQL databases* = `AIS_DPB_*` reads every plant database the login can open (`AIS_DPB_MASTER`, `AIS_DPB_ASP` ...), or give a list. Test SQL read shows one line per plant database.
+- **Same trip number as the API way** (`DB-<plant>-<picklist_id>`), so switching API → SQL never doubles a trip.
+- **PDI status from the Bench:** Accepted loads; **Pending** (not inspected yet) is new - stays on the trip, stopped at loading ("PDI not done yet") and blocks challan / QR while invoiced, like Hold; Rejected is final. A card the Bench re-picked away (after Reject or Hold) leaves the trip with its last decision and reason from `vw_AT_PDIResults`; a scan of it gives STOP with that reason. PDI sign of the trip = inspector from the views.
+- Bench link page: fields and helper hints for the three views, the plant databases and the read-only login. IIS guide section 7 rewritten for IT.
+
 ## Server 1.32.1 - 2026-10-19 (HHT unchanged 2.23.0) - helper hints on the web pages (requested by DT)
 - Form fields can now carry a short helper line under the field and an ⓘ tip on the label, kept small and grey so the page stays clean. First used on the Dispatch Bench link page (every setting says what it is for and when to leave it blank) and on the PDI match buttons (Refresh match, Request link, Unlink).
 - Forms with helper lines are top-aligned, so fields line up; the Bench page intro is shorter. Contents otherwise as 1.32.0.

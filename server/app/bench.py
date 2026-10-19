@@ -4,11 +4,13 @@ picked LPNs and creates a pick list (DB-<plant>-<dispatch_id>; older ones HB-...
 picked LPNs, then challan, gate and the pallet return cycle continue in AssetTrack.
 Two ways to read the Bench (setting bench_source):
   API - the Bench web server: POST /api/auth/login, GET /api/dispatches/recent, GET /api/picks (portable / SQLite Bench).
-  SQL - read-only straight from the Bench's SQL Server database, through two fixed views the Bench publishes
-        (assettrack_trips, assettrack_trip_cards - see server/sql/bench_views_contract.sql). If the SQL read fails and
-        the API is set up, the API is used for that pull.
-Both feed the same pull below. Card PDI result: OK, HOLD (rework, may become OK - not loadable meanwhile) or REJECT
-(final - the card is off the trip; a scan of it at loading is stopped).
+  SQL - read only, straight from the Bench's SQL Server views (Bench 10.2.0+): dbo.vw_AT_PickList (one row per pick
+        list), dbo.vw_AT_PickedPallets (one row per picked LPN, with its PDI status) and dbo.vw_AT_PDIResults (every PDI
+        decision). One database per plant: AIS_DPB_MASTER (default plant) and AIS_DPB_<PLANT>. If the SQL read fails
+        and the API is set up, that pull uses the API.
+Both feed the same pull below (picklist_id of the views = dispatch id of the API, so a trip keeps its number when the
+way is switched). Card PDI: OK (Accepted) loads; PENDING (not inspected yet) and HOLD (rework) stay on the trip but are
+not loadable; REJECT is final (off the trip). A card the Bench re-picked away leaves the trip with its last decision.
 Developed by DT
 """
 import logging, threading, time
@@ -24,9 +26,10 @@ from sqlalchemy import text
 
 KEYS = ["bench_enabled", "bench_url", "bench_user", "bench_password", "bench_plant", "bench_plant_map", "bench_customer_map", "bench_interval_sec", "bench_days",
         "bench_source", "bench_sql_server", "bench_sql_database", "bench_sql_user", "bench_sql_password", "bench_sql_url",
-        "bench_sql_trips_view", "bench_sql_cards_view"]
+        "bench_sql_trips_view", "bench_sql_cards_view", "bench_sql_results_view"]
 SECRET_KEYS = ("bench_password", "bench_sql_password")
-TRIPS_VIEW, CARDS_VIEW = "dbo.assettrack_trips", "dbo.assettrack_trip_cards"
+TRIPS_VIEW, CARDS_VIEW, RESULTS_VIEW = "dbo.vw_AT_PickList", "dbo.vw_AT_PickedPallets", "dbo.vw_AT_PDIResults"
+DEFAULT_DBS = "AIS_DPB_*"
 _token = {"v": None}
 _state = {"last_run": None, "last_ok": None, "last_error": None, "created": 0, "updated": 0, "lpns": 0, "source": None}
 
@@ -41,6 +44,8 @@ def get_settings(db: Session) -> dict:
     out["bench_source"] = (out["bench_source"] or "API").upper()
     out["bench_sql_trips_view"] = out["bench_sql_trips_view"] or TRIPS_VIEW
     out["bench_sql_cards_view"] = out["bench_sql_cards_view"] or CARDS_VIEW
+    out["bench_sql_results_view"] = out["bench_sql_results_view"] or RESULTS_VIEW
+    out["bench_sql_database"] = out["bench_sql_database"] or DEFAULT_DBS
     return out
 
 
@@ -104,25 +109,44 @@ def _odbc_driver() -> str:
     return "ODBC Driver 18 for SQL Server"
 
 
+_DBNAME = re.compile(r"^[A-Za-z0-9_]{1,100}\*?$")
+
+
+def db_list(cfg) -> list[str]:
+    """Bench databases from the setting: 'AIS_DPB_*' (every plant database the login can open) or a list
+    'AIS_DPB_MASTER;AIS_DPB_ASP'."""
+    out = []
+    for x in (cfg.get("bench_sql_database") or DEFAULT_DBS).replace(",", ";").split(";"):
+        x = x.strip()
+        if not x:
+            continue
+        if not _DBNAME.match(x):
+            raise RuntimeError(f"Bench SQL database name not valid: {x!r}")
+        out.append(x)
+    return out
+
+
 def sql_url(cfg):
-    """Where the Bench database is. bench_sql_url (full SQLAlchemy URL) wins; else the AssetTrack SQL Server with the
-    Bench database name (same server, same login - only the database differs); else server / database / login given."""
+    """How to reach the Bench SQL Server. bench_sql_url (full SQLAlchemy URL, one database, tests) wins; else the
+    AssetTrack SQL Server (blank server) or the server given, with the login given (blank = AssetTrack's own login /
+    Windows login). Connects to master; the plant databases are read with three-part names."""
     from sqlalchemy.engine import URL, make_url
     if cfg.get("bench_sql_url"):
         return make_url(cfg["bench_sql_url"])
-    dbn = (cfg.get("bench_sql_database") or "").strip()
-    if not dbn:
-        raise RuntimeError("Bench SQL database name not set")
     server = (cfg.get("bench_sql_server") or "").strip()
     from .config import DB_URL
-    if not server and DB_URL.startswith("mssql"):
-        return make_url(DB_URL).set(database=dbn)
-    if not server:
+    if not server and not DB_URL.startswith("mssql"):
         raise RuntimeError("Bench SQL Server name not set (AssetTrack itself is not on SQL Server)")
+    if not server:
+        u = make_url(DB_URL).set(database="master")
+        if cfg.get("bench_sql_user"):
+            q = {k: v for k, v in u.query.items() if k.lower() != "trusted_connection"}
+            u = u.set(username=cfg["bench_sql_user"], password=cfg.get("bench_sql_password") or "", query=q)
+        return u
     q = {"driver": _odbc_driver(), "TrustServerCertificate": "yes"}
     if cfg.get("bench_sql_user"):
-        return URL.create("mssql+pyodbc", username=cfg["bench_sql_user"], password=cfg.get("bench_sql_password") or "", host=server, database=dbn, query=q)
-    return URL.create("mssql+pyodbc", host=server, database=dbn, query={**q, "trusted_connection": "yes"})
+        return URL.create("mssql+pyodbc", username=cfg["bench_sql_user"], password=cfg.get("bench_sql_password") or "", host=server, database="master", query=q)
+    return URL.create("mssql+pyodbc", host=server, database="master", query={**q, "trusted_connection": "yes"})
 
 
 def _engine(cfg):
@@ -149,58 +173,113 @@ def _s(v):
     return None if v is None else str(v).strip()
 
 
+def _databases(cfg, c) -> list:
+    """[None] = the connected database itself (bench_sql_url); else the plant databases (wildcards looked up)."""
+    if cfg.get("bench_sql_url"):
+        return [None]
+    out = []
+    for x in db_list(cfg):
+        if x.endswith("*"):
+            like = x[:-1].replace("_", "[_]") + "%"
+            out += [r[0] for r in c.execute(text("SELECT name FROM sys.databases WHERE name LIKE :p AND state_desc = 'ONLINE' "
+                                                  "AND HAS_DBACCESS(name) = 1 ORDER BY name"), {"p": like}).all()]
+        else:
+            out.append(x)
+    return list(dict.fromkeys(out))
+
+
+def _q(dbn, view):
+    return f"[{dbn}].{view}" if dbn else view
+
+
 def sql_fetch(cfg):
-    """Read the Bench views once per pull and answer the same two questions as the Bench API, so the pull below is the
-    same for both ways. Trips read: changed (trip or any of its cards) within the look-back days."""
-    eng, tv, cv = _engine(cfg), _view(cfg, "bench_sql_trips_view"), _view(cfg, "bench_sql_cards_view")
-    since = datetime.now() - timedelta(days=cfg["bench_days"] + 1)
-    cards: dict = {}
+    """Read the Bench views and answer the same two questions as the Bench API (trips; picks of one trip), so the pull
+    is the same for both ways. Pick lists sent within the look-back days, from every plant database."""
+    eng = _engine(cfg)
+    tv, cv, rv = _view(cfg, "bench_sql_trips_view"), _view(cfg, "bench_sql_cards_view"), _view(cfg, "bench_sql_results_view")
+    since = (datetime.now() - timedelta(days=cfg["bench_days"] + 1)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    def trips():
+        out = []
+        with eng.connect() as c:
+            for dbn in _databases(cfg, c):
+                for t in c.execute(text(f"SELECT * FROM {_q(dbn, tv)} WHERE sent_at >= :s"), {"s": since}).mappings().all():
+                    t = {k.lower(): v for k, v in t.items()}
+                    out.append({"id": _s(t.get("picklist_id")), "trip_id": _s(t.get("trip_id")), "ais_plant": _s(t.get("plant")),
+                                "section": _s(t.get("section")), "customer_code": _s(t.get("customer")), "segment": _s(t.get("segment")),
+                                "shift_name": _s(t.get("shift_name")), "vehicle": _s(t.get("vehicle")), "dispatch_status": _s(t.get("picklist_status")),
+                                "sent_at": _iso(t.get("sent_at")), "so_no": _s(t.get("so_number")), "_db": dbn or ""})
+        return out
+
+    def picks(pid, dbn):
+        dbn = dbn or None
+        with eng.connect() as c:
+            rows = c.execute(text(f"SELECT * FROM {_q(dbn, cv)} WHERE picklist_id = :p"), {"p": pid}).mappings().all()
+            dec = c.execute(text(f"SELECT lpn, ais_code, qty, pdi_status, rejection_reason, inspector_name, pdi_id FROM {_q(dbn, rv)} "
+                                 "WHERE picklist_id = :p ORDER BY pdi_id"), {"p": pid}).mappings().all()
+        out, seen, insp = [], set(), None
+        for r in rows:
+            r = {k.lower(): v for k, v in r.items()}
+            lpn = _s(r.get("lpn"))
+            if not lpn:
+                continue
+            seen.add(lpn)
+            insp = _s(r.get("inspector_name")) or insp
+            out.append({"picked_lpn": lpn, "item_code": _s(r.get("ais_code")), "qty": r.get("qty") or 0, "sub_inv": _s(r.get("sub_inv")),
+                        "pdi_status": _s(r.get("pdi_status")), "pdi_reason": _s(r.get("rejection_reason")), "inspector": _s(r.get("inspector_name"))})
+        last = {}
+        for r in dec:                                   # last decision per card
+            r = {k.lower(): v for k, v in r.items()}
+            if _s(r.get("lpn")):
+                last[_s(r["lpn"])] = r
+        for lpn, r in last.items():                     # re-picked away (rejected / hold, replaced): left the trip
+            if lpn not in seen:
+                out.append({"picked_lpn": lpn, "item_code": _s(r.get("ais_code")), "qty": r.get("qty") or 0, "pdi_status": _s(r.get("pdi_status")),
+                            "pdi_reason": _s(r.get("rejection_reason")), "gone": True})
+        return out
 
     def fetch(path):
         if path.startswith("/api/dispatches/recent"):
-            with eng.connect() as c:
-                trips = c.execute(text(f"SELECT * FROM {tv} WHERE updated_at >= :s OR trip_id IN (SELECT trip_id FROM {cv} WHERE updated_at >= :s)"),
-                                  {"s": since}).mappings().all()
-                rows = c.execute(text(f"SELECT * FROM {cv} WHERE trip_id IN (SELECT trip_id FROM {tv} WHERE updated_at >= :s) "
-                                      f"OR trip_id IN (SELECT trip_id FROM {cv} WHERE updated_at >= :s)"), {"s": since}).mappings().all()
-            for r in rows:
-                r = {k.lower(): v for k, v in r.items()}
-                cards.setdefault(_s(r.get("trip_id")), []).append({
-                    "picked_lpn": _s(r.get("lpn_no")), "item_code": _s(r.get("part_no")), "qty": r.get("qty") or 0, "sub_inv": _s(r.get("sub_inv")),
-                    "pdi_status": _s(r.get("pdi_status")), "pdi_reason": _s(r.get("pdi_reason"))})
-            out = []
-            for t in trips:
-                t = {k.lower(): v for k, v in t.items()}
-                out.append({"id": _s(t.get("trip_id")), "trip_id": _s(t.get("trip_no")), "plant_code": _s(t.get("plant_code")),
-                            "section": _s(t.get("section")), "customer_code": _s(t.get("customer_code")), "segment": _s(t.get("segment")),
-                            "shift_name": _s(t.get("shift_name")), "vehicle": _s(t.get("vehicle_no")), "dispatch_status": _s(t.get("trip_status")),
-                            "pdi_by": _s(t.get("pdi_by")), "pdi_login": _s(t.get("pdi_login")), "supervisor": _s(t.get("supervisor")),
-                            "supervisor_login": _s(t.get("supervisor_login")), "sent_at": _iso(t.get("planned_at")), "so_no": _s(t.get("so_no"))})
-            return {"dispatches": out}
+            return {"dispatches": trips()}
         if path.startswith("/api/picks"):
-            return {"picks": cards.get(path.split("dispatch_id=", 1)[-1], [])}
+            from urllib.parse import parse_qs, urlsplit
+            q = parse_qs(urlsplit(path).query)
+            return {"picks": picks(q["dispatch_id"][0], (q.get("_db") or [""])[0])}
         raise RuntimeError(f"not a Bench read: {path}")
     return fetch
 
 
 def sql_test(cfg) -> dict:
-    """Admin check: can AssetTrack read both views? Row counts and the newest change."""
-    eng, tv, cv = _engine(cfg), _view(cfg, "bench_sql_trips_view"), _view(cfg, "bench_sql_cards_view")
+    """Admin check: can AssetTrack read the Bench views? Per plant database: pick lists, picked LPNs, PDI decisions."""
+    eng = _engine(cfg)
+    tv, cv, rv = _view(cfg, "bench_sql_trips_view"), _view(cfg, "bench_sql_cards_view"), _view(cfg, "bench_sql_results_view")
+    out = []
     with eng.connect() as c:
-        nt = c.execute(text(f"SELECT COUNT(*) FROM {tv}")).scalar()
-        nc = c.execute(text(f"SELECT COUNT(*) FROM {cv}")).scalar()
-        last = c.execute(text(f"SELECT MAX(updated_at) FROM {tv}")).scalar()
-    return {"ok": True, "trips": nt, "cards": nc, "last_change": _iso(last), "database": sql_url(cfg).database}
+        dbs = _databases(cfg, c)
+        if not dbs:
+            raise RuntimeError(f"no Bench database found for {cfg.get('bench_sql_database')} that this login can open")
+        for dbn in dbs:
+            out.append({"database": dbn or sql_url(cfg).database, "picklists": c.execute(text(f"SELECT COUNT(*) FROM {_q(dbn, tv)}")).scalar(),
+                        "picked": c.execute(text(f"SELECT COUNT(*) FROM {_q(dbn, cv)}")).scalar(),
+                        "pdi": c.execute(text(f"SELECT COUNT(*) FROM {_q(dbn, rv)}")).scalar(),
+                        "last_sent": _iso(c.execute(text(f"SELECT MAX(sent_at) FROM {_q(dbn, tv)}")).scalar())})
+    return {"ok": True, "databases": out}
 
 
 def card_pdi(pr: dict) -> str:
-    """PDI result of a Bench card: OK / HOLD / REJECT. Blank = OK (Bench API without the field: the card is on the trip
-    = PDI passed); an unknown word = HOLD (not loaded until the Bench says OK)."""
+    """PDI result of a Bench card: OK / PENDING / HOLD / REJECT. Blank = OK (Bench API without the field: the card is
+    on the trip = PDI passed); an unknown word = HOLD (not loaded until the Bench says Accepted)."""
     v = str(pr.get("pdi_status") or pr.get("pdi_result") or "").strip().upper().replace(" ", "_")
     if not v:
         return "OK"
     return {"OK": "OK", "PASS": "OK", "PASSED": "OK", "ACCEPTED": "OK", "HOLD": "HOLD", "ON_HOLD": "HOLD", "HELD": "HOLD", "REWORK": "HOLD",
+            "PENDING": "PENDING", "NEW": "PENDING", "OPEN": "PENDING",
             "REJECT": "REJECT", "REJECTED": "REJECT", "NG": "REJECT", "NOK": "REJECT", "NOT_OK": "REJECT"}.get(v, "HOLD")
+
+
+def card_gone(pr: dict) -> bool:
+    """Card off the trip: rejected, or re-picked away in the Bench (left the pick list)."""
+    return bool(pr.get("gone")) or card_pdi(pr) == "REJECT"
 
 
 def bench_customer(d: dict) -> str:
@@ -230,7 +309,7 @@ def sync_trip_cards(db: Session, trip_no: str, picks: dict) -> bool:
         q = int(float(pr.get("qty") or 0))
         st = card_pdi(pr)
         why = (str(pr.get("pdi_reason")).strip()[:200] or None) if pr.get("pdi_reason") else None
-        gone = st == "REJECT"                        # rejected = off the trip for good
+        gone = card_gone(pr)                         # rejected / re-picked away = off the trip
         c = have.get(lpn)
         if c is None:
             db.add(models.BenchTripCard(trip_no=trip_no, lpn_no=lpn, part_no=(pr.get("item_code") or None), qty=q, pdi_status=st, pdi_reason=why,
@@ -319,7 +398,7 @@ def pull(db: Session, fetch=None) -> dict:
         no = pk.picklist_no if pk else f"DB-{plant}-{did}"
         if pk and pk.status in ("DISPATCHED", "CLOSED", "CANCELLED"):
             continue                 # gone out / closed in AssetTrack: frozen
-        picks = fetch(f"/api/picks?dispatch_id={did}").get("picks", [])
+        picks = fetch(f"/api/picks?dispatch_id={did}" + (f"&_db={d['_db']}" if d.get("_db") else "")).get("picks", [])
         lp = {}
         for pr in picks:
             lpn = (pr.get("picked_lpn") or "").strip()
@@ -338,14 +417,15 @@ def pull(db: Session, fetch=None) -> dict:
         else:
             updated += 1
         pk.vehicle_no = (d.get("vehicle") or pk.vehicle_no or "").upper().replace(" ", "") or None
-        pdi = d.get("pdi_by") or d.get("pdi_user") or d.get("qc_by") or d.get("pdi_name")
+        pdi = (d.get("pdi_by") or d.get("pdi_user") or d.get("qc_by") or d.get("pdi_name")
+               or next((pr.get("inspector") for pr in reversed(picks) if pr.get("inspector")), None))
         sup = d.get("shift_supervisor") or d.get("supervisor") or d.get("supervisor_name") or d.get("created_by_name") or d.get("created_by")
         if pdi:
             pk.pdi_sign = (f"{pdi} ({d['pdi_login']})" if d.get("pdi_login") else str(pdi))[:120]
         if sup:
             pk.supervisor_sign = (f"{sup} ({d['supervisor_login']})" if d.get("supervisor_login") else str(sup))[:120]
         total = 0
-        live = {lpn for lpn, pr in lp.items() if card_pdi(pr) != "REJECT"}   # rejected cards are not reserved for the trip
+        live = {lpn for lpn, pr in lp.items() if not card_gone(pr)}   # rejected / re-picked-away cards are not reserved
         for lpn, pr in lp.items():
             if lpn not in live:
                 continue

@@ -92,17 +92,20 @@ Windows login and a SQL Server on **another** server: the app pool signs in as t
 - HTTPS: add an HTTPS binding with the AIS internal certificate in IIS Manager (recommended - see the approval report).
 
 ## 7. Dispatch Planning Bench on the same SQL Server (read the Bench from SQL)
-When the Bench runs on SQL Server too (its own database, e.g. `BenchDB`), AssetTrack can read it straight from there instead of the Bench web server:
-1. The Bench creates two views in its database: `dbo.assettrack_trips` and `dbo.assettrack_trip_cards`.
-   Columns and meanings: `server\sql\bench_views_contract.sql` (part 1).
-2. The DBA gives the AssetTrack login (`IIS APPPOOL\AssetTrack`, the server's computer account, or `pallet_app`) **SELECT on those two views only**
-   (same file, part 2). AssetTrack never writes into the Bench database.
-3. Web page Masters › Dispatch Bench link: *Read the Bench from* = **SQL**, *Bench SQL database* = `BenchDB`
-   (Bench SQL Server blank = the same SQL Server and login as AssetTrack) › Save › **Test SQL read** › **Pull now**.
+From Bench 10.2.0 on SQL Server, the Bench keeps three read-only views in every plant database and refreshes them at each start:
+`dbo.vw_AT_PickList`, `dbo.vw_AT_PickedPallets`, `dbo.vw_AT_PDIResults` (columns: the Bench zip, `deploy_iis\ASSETTRACK_SQL_VIEWS.md`).
+Plant databases: `AIS_DPB_MASTER` (default plant, AAC) and `AIS_DPB_<PLANT>` (e.g. `AIS_DPB_ASP`).
+1. IT runs the Bench script `deploy_iis\assettrack_readonly.sql` once (after the Bench has started on SQL Server):
+   login `ais_assettrack_reader`, **SELECT on the three views only**, in every plant database. AssetTrack never writes into the Bench.
+2. AssetTrack web page Masters › Dispatch Bench link: *Read the Bench from* = **SQL**; *Bench SQL databases* = `AIS_DPB_*`
+   (every plant database the login can open) or a list `AIS_DPB_MASTER;AIS_DPB_ASP`; *Bench SQL Server* blank (same server);
+   *SQL login* `ais_assettrack_reader` + password › Save › **Test SQL read** (one line per plant database) › **Pull now**.
+3. Each view row carries its plant (AAC, ASP ...). Where that differs from the AssetTrack plant code, fill *Bench plant → AIS plant*.
 4. Keep the Bench URL / user filled in: if the SQL read fails, that pull uses the Bench web server and the page shows the error.
 
-Card PDI result from the Bench: **OK** loads, **HOLD** (rework) stays on the trip but is stopped at loading until it becomes OK,
-**REJECT** is off the trip for good (scanning it gives STOP with the reject reason).
+Card PDI from the Bench: **Accepted** loads; **Pending** (not inspected) and **Hold** (rework) stay on the trip but are stopped at
+loading until Accepted; **Rejected** is off the trip for good (a scan gives STOP with the reason). A card the Bench re-picked away
+leaves the trip with its last decision and reason. The trip number stays the same as with the API way (`DB-<plant>-<picklist_id>`).
 
 ## 8. Running both
 The tray server (SQLite) and the IIS server (SQL Server) are independent installations with their own data.
