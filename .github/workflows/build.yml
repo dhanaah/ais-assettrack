@@ -296,7 +296,7 @@ jobs:
           $out = @()
           for ($try = 1; $try -le 4 -and -not ((Have-Sql) -and (Have-Odbc)); $try++) {   # the Chocolatey feed is sometimes busy (503): wait and retry
             if ($try -gt 1) { Write-Host "retry $try in 60 s"; Start-Sleep 60 }
-            $f = if ($try -gt 1) { "--force" } else { "" }
+            $f = if ($try -gt 1) { "--force" } else { $null }
             if (-not (Have-Sql)) { $out = choco install sql-server-express -y --no-progress $f 2>&1 }
             if (-not (Have-Odbc)) { $out += choco install sqlserver-odbcdriver -y --no-progress $f 2>&1 }
           }
