@@ -290,9 +290,23 @@ jobs:
       - name: SQL Server Express and ODBC Driver 18
         shell: powershell
         run: |
-          choco install sql-server-express -y --no-progress
-          if (-not (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server")) { choco install sqlserver-odbcdriver -y --no-progress }
+          $ErrorActionPreference = "Continue"
+          function Have-Sql { [bool](Get-Service 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue) }
+          function Have-Odbc { Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server" }
+          $out = @()
+          if (-not (Have-Sql)) { $out += choco install sql-server-express -y --no-progress 2>&1 }
+          if (-not (Have-Sql)) { Write-Host "SQL Express not found - retry forced"; $out += choco install sql-server-express -y --no-progress --force 2>&1 }
+          if (-not (Have-Odbc)) { $out += choco install sqlserver-odbcdriver -y --no-progress 2>&1 }
+          if (-not (Have-Odbc)) { Write-Host "ODBC 18 not found - retry forced"; $out += choco install sqlserver-odbcdriver -y --no-progress --force 2>&1 }
           Get-ChildItem "HKLM:\SOFTWARE\ODBC\ODBCINST.INI" | Select-Object -ExpandProperty PSChildName
+          if (-not (Have-Sql) -or -not (Have-Odbc)) {
+            $log = Get-Content "C:\ProgramData\chocolatey\logs\chocolatey.log" -Tail 40 -ErrorAction SilentlyContinue
+            Write-Output ("::error::SQL Express ($(Have-Sql)) / ODBC 18 ($(Have-Odbc)) not installed on this runner%0A" + ((($out | Select-Object -Last 20) + $log) -join "%0A"))
+            exit 1
+          }
+          Start-Service 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue
+          Get-Service 'SQLBrowser' -ErrorAction SilentlyContinue | Set-Service -StartupType Automatic -PassThru | Start-Service -ErrorAction SilentlyContinue
+          Write-Host "SQL Express and ODBC Driver 18 ok"
           exit 0
       - name: Setup_IIS.ps1 (as IT runs it)
         shell: powershell
