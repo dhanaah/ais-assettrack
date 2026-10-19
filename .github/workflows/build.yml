@@ -269,10 +269,10 @@ jobs:
           $ancm = Join-Path $env:ProgramFiles "IIS\Asp.Net Core Module\V2\aspnetcorev2.dll"
           $want = if ("${{ matrix.module }}" -eq "httpplatformhandler") { $hph } else { $ancm }
           $pkg = if ("${{ matrix.module }}" -eq "httpplatformhandler") { "httpplatformhandler" } else { "dotnet-8.0-windowshosting" }
-          $out = choco install $pkg -y --no-progress 2>&1; $out | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
-          if (-not (Test-Path $want)) {                     # once more, forced (runner images change)
-            Write-Host "module not found after choco - retry forced"
-            $out = choco install $pkg -y --no-progress --force 2>&1; $out | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
+          $out = @()
+          for ($try = 1; $try -le 4 -and -not (Test-Path $want); $try++) {   # the Chocolatey feed is sometimes busy (503): wait and retry
+            if ($try -gt 1) { Write-Host "module not found - retry $try in 60 s"; Start-Sleep 60 }
+            $out = choco install $pkg -y --no-progress $(if ($try -gt 1) { "--force" }) 2>&1; $out | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
           }
           if (-not (Test-Path $want) -and "${{ matrix.module }}" -ne "httpplatformhandler") {   # official Microsoft download
             Write-Host "ASP.NET Core hosting bundle from aka.ms"
@@ -294,10 +294,12 @@ jobs:
           function Have-Sql { [bool](Get-Service 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue) }
           function Have-Odbc { Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Driver 18 for SQL Server" }
           $out = @()
-          if (-not (Have-Sql)) { $out += choco install sql-server-express -y --no-progress 2>&1 }
-          if (-not (Have-Sql)) { Write-Host "SQL Express not found - retry forced"; $out += choco install sql-server-express -y --no-progress --force 2>&1 }
-          if (-not (Have-Odbc)) { $out += choco install sqlserver-odbcdriver -y --no-progress 2>&1 }
-          if (-not (Have-Odbc)) { Write-Host "ODBC 18 not found - retry forced"; $out += choco install sqlserver-odbcdriver -y --no-progress --force 2>&1 }
+          for ($try = 1; $try -le 4 -and -not ((Have-Sql) -and (Have-Odbc)); $try++) {   # the Chocolatey feed is sometimes busy (503): wait and retry
+            if ($try -gt 1) { Write-Host "retry $try in 60 s"; Start-Sleep 60 }
+            $f = if ($try -gt 1) { "--force" } else { "" }
+            if (-not (Have-Sql)) { $out = choco install sql-server-express -y --no-progress $f 2>&1 }
+            if (-not (Have-Odbc)) { $out += choco install sqlserver-odbcdriver -y --no-progress $f 2>&1 }
+          }
           Get-ChildItem "HKLM:\SOFTWARE\ODBC\ODBCINST.INI" | Select-Object -ExpandProperty PSChildName
           if (-not (Have-Sql) -or -not (Have-Odbc)) {
             $log = Get-Content "C:\ProgramData\chocolatey\logs\chocolatey.log" -Tail 40 -ErrorAction SilentlyContinue
