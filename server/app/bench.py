@@ -41,7 +41,7 @@ def get_settings(db: Session) -> dict:
     out["bench_enabled"] = (out["bench_enabled"] or "0") == "1"
     out["bench_interval_sec"] = max(10, int(out["bench_interval_sec"] or 30))
     out["bench_days"] = int(out["bench_days"] or 3)
-    out["bench_source"] = (out["bench_source"] or "API").upper()
+    out["bench_source"] = (out["bench_source"] or "AUTO").upper()
     out["bench_sql_schema"] = out["bench_sql_schema"] or "dbo"
     out["bench_sql_database"] = out["bench_sql_database"] or DEFAULT_DBS
     return out
@@ -93,6 +93,20 @@ _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}(\.[A-Za-z_][A-Za-z0-9_]{0,63}
 
 def api_ready(cfg) -> bool:
     return bool(cfg.get("bench_url") and cfg.get("bench_user"))
+
+
+def sql_possible(cfg) -> bool:
+    """SQL read can be tried: AssetTrack itself on SQL Server (the Bench is on the same server), or a server given."""
+    from .config import DB_URL
+    return bool(cfg.get("bench_sql_url") or (cfg.get("bench_sql_server") or "").strip() or DB_URL.startswith("mssql"))
+
+
+def way(cfg) -> str:
+    """The way this pull reads the Bench: SQL / API. AUTO = SQL when possible, else the API."""
+    src = cfg.get("bench_source") or "AUTO"
+    if src == "AUTO":
+        return "SQL" if sql_possible(cfg) else "API"
+    return src
 
 
 def _odbc_driver() -> str:
@@ -200,6 +214,19 @@ def _db_plant(dbn):
     return None if tail == "MASTER" else tail
 
 
+def bench_default_plant(cfg, c, dbn, cache=None):
+    """The Bench default plant (ais_plants.is_default in the master database) - the plant of AIS_DPB_MASTER."""
+    cache = cache if cache is not None else {}
+    if "v" not in cache:
+        cache["v"] = None
+        try:
+            r = _rows(c, f"SELECT code FROM {_t(cfg, dbn, 'ais_plants')} ORDER BY is_default DESC, code")
+            cache["v"] = _s(r[0]["code"]).upper() if r and _s(r[0].get("code")) else None
+        except Exception:
+            pass                                       # older Bench without the plant list: the Default AIS plant setting is used
+    return cache["v"]
+
+
 def _rows(c, sql, args=None):
     return [{k.lower(): v for k, v in r.items()} for r in c.execute(text(sql), args or {}).mappings().all()]
 
@@ -210,6 +237,7 @@ def sql_fetch(cfg):
     eng = _engine(cfg)
     since = (datetime.now() - timedelta(days=cfg["bench_days"] + 1)).strftime("%Y-%m-%dT%H:%M:%S")
     parts: dict = {}
+    master = {}
 
     def ais_code(c, dbn, code):
         """Customer part no -> AIS code from the Bench part master (read once per database per pull)."""
@@ -231,8 +259,9 @@ def sql_fetch(cfg):
         out = []
         with eng.connect() as c:
             for dbn in _databases(cfg, c):
+                plant = _db_plant(dbn) or bench_default_plant(cfg, c, dbn, master)
                 for t in _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'picklist_dispatch')} WHERE sent_at >= :s", {"s": since}):
-                    out.append({"id": _s(t.get("id")), "trip_id": _s(t.get("trip_id")), "ais_plant": _db_plant(dbn),
+                    out.append({"id": _s(t.get("id")), "trip_id": _s(t.get("trip_id")), "ais_plant": plant,
                                 "section": _s(t.get("section")) or "MAIN", "customer_code": _s(t.get("customer_code")), "segment": _s(t.get("segment")),
                                 "shift_name": _s(t.get("shift_name")), "vehicle": _s(t.get("vehicle")), "dispatch_status": _s(t.get("dispatch_status")),
                                 "sent_at": _iso(t.get("sent_at")), "so_no": _s(t.get("so_number")), "_db": dbn or ""})
@@ -282,9 +311,12 @@ def sql_test(cfg) -> dict:
         dbs = _databases(cfg, c)
         if not dbs:
             raise RuntimeError(f"no Bench database found for {cfg.get('bench_sql_database')} that this login can open")
+        master: dict = {}
         for dbn in dbs:
             n = {t: c.execute(text(f"SELECT COUNT(*) FROM {_t(cfg, dbn, t)}")).scalar() for t in TABLES}
-            out.append({"database": dbn or sql_url(cfg).database, "plant": _db_plant(dbn) or "default", "picklists": n["picklist_dispatch"],
+            out.append({"database": dbn or sql_url(cfg).database,
+                        "plant": _db_plant(dbn) or bench_default_plant(cfg, c, dbn, master) or (cfg.get("bench_plant") or "default"),
+                        "picklists": n["picklist_dispatch"],
                         "picked": n["pick_log"], "pdi": n["pdi_inspections"],
                         "last_sent": _iso(c.execute(text(f"SELECT MAX(sent_at) FROM {_t(cfg, dbn, 'picklist_dispatch')}")).scalar())})
     return {"ok": True, "databases": out}
@@ -376,12 +408,12 @@ def pull(db: Session, fetch=None) -> dict:
     api = (lambda path: _get(cfg, path)) if api_ready(cfg) else None
     source, note = "TEST", None
     if not fetch:
-        if cfg["bench_source"] == "SQL":
+        if way(cfg) == "SQL":
             fetch, source = sql_fetch(cfg), "SQL"
         elif api:
             fetch, source = api, "API"
         else:
-            raise RuntimeError("Dispatch Bench link not configured (URL / user)")
+            raise RuntimeError("Dispatch Bench link not set up: AssetTrack is not on SQL Server and no Bench web server URL / user is given")
     created = updated = n_lpn = no_plant = 0; per_plant = {}; changed_trips: set[str] = set()
     try:
         disp = fetch("/api/dispatches/recent?limit=300").get("dispatches", [])

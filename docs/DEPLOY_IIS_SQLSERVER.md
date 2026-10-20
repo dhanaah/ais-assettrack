@@ -95,13 +95,15 @@ Windows login and a SQL Server on **another** server: the app pool signs in as t
 When the Bench runs on SQL Server, AssetTrack reads the Bench's own tables directly, **read only**:
 `picklist_dispatch` (pick lists), `pick_log` (picked LPNs), `pdi_inspections` (PDI decisions), `part_master` (customer part → AIS code).
 Plant databases: `AIS_DPB_MASTER` (Bench default plant, e.g. AAC) and `AIS_DPB_<PLANT>` (e.g. `AIS_DPB_ASP` = plant ASP).
-1. Run `server\sql\bench_reader.sql` once in SSMS as sysadmin (and again when the Bench gets a new plant database):
-   login `ais_assettrack_reader` with **db_datareader** (read only) in every `AIS_DPB_*` database. AssetTrack never writes into the Bench.
-2. AssetTrack web page Masters › Dispatch Bench link: *Read the Bench from* = **SQL**; *Bench SQL databases* = `AIS_DPB_*`
-   (or a list `AIS_DPB_MASTER;AIS_DPB_ASP`); *Bench SQL Server* blank (same server); *SQL login* `ais_assettrack_reader` + password;
-   *Default AIS plant* = the plant of `AIS_DPB_MASTER` › Save › **Test SQL read** (one line per plant database) › **Pull now**.
-3. Where a Bench plant code differs from the AssetTrack plant code, fill *Bench plant → AIS plant*.
-4. Keep the Bench URL / user filled in: if the SQL read fails, that pull uses the Bench web server and the page shows the error.
+1. Run `server\sql\bench_reader.sql` once in SSMS as sysadmin (and again when the Bench gets a new plant database).
+   It gives **AssetTrack's own login** (`IIS APPPOOL\AssetTrack`) **db_datareader** (read only) in every `AIS_DPB_*` database -
+   no extra login or password. AssetTrack never writes into the Bench. (SQL Server on another server: set `@login` in the script
+   to `AIS\<IIS-SERVER-NAME>$`.)
+2. AssetTrack web page Masters › Dispatch Bench link: **Auto pull ON**, *Read the Bench from* = **Automatic** › Save ›
+   **Test SQL read** (one line per plant database, with its plant) › **Pull now**. Nothing else to fill in:
+   the databases (`AIS_DPB_*`), the server (same as AssetTrack) and the plants (from the Bench plant list `ais_plants`) are found by themselves.
+3. *Advanced settings* (closed by default) are only for exceptions: Bench on another SQL Server, a separate SQL login,
+   plant / customer codes that differ between Bench and AssetTrack, or the Bench web server (API) for a portable Bench / fallback.
 
 Card PDI from the Bench: **Accepted** loads; **Pending** (not inspected) and **Hold** (rework) stay on the trip but are stopped at
 loading until Accepted; **Rejected** is off the trip for good (a scan gives STOP with the reason). A card the Bench re-picked away

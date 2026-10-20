@@ -19,7 +19,7 @@ class BenchIn(BaseModel):
     bench_customer_map: str | None = None
     bench_interval_sec: int | None = 60
     bench_days: int | None = 3
-    bench_source: str | None = "API"            # API (Bench web server) | SQL (read-only from the Bench SQL Server views)
+    bench_source: str | None = "AUTO"           # AUTO (SQL when AssetTrack is on SQL Server, else API) | SQL | API
     bench_sql_server: str | None = None         # blank = the SQL Server AssetTrack itself uses (same login)
     bench_sql_database: str | None = None
     bench_sql_user: str | None = None           # blank = Windows login (IIS app pool / tray user)
@@ -36,7 +36,9 @@ def get_bench(p: Principal = Depends(current_user), db: Session = Depends(get_db
     for key in bench.SECRET_KEYS:
         cfg[key] = "••••••" if cfg.get(key) else ""
     cfg.pop("bench_sql_url", None)
-    return {"settings": cfg, "status": bench.status()}
+    st = bench.status()
+    st["way"] = bench.way(bench.get_settings(db))          # what AUTO resolves to now
+    return {"settings": cfg, "status": st}
 
 
 @router.post("/dispatch-bench")
@@ -45,9 +47,9 @@ def save_bench(body: BenchIn, request: Request, p: Principal = Depends(need("INT
     d = body.model_dump()
     if d.get("bench_plant"):
         d["bench_plant"] = d["bench_plant"].upper()
-    d["bench_source"] = (d.get("bench_source") or "API").upper()
-    if d["bench_source"] not in ("API", "SQL"):
-        raise HTTPException(400, "Bench source must be API or SQL")
+    d["bench_source"] = (d.get("bench_source") or "AUTO").upper()
+    if d["bench_source"] not in ("AUTO", "API", "SQL"):
+        raise HTTPException(400, "Bench source must be AUTO, API or SQL")
     if d.get("bench_sql_schema"):
         try:
             bench._schema(d)

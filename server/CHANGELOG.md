@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.35.0 - 2026-10-20 (HHT unchanged 2.23.0) - Bench link with almost no input (requested by DT)
+- *Read the Bench from* = **Automatic** (new default): the Bench tables when AssetTrack runs on SQL Server, otherwise the Bench web server. The page shows which way it uses now.
+- **Plants from the Bench:** the Bench plant list (`ais_plants`, default plant) gives the plant of `AIS_DPB_MASTER`; `AIS_DPB_<PLANT>` gives the others. No default plant to choose.
+- **No login to type:** `server/sql/bench_reader.sql` now gives AssetTrack's own login (IIS app pool) read rights in every Bench database, and it is safe to run again for a new plant. Fixed: its CREATE USER line could not run on SQL Server.
+- Bench link page: only **Auto pull ON** + **Read the Bench from**; everything else is under *Advanced settings - normally not needed* (closed), each with a hint.
+- CI runs `bench_reader.sql` on SQL Server 2022: reads every AIS_DPB_* database, cannot write, cannot open other databases, re-run harmless.
+
 ## Server 1.34.0 - 2026-10-20 (HHT unchanged 2.23.0) - read the Bench tables directly (decided by DT)
 - The SQL way now reads the Dispatch Planning Bench's own tables directly, read only - `picklist_dispatch`, `pick_log`, `pdi_inspections`, `part_master` - in every plant database (`AIS_DPB_*`). The `vw_AT_*` views are no longer needed.
 - Whole rows are read, so a column the Bench has not added yet (customer, section, SO number, inspector) is simply empty - never an error.

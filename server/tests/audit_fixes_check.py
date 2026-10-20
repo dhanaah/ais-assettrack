@@ -500,6 +500,9 @@ with TestClient(app, raise_server_exceptions=False) as c:
         x.execute(_t("CREATE TABLE pdi_inspections (id INT, pick_log_id INT, dispatch_id INT, item_code NVARCHAR(40), lpn NVARCHAR(40), status NVARCHAR(10), "
                      "rejection_reason NVARCHAR(200), inspector_name NVARCHAR(80), inspected_at NVARCHAR(30))"))
         x.execute(_t("CREATE TABLE part_master (ais_code NVARCHAR(40), hmil_part_no NVARCHAR(40))"))
+        x.execute(_t("CREATE TABLE ais_plants (code NVARCHAR(10), name NVARCHAR(60), is_default INT, active INT, sort INT)"))
+        x.execute(_t("INSERT INTO ais_plants VALUES ('PUN', 'Pune', 0, 1, 2)"))
+        x.execute(_t("INSERT INTO ais_plants VALUES ('CHN', 'Chennai', 1, 1, 1)"))
         x.execute(_t("INSERT INTO part_master VALUES ('WS-1', 'HMIL-WS-1')"))
     seq = {"n": 0}
 
@@ -524,9 +527,14 @@ with TestClient(app, raise_server_exceptions=False) as c:
         for k_, v_ in (("bench_sql_url", src), ("bench_url", None), ("bench_user", None)):
             row_ = db.get(models.Setting, k_) or models.Setting(key=k_); row_.value = v_; db.add(row_)
         db.commit()
-    r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_enabled": False, "bench_source": "SQL", "bench_sql_database": "AIS_DPB_*",
-                                                                       "bench_sql_schema": "dbo", "bench_plant": "CHN", "bench_days": 3})
-    check(r.status_code == 200, f"Bench settings: read from SQL ({r.text[:80]})")
+    with SessionLocal() as db:                 # earlier sections set a default plant; here the plant must come from the Bench
+        row_ = db.get(models.Setting, "bench_plant")
+        if row_:
+            row_.value = None
+        db.commit()
+    r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_enabled": False, "bench_source": "AUTO", "bench_days": 3})
+    stt = c.get("/api/v1/integrations/dispatch-bench", headers=CA).json()
+    check(r.status_code == 200 and stt["status"].get("way") == "SQL", f"Bench settings: Automatic, nothing else filled in -> reads the Bench tables ({stt['status'].get('way')})")
     r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_source": "SQL", "bench_sql_schema": "dbo; DROP TABLE y"})
     check(r.status_code == 400, "a schema name that is not a plain name is refused")
     r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_source": "SQL", "bench_sql_database": "AIS_DPB_]; DROP"})
@@ -536,7 +544,8 @@ with TestClient(app, raise_server_exceptions=False) as c:
             [(950, "S1", "Accepted", None), (950, "S2", "Hold", "edge chip"), (950, "S3", "Rejected", "scratch"), (950, "S4", "Accepted", None)])
     r = c.post("/api/v1/integrations/dispatch-bench/test-sql", headers=CA).json()
     d0 = (r.get("databases") or [{}])[0]
-    check(d0.get("picklists") == 1 and d0.get("picked") == 5 and d0.get("pdi") == 4, f"Test SQL read: the Bench tables are readable ({r})")
+    check(d0.get("picklists") == 1 and d0.get("picked") == 5 and d0.get("pdi") == 4 and d0.get("plant") == "CHN",
+          f"Test SQL read: the Bench tables are readable, plant from the Bench plant list ({r})")
     r = c.post("/api/v1/integrations/dispatch-bench/pull", headers=CA).json()
     check(r.get("source") == "SQL" and r.get("created") == 1, f"pull from the SQL tables creates the trip ({r})")
     with SessionLocal() as db:

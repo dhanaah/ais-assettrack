@@ -142,6 +142,36 @@ jobs:
               n = len(c.get("/api/v1/pallets?limit=500", headers={"Authorization": "Bearer " + r.json()["token"]}).json().get("items", []))
               print("server started on the copied database, signed in, pallets:", n); assert n > 0
           PY
+      - name: Bench read rights script (sql/bench_reader.sql) - read every Bench plant database, write nothing
+        run: |
+          python - <<'PY'
+          import re, pyodbc
+          A = "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1433;UID=sa;PWD=AisTest#2026x;TrustServerCertificate=yes"
+          c = pyodbc.connect(A, autocommit=True)
+          for d in ("AIS_DPB_MASTER", "AIS_DPB_ASP", "OTHER_DB"):
+              c.execute(f"IF DB_ID('{d}') IS NULL CREATE DATABASE [{d}]")
+              c.execute(f"USE [{d}]; CREATE TABLE picklist_dispatch (id INT, notes NVARCHAR(40)); INSERT INTO picklist_dispatch VALUES (1, 'x')")
+          c.execute("USE master; CREATE LOGIN [ci_bench_reader] WITH PASSWORD = N'Ci#Reader2026x', CHECK_POLICY = OFF")
+          sql = open("sql/bench_reader.sql", encoding="utf-8").read().replace("N'IIS APPPOOL\\AssetTrack';", "N'ci_bench_reader';")
+          assert "N'ci_bench_reader';" in sql, "login line not found in the script"
+          batches = [b for b in re.split(r"^\s*GO\s*$", sql, flags=re.M | re.I) if b.strip()]
+          for b in batches:
+              c.execute("USE master; " + b)
+          r = pyodbc.connect(A.replace("UID=sa;PWD=AisTest#2026x", "UID=ci_bench_reader;PWD=Ci#Reader2026x"), autocommit=True)
+          for d in ("AIS_DPB_MASTER", "AIS_DPB_ASP"):
+              assert r.execute(f"SELECT COUNT(*) FROM [{d}].dbo.picklist_dispatch").fetchone()[0] == 1, d
+              try:
+                  r.execute(f"UPDATE [{d}].dbo.picklist_dispatch SET notes = 'y'"); raise SystemExit(f"write allowed in {d}")
+              except pyodbc.Error:
+                  pass
+          try:
+              r.execute("SELECT COUNT(*) FROM [OTHER_DB].dbo.picklist_dispatch").fetchone(); raise SystemExit("non-Bench database readable")
+          except pyodbc.Error:
+              pass
+          for b in batches:                       # running it again (a new plant was added) is harmless
+              c.execute("USE master; " + b)
+          print("bench_reader.sql: reads AIS_DPB_MASTER and AIS_DPB_ASP, writes nothing, other databases closed, re-run ok")
+          PY
 
   server-portable:
     # Portable server: the official signed Python "embeddable" runtime + libraries + app in one folder.
