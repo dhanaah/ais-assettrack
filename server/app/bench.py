@@ -4,10 +4,10 @@ picked LPNs and creates a pick list (DB-<plant>-<dispatch_id>; older ones HB-...
 picked LPNs, then challan, gate and the pallet return cycle continue in AssetTrack.
 Two ways to read the Bench (setting bench_source):
   API - the Bench web server: POST /api/auth/login, GET /api/dispatches/recent, GET /api/picks (portable / SQLite Bench).
-  SQL - read only, straight from the Bench's SQL Server views (Bench 10.2.0+): dbo.vw_AT_PickList (one row per pick
-        list), dbo.vw_AT_PickedPallets (one row per picked LPN, with its PDI status) and dbo.vw_AT_PDIResults (every PDI
-        decision). One database per plant: AIS_DPB_MASTER (default plant) and AIS_DPB_<PLANT>. If the SQL read fails
-        and the API is set up, that pull uses the API.
+  SQL - read only, straight from the Bench's own tables on SQL Server: picklist_dispatch (one row per pick list),
+        pick_log (picked LPNs), pdi_inspections (every PDI decision), part_master (customer part -> AIS code). One
+        database per plant: AIS_DPB_MASTER (default plant) and AIS_DPB_<PLANT>. Whole rows are read, so a column the
+        Bench has not added yet is simply empty. If the SQL read fails and the API is set up, that pull uses the API.
 Both feed the same pull below (picklist_id of the views = dispatch id of the API, so a trip keeps its number when the
 way is switched). Card PDI: OK (Accepted) loads; PENDING (not inspected yet) and HOLD (rework) stay on the trip but are
 not loadable; REJECT is final (off the trip). A card the Bench re-picked away leaves the trip with its last decision.
@@ -26,10 +26,10 @@ from sqlalchemy import text
 
 KEYS = ["bench_enabled", "bench_url", "bench_user", "bench_password", "bench_plant", "bench_plant_map", "bench_customer_map", "bench_interval_sec", "bench_days",
         "bench_source", "bench_sql_server", "bench_sql_database", "bench_sql_user", "bench_sql_password", "bench_sql_url",
-        "bench_sql_trips_view", "bench_sql_cards_view", "bench_sql_results_view"]
+        "bench_sql_schema"]
 SECRET_KEYS = ("bench_password", "bench_sql_password")
-TRIPS_VIEW, CARDS_VIEW, RESULTS_VIEW = "dbo.vw_AT_PickList", "dbo.vw_AT_PickedPallets", "dbo.vw_AT_PDIResults"
 DEFAULT_DBS = "AIS_DPB_*"
+TABLES = ("picklist_dispatch", "pick_log", "pdi_inspections")
 _token = {"v": None}
 _state = {"last_run": None, "last_ok": None, "last_error": None, "created": 0, "updated": 0, "lpns": 0, "source": None}
 
@@ -42,9 +42,7 @@ def get_settings(db: Session) -> dict:
     out["bench_interval_sec"] = max(10, int(out["bench_interval_sec"] or 30))
     out["bench_days"] = int(out["bench_days"] or 3)
     out["bench_source"] = (out["bench_source"] or "API").upper()
-    out["bench_sql_trips_view"] = out["bench_sql_trips_view"] or TRIPS_VIEW
-    out["bench_sql_cards_view"] = out["bench_sql_cards_view"] or CARDS_VIEW
-    out["bench_sql_results_view"] = out["bench_sql_results_view"] or RESULTS_VIEW
+    out["bench_sql_schema"] = out["bench_sql_schema"] or "dbo"
     out["bench_sql_database"] = out["bench_sql_database"] or DEFAULT_DBS
     return out
 
@@ -158,10 +156,10 @@ def _engine(cfg):
     return _engines[key]
 
 
-def _view(cfg, key) -> str:
-    v = (cfg.get(key) or "").strip()
-    if not _IDENT.match(v):
-        raise RuntimeError(f"Bench SQL view name not valid: {v!r}")
+def _schema(cfg) -> str:
+    v = (cfg.get("bench_sql_schema") or "dbo").strip()
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$", v):
+        raise RuntimeError(f"Bench SQL schema not valid: {v!r}")
     return v
 
 
@@ -170,7 +168,8 @@ def _iso(v):
 
 
 def _s(v):
-    return None if v is None else str(v).strip()
+    v = None if v is None else str(v).strip()
+    return v or None
 
 
 def _databases(cfg, c) -> list:
@@ -188,54 +187,80 @@ def _databases(cfg, c) -> list:
     return list(dict.fromkeys(out))
 
 
-def _q(dbn, view):
-    return f"[{dbn}].{view}" if dbn else view
+def _t(cfg, dbn, table):
+    """Table name: [<database>].<schema>.<table> on SQL Server; plain on the one test database."""
+    return f"[{dbn}].{_schema(cfg)}.{table}" if dbn else table
+
+
+def _db_plant(dbn):
+    """Plant of a Bench database: AIS_DPB_ASP -> ASP; <prefix>_MASTER (default plant) -> None (default AIS plant)."""
+    if not dbn or "_" not in dbn:
+        return None
+    tail = dbn.rsplit("_", 1)[1].upper()
+    return None if tail == "MASTER" else tail
+
+
+def _rows(c, sql, args=None):
+    return [{k.lower(): v for k, v in r.items()} for r in c.execute(text(sql), args or {}).mappings().all()]
 
 
 def sql_fetch(cfg):
-    """Read the Bench views and answer the same two questions as the Bench API (trips; picks of one trip), so the pull
+    """Read the Bench tables and answer the same two questions as the Bench API (trips; picks of one trip), so the pull
     is the same for both ways. Pick lists sent within the look-back days, from every plant database."""
     eng = _engine(cfg)
-    tv, cv, rv = _view(cfg, "bench_sql_trips_view"), _view(cfg, "bench_sql_cards_view"), _view(cfg, "bench_sql_results_view")
     since = (datetime.now() - timedelta(days=cfg["bench_days"] + 1)).strftime("%Y-%m-%dT%H:%M:%S")
+    parts: dict = {}
+
+    def ais_code(c, dbn, code):
+        """Customer part no -> AIS code from the Bench part master (read once per database per pull)."""
+        if dbn not in parts:
+            m = {}
+            try:
+                for r in _rows(c, f"SELECT ais_code, hmil_part_no FROM {_t(cfg, dbn, 'part_master')}"):
+                    a, h = _s(r.get("ais_code")), _s(r.get("hmil_part_no"))
+                    if a:
+                        m[a.upper()] = a
+                        if h:
+                            m.setdefault(h.upper(), a)
+            except Exception:
+                pass                                    # no part master: the code is used as it is
+            parts[dbn] = m
+        return parts[dbn].get((code or "").upper(), code)
 
     def trips():
         out = []
         with eng.connect() as c:
             for dbn in _databases(cfg, c):
-                for t in c.execute(text(f"SELECT * FROM {_q(dbn, tv)} WHERE sent_at >= :s"), {"s": since}).mappings().all():
-                    t = {k.lower(): v for k, v in t.items()}
-                    out.append({"id": _s(t.get("picklist_id")), "trip_id": _s(t.get("trip_id")), "ais_plant": _s(t.get("plant")),
-                                "section": _s(t.get("section")), "customer_code": _s(t.get("customer")), "segment": _s(t.get("segment")),
-                                "shift_name": _s(t.get("shift_name")), "vehicle": _s(t.get("vehicle")), "dispatch_status": _s(t.get("picklist_status")),
+                for t in _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'picklist_dispatch')} WHERE sent_at >= :s", {"s": since}):
+                    out.append({"id": _s(t.get("id")), "trip_id": _s(t.get("trip_id")), "ais_plant": _db_plant(dbn),
+                                "section": _s(t.get("section")) or "MAIN", "customer_code": _s(t.get("customer_code")), "segment": _s(t.get("segment")),
+                                "shift_name": _s(t.get("shift_name")), "vehicle": _s(t.get("vehicle")), "dispatch_status": _s(t.get("dispatch_status")),
                                 "sent_at": _iso(t.get("sent_at")), "so_no": _s(t.get("so_number")), "_db": dbn or ""})
         return out
 
     def picks(pid, dbn):
         dbn = dbn or None
         with eng.connect() as c:
-            rows = c.execute(text(f"SELECT * FROM {_q(dbn, cv)} WHERE picklist_id = :p"), {"p": pid}).mappings().all()
-            dec = c.execute(text(f"SELECT lpn, ais_code, qty, pdi_status, rejection_reason, inspector_name, pdi_id FROM {_q(dbn, rv)} "
-                                 "WHERE picklist_id = :p ORDER BY pdi_id"), {"p": pid}).mappings().all()
-        out, seen, insp = [], set(), None
-        for r in rows:
-            r = {k.lower(): v for k, v in r.items()}
-            lpn = _s(r.get("lpn"))
-            if not lpn:
-                continue
-            seen.add(lpn)
-            insp = _s(r.get("inspector_name")) or insp
-            out.append({"picked_lpn": lpn, "item_code": _s(r.get("ais_code")), "qty": r.get("qty") or 0, "sub_inv": _s(r.get("sub_inv")),
-                        "pdi_status": _s(r.get("pdi_status")), "pdi_reason": _s(r.get("rejection_reason")), "inspector": _s(r.get("inspector_name"))})
-        last = {}
-        for r in dec:                                   # last decision per card
-            r = {k.lower(): v for k, v in r.items()}
-            if _s(r.get("lpn")):
-                last[_s(r["lpn"])] = r
-        for lpn, r in last.items():                     # re-picked away (rejected / hold, replaced): left the trip
-            if lpn not in seen:
-                out.append({"picked_lpn": lpn, "item_code": _s(r.get("ais_code")), "qty": r.get("qty") or 0, "pdi_status": _s(r.get("pdi_status")),
-                            "pdi_reason": _s(r.get("rejection_reason")), "gone": True})
+            rows = _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'pick_log')} WHERE dispatch_id = :p ORDER BY id", {"p": int(pid)})
+            dec = _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'pdi_inspections')} WHERE dispatch_id = :p ORDER BY id", {"p": int(pid)})
+            last = {}
+            for r in dec:                                # last decision per card
+                if _s(r.get("lpn")):
+                    last[_s(r["lpn"])] = r
+            out, seen = [], set()
+            for r in rows:
+                lpn = _s(r.get("picked_lpn"))
+                if not lpn:
+                    continue
+                seen.add(lpn)
+                d = last.get(lpn) or {}
+                out.append({"picked_lpn": lpn, "item_code": ais_code(c, dbn, _s(r.get("item_code"))), "qty": r.get("qty") or 0, "sub_inv": _s(r.get("sub_inv")),
+                            "pdi_status": _s(d.get("status")) or "Pending", "pdi_reason": _s(d.get("rejection_reason")),
+                            "inspector": _s(d.get("inspector_name"))})
+            for lpn, d in last.items():                  # re-picked away (rejected / hold, replaced): left the trip
+                if lpn not in seen:
+                    out.append({"picked_lpn": lpn, "item_code": ais_code(c, dbn, _s(d.get("item_code"))), "qty": 0, "pdi_status": _s(d.get("status")),
+                                "pdi_reason": _s(d.get("rejection_reason")), "gone": True})
         return out
 
     def fetch(path):
@@ -250,19 +275,18 @@ def sql_fetch(cfg):
 
 
 def sql_test(cfg) -> dict:
-    """Admin check: can AssetTrack read the Bench views? Per plant database: pick lists, picked LPNs, PDI decisions."""
+    """Admin check: can AssetTrack read the Bench tables? Per plant database: pick lists, picked LPNs, PDI decisions."""
     eng = _engine(cfg)
-    tv, cv, rv = _view(cfg, "bench_sql_trips_view"), _view(cfg, "bench_sql_cards_view"), _view(cfg, "bench_sql_results_view")
     out = []
     with eng.connect() as c:
         dbs = _databases(cfg, c)
         if not dbs:
             raise RuntimeError(f"no Bench database found for {cfg.get('bench_sql_database')} that this login can open")
         for dbn in dbs:
-            out.append({"database": dbn or sql_url(cfg).database, "picklists": c.execute(text(f"SELECT COUNT(*) FROM {_q(dbn, tv)}")).scalar(),
-                        "picked": c.execute(text(f"SELECT COUNT(*) FROM {_q(dbn, cv)}")).scalar(),
-                        "pdi": c.execute(text(f"SELECT COUNT(*) FROM {_q(dbn, rv)}")).scalar(),
-                        "last_sent": _iso(c.execute(text(f"SELECT MAX(sent_at) FROM {_q(dbn, tv)}")).scalar())})
+            n = {t: c.execute(text(f"SELECT COUNT(*) FROM {_t(cfg, dbn, t)}")).scalar() for t in TABLES}
+            out.append({"database": dbn or sql_url(cfg).database, "plant": _db_plant(dbn) or "default", "picklists": n["picklist_dispatch"],
+                        "picked": n["pick_log"], "pdi": n["pdi_inspections"],
+                        "last_sent": _iso(c.execute(text(f"SELECT MAX(sent_at) FROM {_t(cfg, dbn, 'picklist_dispatch')}")).scalar())})
     return {"ok": True, "databases": out}
 
 

@@ -489,36 +489,35 @@ with TestClient(app, raise_server_exceptions=False) as c:
     r = c.post(f"/api/v1/picklists/{g2}/unlink", headers=CA, json={})
     check(r.status_code == 400 and "loaded" in r.text, "unlink refused once pallets are loaded")
 
-    print("30. Dispatch Bench read from its SQL Server views (vw_AT_*, read only): Accepted / Pending / Hold / Rejected, re-pick, API fallback")
+    print("30. Dispatch Bench read straight from its SQL tables (read only): Accepted / Pending / Hold / Rejected, re-pick, API fallback")
     from sqlalchemy import create_engine, text as _t
     src = fresh_db_url("benchsrc"); se = create_engine(src)
-    with se.begin() as x:
-        x.execute(_t("CREATE TABLE src_pl (id INT, trip INT, plant NVARCHAR(10), cust NVARCHAR(40), veh NVARCHAR(20), sec NVARCHAR(20), st NVARCHAR(20), sent NVARCHAR(30))"))
-        x.execute(_t("CREATE TABLE src_pick (id INT, pl INT, lpn NVARCHAR(40), item NVARCHAR(40), qty INT, pdi NVARCHAR(10), why NVARCHAR(200), insp NVARCHAR(80))"))
-        x.execute(_t("CREATE TABLE src_pdi (id INT, pl INT, lpn NVARCHAR(40), item NVARCHAR(40), qty INT, st NVARCHAR(10), why NVARCHAR(200))"))
-    for v_ in ("CREATE VIEW vw_AT_PickList AS SELECT plant, id AS picklist_id, trip AS trip_id, cust AS customer, veh AS vehicle, sec AS section, "
-               "st AS picklist_status, sent AS sent_at, CAST(NULL AS NVARCHAR(40)) AS so_number FROM src_pl",
-               "CREATE VIEW vw_AT_PickedPallets AS SELECT id AS pick_id, pl AS picklist_id, lpn, item AS ais_code, qty, COALESCE(pdi, 'Pending') AS pdi_status, "
-               "why AS rejection_reason, insp AS inspector_name FROM src_pick",
-               "CREATE VIEW vw_AT_PDIResults AS SELECT id AS pdi_id, pl AS picklist_id, lpn, item AS ais_code, qty, st AS pdi_status, why AS rejection_reason, "
-               "'QA' AS inspector_name FROM src_pdi"):
-        with se.begin() as x:
-            x.execute(_t(v_))
+    with se.begin() as x:      # the Bench tables (columns as Bench 10.2.0; customer_code / section / so_number / inspector_name added by it later)
+        x.execute(_t("CREATE TABLE picklist_dispatch (id INT, trip_id INT, plant NVARCHAR(20), vehicle NVARCHAR(20), shift_name NVARCHAR(40), "
+                     "dispatch_status NVARCHAR(20), sent_at NVARCHAR(30), completed_at NVARCHAR(30), segment NVARCHAR(20), customer_code NVARCHAR(40), section NVARCHAR(20))"))
+        x.execute(_t("CREATE TABLE pick_log (id INT, dispatch_id INT, trip_id INT, item_code NVARCHAR(40), sub_inv NVARCHAR(20), requested_lpn NVARCHAR(40), "
+                     "picked_lpn NVARCHAR(40), qty FLOAT, is_alternate INT, picked_at NVARCHAR(30))"))
+        x.execute(_t("CREATE TABLE pdi_inspections (id INT, pick_log_id INT, dispatch_id INT, item_code NVARCHAR(40), lpn NVARCHAR(40), status NVARCHAR(10), "
+                     "rejection_reason NVARCHAR(200), inspector_name NVARCHAR(80), inspected_at NVARCHAR(30))"))
+        x.execute(_t("CREATE TABLE part_master (ais_code NVARCHAR(40), hmil_part_no NVARCHAR(40))"))
+        x.execute(_t("INSERT INTO part_master VALUES ('WS-1', 'HMIL-WS-1')"))
     seq = {"n": 0}
 
     def src_set(pls, picks, decisions):
         sent = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         with se.begin() as x:
-            for t_ in ("src_pl", "src_pick", "src_pdi"):
+            for t_ in ("picklist_dispatch", "pick_log", "pdi_inspections"):
                 x.execute(_t(f"DELETE FROM {t_}"))
             for pid, veh in pls:
-                x.execute(_t("INSERT INTO src_pl VALUES (:i, :t, 'CHN', 'HMIL', :v, 'MAIN', 'Completed', :s)"), {"i": pid, "t": pid + 7000, "v": veh, "s": sent})
-            for pid, lpn, st_, why in picks:
+                x.execute(_t("INSERT INTO picklist_dispatch VALUES (:i, :t, 'HMIL1', :v, 'A', 'Completed', :s, '', 'OEM', 'HMIL', 'MAIN')"),
+                          {"i": pid, "t": pid + 7000, "v": veh, "s": sent})
+            for pid, lpn, _st, _why in picks:         # PDI status comes from pdi_inspections (no row = not inspected yet)
                 seq["n"] += 1
-                x.execute(_t("INSERT INTO src_pick VALUES (:n, :i, :l, 'WS-1', 10, :s, :w, 'S. Kumar')"), {"n": seq["n"], "i": pid, "l": lpn, "s": st_, "w": why})
+                x.execute(_t("INSERT INTO pick_log VALUES (:n, :i, :t, 'HMIL-WS-1', 'FGWH', :l, :l, 10, 0, :s)"), {"n": seq["n"], "i": pid, "t": pid + 7000, "l": lpn, "s": sent})
             for pid, lpn, st_, why in decisions:
                 seq["n"] += 1
-                x.execute(_t("INSERT INTO src_pdi VALUES (:n, :i, :l, 'WS-1', 10, :s, :w)"), {"n": seq["n"], "i": pid, "l": lpn, "s": st_, "w": why})
+                x.execute(_t("INSERT INTO pdi_inspections VALUES (:n, 0, :i, 'HMIL-WS-1', :l, :s, :w, 'S. Kumar', :at)"),
+                          {"n": seq["n"], "i": pid, "l": lpn, "s": st_, "w": why, "at": sent})
     with SessionLocal() as db:
         for sn in (9201, 9202, 9203, 9204, 9205, 9206):
             db.add(models.Pallet(pallet_no=f"AIS-CHN-F-0{sn}-00{sn}0", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED", pallet_type="F"))
@@ -526,11 +525,10 @@ with TestClient(app, raise_server_exceptions=False) as c:
             row_ = db.get(models.Setting, k_) or models.Setting(key=k_); row_.value = v_; db.add(row_)
         db.commit()
     r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_enabled": False, "bench_source": "SQL", "bench_sql_database": "AIS_DPB_*",
-                                                                       "bench_sql_trips_view": "vw_AT_PickList", "bench_sql_cards_view": "vw_AT_PickedPallets",
-                                                                       "bench_sql_results_view": "vw_AT_PDIResults", "bench_plant": "CHN", "bench_days": 3})
+                                                                       "bench_sql_schema": "dbo", "bench_plant": "CHN", "bench_days": 3})
     check(r.status_code == 200, f"Bench settings: read from SQL ({r.text[:80]})")
-    r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_source": "SQL", "bench_sql_trips_view": "x; DROP TABLE y"})
-    check(r.status_code == 400, "a view name that is not a plain name is refused")
+    r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_source": "SQL", "bench_sql_schema": "dbo; DROP TABLE y"})
+    check(r.status_code == 400, "a schema name that is not a plain name is refused")
     r = c.post("/api/v1/integrations/dispatch-bench", headers=CA, json={"bench_source": "SQL", "bench_sql_database": "AIS_DPB_]; DROP"})
     check(r.status_code == 400, "a database name that is not a plain name is refused")
     src_set([(950, "TN01SQL")],
@@ -538,14 +536,15 @@ with TestClient(app, raise_server_exceptions=False) as c:
             [(950, "S1", "Accepted", None), (950, "S2", "Hold", "edge chip"), (950, "S3", "Rejected", "scratch"), (950, "S4", "Accepted", None)])
     r = c.post("/api/v1/integrations/dispatch-bench/test-sql", headers=CA).json()
     d0 = (r.get("databases") or [{}])[0]
-    check(d0.get("picklists") == 1 and d0.get("picked") == 5 and d0.get("pdi") == 4, f"Test SQL read: all three views readable ({r})")
+    check(d0.get("picklists") == 1 and d0.get("picked") == 5 and d0.get("pdi") == 4, f"Test SQL read: the Bench tables are readable ({r})")
     r = c.post("/api/v1/integrations/dispatch-bench/pull", headers=CA).json()
-    check(r.get("source") == "SQL" and r.get("created") == 1, f"pull from the SQL views creates the trip ({r})")
+    check(r.get("source") == "SQL" and r.get("created") == 1, f"pull from the SQL tables creates the trip ({r})")
     with SessionLocal() as db:
         t = db.get(models.PickList, "DB-CHN-950")
         cs = {x.lpn_no: x for x in db.query(models.BenchTripCard).filter_by(trip_no="DB-CHN-950").all()}
         check(t is not None and t.vehicle_no == "TN01SQL" and "MAIN" in (t.remarks or "") and (t.pdi_sign or "") == "S. Kumar",
-              "trip = picklist_id (same number as the API way); vehicle, section, inspector from the views")
+              "trip = picklist id (same number as the API way); vehicle, section, inspector from the tables")
+        check(cs["S1"].part_no == "WS-1", f"customer part no turned into the AIS code by the Bench part master ({cs['S1'].part_no})")
         check(cs["S3"].removed_at is not None and cs["S3"].pdi_status == "REJECT" and cs["S3"].pdi_reason == "scratch", "Rejected: off the trip, kept with its reason")
         check(cs["S2"].removed_at is None and cs["S2"].pdi_status == "HOLD" and cs["S6"].pdi_status == "PENDING", "Hold and Pending: stay on the trip")
         check(getattr(db.get(models.Lpn, "S3"), "reserved_for", None) != "DB-CHN-950" and db.get(models.Lpn, "S2").reserved_for == "DB-CHN-950",
@@ -568,7 +567,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
     m = c.get(f"/api/v1/picklists/{g5}/pdi-match", headers=HY).json()
     with SessionLocal() as db:
         s3 = db.query(models.BenchTripCard).filter_by(trip_no="DB-CHN-950", lpn_no="S3").one()
-        check(s3.removed_at is not None and s3.pdi_reason == "scratch", "re-picked-away card stays removed with its reason (from vw_AT_PDIResults)")
+        check(s3.removed_at is not None and s3.pdi_reason == "scratch", "re-picked-away card stays removed with its reason (from pdi_inspections)")
     check(m["ok"], f"after rework (Hold -> Accepted) Bench and GCS agree ({m['issues']})")
     c.post(f"/api/v1/picklists/{g5}/load", headers=HY, json={"scanned": "AIS-CHN-F-09202-0092020"})
     r = c.post(f"/api/v1/picklists/{g5}/load", headers=HY, json={"scanned": "AIS-CHN-F-09204-0092040"}).json()
@@ -593,7 +592,7 @@ with TestClient(app, raise_server_exceptions=False) as c:
     _bn._get = lambda cfg, path: fk[path]
     try:
         with SessionLocal() as db:
-            for k_, v_ in (("bench_url", "http://bench:8765"), ("bench_user", "at"), ("bench_sql_trips_view", "no_such_view")):
+            for k_, v_ in (("bench_url", "http://bench:8765"), ("bench_user", "at"), ("bench_sql_url", "sqlite:////no/such/folder/bench.db")):
                 row_ = db.get(models.Setting, k_) or models.Setting(key=k_); row_.value = v_; db.add(row_)
             db.commit()
         r = c.post("/api/v1/integrations/dispatch-bench/pull", headers=CA).json()

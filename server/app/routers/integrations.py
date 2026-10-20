@@ -24,9 +24,7 @@ class BenchIn(BaseModel):
     bench_sql_database: str | None = None
     bench_sql_user: str | None = None           # blank = Windows login (IIS app pool / tray user)
     bench_sql_password: str | None = None       # blank = keep current
-    bench_sql_trips_view: str | None = None
-    bench_sql_cards_view: str | None = None
-    bench_sql_results_view: str | None = None
+    bench_sql_schema: str | None = None          # schema of the Bench tables (dbo)
 
 
 @router.get("/dispatch-bench")
@@ -50,9 +48,11 @@ def save_bench(body: BenchIn, request: Request, p: Principal = Depends(need("INT
     d["bench_source"] = (d.get("bench_source") or "API").upper()
     if d["bench_source"] not in ("API", "SQL"):
         raise HTTPException(400, "Bench source must be API or SQL")
-    for key in ("bench_sql_trips_view", "bench_sql_cards_view", "bench_sql_results_view"):
-        if d.get(key) and not bench._IDENT.match(d[key].strip()):
-            raise HTTPException(400, f"View name not valid: {d[key]}")
+    if d.get("bench_sql_schema"):
+        try:
+            bench._schema(d)
+        except RuntimeError as e:
+            raise HTTPException(400, str(e))
     if d.get("bench_sql_database"):
         try:
             bench.db_list(d)

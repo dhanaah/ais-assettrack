@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.34.0 - 2026-10-20 (HHT unchanged 2.23.0) - read the Bench tables directly (decided by DT)
+- The SQL way now reads the Dispatch Planning Bench's own tables directly, read only - `picklist_dispatch`, `pick_log`, `pdi_inspections`, `part_master` - in every plant database (`AIS_DPB_*`). The `vw_AT_*` views are no longer needed.
+- Whole rows are read, so a column the Bench has not added yet (customer, section, SO number, inspector) is simply empty - never an error.
+- Plant from the database: `AIS_DPB_MASTER` = the *Default AIS plant*, `AIS_DPB_ASP` = ASP (plant map still applies).
+- Card PDI = the last decision in `pdi_inspections` (none = Pending); a card re-picked away keeps its last decision and reason; the customer part no is turned into the AIS code through the Bench part master.
+- New `server/sql/bench_reader.sql`: read-only login `ais_assettrack_reader` with db_datareader in every Bench plant database (finds them by itself). Test SQL read shows each database with its plant.
+- Bench link page: the three view fields are replaced by one *Schema* field (dbo); hints updated. IIS guide section 7 updated. Same trip numbers as before - nothing is created twice.
+
 ## Server 1.33.0 - 2026-10-19 (HHT unchanged 2.23.0) - SQL read uses the Bench's own views (Bench 10.2.0)
 - The SQL way now reads the three views the Dispatch Planning Bench 10.2.0 creates itself in every plant database - `vw_AT_PickList`, `vw_AT_PickedPallets`, `vw_AT_PDIResults` - with the Bench's read-only login `ais_assettrack_reader` (Bench script `deploy_iis/assettrack_readonly.sql`). The two-view draft contract of 1.32.0 is withdrawn.
 - **All plants at once:** *Bench SQL databases* = `AIS_DPB_*` reads every plant database the login can open (`AIS_DPB_MASTER`, `AIS_DPB_ASP` ...), or give a list. Test SQL read shows one line per plant database.
