@@ -48,6 +48,7 @@ class Plant(Base):
     gcs_password: Mapped[str | None] = mapped_column(String(120))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(String(250))
+    from_bench: Mapped[bool | None] = mapped_column(Boolean)             # 1.37.0: code / name maintained in the Dispatch Planning Bench
 
 
 class Role(Base):
@@ -121,6 +122,9 @@ class Customer(Base):
     challan_source_override: Mapped[str | None] = mapped_column(String(10))
     api_key_hash: Mapped[str | None] = mapped_column(String(100))     # external customer API (Mode A push)
     api_key_prefix: Mapped[str | None] = mapped_column(String(12))
+    address: Mapped[str | None] = mapped_column(String(250))           # 1.37.0: from the Bench shared customer master
+    bench_code: Mapped[str | None] = mapped_column(String(20))         # Bench short code (e.g. HMIL); code = Oracle customer no.
+    from_bench: Mapped[bool | None] = mapped_column(Boolean)           # Bench-owned fields are read-only here
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(String(250))
     __table_args__ = (UniqueConstraint("code", "plant_code", name="uq_customer_plant"),)

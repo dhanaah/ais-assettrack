@@ -31,6 +31,8 @@ SECRET_KEYS = ("bench_password", "bench_sql_password")
 DEFAULT_DBS = "AIS_DPB_*"
 TABLES = ("picklist_dispatch", "pick_log", "pdi_inspections")
 _token = {"v": None}
+SHARED_CUST = ("oracle_cust_no", "ctype", "gstin", "address", "city", "state")   # Bench v10.4.0 shared customer fields
+_cust_oracle: dict = {}                    # Bench customer code -> Oracle customer no. (refreshed every masters sync)
 _state = {"last_run": None, "last_ok": None, "last_error": None, "created": 0, "updated": 0, "lpns": 0, "source": None}
 
 
@@ -334,7 +336,33 @@ def sql_fetch(cfg):
                                         "segment": _s(it.get("segment") or head.get("segment"))})
         return out
 
+    def shared():
+        """Bench shared masters (1.37.0 · DT): plants + company customers (ais_plants / ais_customers in the master
+        database) and which plants serve each customer (customer_master of every plant database)."""
+        plants, custs, serve = [], {}, {}
+        with eng.connect() as c:
+            dbs = _databases(cfg, c)
+            mdb = next((d for d in dbs if not d or not _db_plant(d)), dbs[0] if dbs else None)
+            dflt = bench_default_plant(cfg, c, mdb, master)
+            for r in _rows(c, f"SELECT * FROM {_t(cfg, mdb, 'ais_plants')}"):
+                plants.append({"code": (_s(r.get("code")) or "").upper(), "name": _s(r.get("name")) or "",
+                               "org_code": _s(r.get("org_code")) or "", "active": int(r.get("active") if r.get("active") is not None else 1)})
+            for r in _rows(c, f"SELECT * FROM {_t(cfg, mdb, 'ais_customers')}"):
+                custs[(_s(r.get("code")) or "").upper()] = {k: (_s(r.get(k)) or "") for k in ("code", "name", *SHARED_CUST)} | \
+                    {"active": int(r.get("active") if r.get("active") is not None else 1)}
+            for dbn in dbs:
+                pl = _db_plant(dbn) or dflt
+                try:
+                    for r in _rows(c, f"SELECT code FROM {_t(cfg, dbn, 'customer_master')}"):
+                        serve.setdefault((_s(r.get("code")) or "").upper(), []).append(pl)
+                except Exception:
+                    pass
+        out = [{**v, "code": k, "plants": sorted(set(p for p in serve.get(k, []) if p))} for k, v in custs.items()]
+        return {"plants": plants, "customers": out}
+
     def fetch(path):
+        if path.startswith("/api/masters/shared"):
+            return shared()
         if path.startswith("/api/dispatches/recent"):
             return {"dispatches": trips()}
         if path.startswith("/api/picks"):
@@ -392,7 +420,10 @@ def customer_for(cfg, bench_code: str) -> str:
     for part in (cfg.get("bench_customer_map") or "").replace(",", ";").split(";"):
         if "=" in part:
             a, b = part.split("=", 1); m[a.strip().upper()] = b.strip()
-    return m.get((bench_code or "").upper(), bench_code or "?")
+    k = (bench_code or "").upper()
+    if k in m:
+        return m[k]
+    return _cust_oracle.get(k) or bench_code or "?"     # 1.37.0 · DT: Bench short code -> Oracle customer no. (shared master)
 
 
 PLANT_KEYS = ("ais_plant", "aisplant", "plant_code", "from_plant", "source_plant", "dispatch_plant", "ship_from", "org_code", "organization", "warehouse")
@@ -471,6 +502,12 @@ def pull(db: Session, fetch=None) -> dict:
         else:
             raise RuntimeError("Dispatch Bench link not set up: AssetTrack is not on SQL Server and no Bench web server URL / user is given")
     created = updated = n_lpn = no_plant = 0; per_plant = {}; changed_trips: set[str] = set()
+    try:                                       # 1.37.0 · DT: Plant + Customer masters come from the Bench (one way)
+        from . import benchmasters
+        _state["masters"] = benchmasters.sync(db, fetch)
+    except Exception as e:
+        _state["masters"] = {"ok": False, "error": str(e)[:200]}
+        log.warning("bench masters: %s", e)
     try:
         disp = fetch("/api/dispatches/recent?limit=300").get("dispatches", [])
     except Exception as e:
