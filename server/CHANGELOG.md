@@ -1,4 +1,13 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.37.0 - 2026-10-20 (HHT unchanged 2.23.0) - common masters with the Dispatch Planning Bench (DT)
+- **Plant and Customer are owned by the Dispatch Planning Bench** (needs Bench 10.4.0) and copied here one way on every Bench pull (SQL: `ais_plants`, `ais_customers`, `customer_master`; API: `GET /api/masters/shared`).
+- Customer code = **Oracle customer no.**; name, type, GSTIN, address, city, state and active come from the Bench. One row per AIS plant that serves the customer. An existing AssetTrack row under the Bench short code (e.g. HMIL) without documents is re-coded to the Oracle no.; AssetTrack-only fields (mail ids, hold / reminder / escalation days, return mode, chargeable, API key, HHT pairing) are kept.
+- Bench pick lists get the Oracle customer no. automatically (Bench code → Oracle no.); `bench_customer_map` still wins when set.
+- 🔒 Bench fields are read-only on the Plants / Customers forms (tooltip "Maintained in Dispatch Planning Bench"), ignored in the master upload, and Bench records cannot be deleted here.
+- Bench link page: "Shared masters from the Bench" status, incl. the Bench customers that have no Oracle customer no. yet (not copied).
+- New columns (added automatically on start): `plants.from_bench`, `customers.address / bench_code / from_bench`.
+- New check script `tests/bench_masters_check.py`.
+
 ## Server 1.36.1 - 2026-10-20 (HHT unchanged 2.23.0) - button label (DT)
 - The gate pass button reads **📄 GCS** / **📄 GCS (no QR)** (was "PDF") in the GCS inbox and on the pick list page.
 
