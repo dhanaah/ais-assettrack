@@ -240,6 +240,8 @@ async def upload(kind: str, request: Request, file: UploadFile = File(...), p: P
                 if kind == "pallets":
                     obj.status, obj.location_plant = "AVAILABLE", rec.get("home_plant")
                 db.add(obj)
+            from ..benchmasters import strip_locked
+            strip_locked(obj, rec, kind)                        # 1.37.0: Bench-owned columns of a Bench record are ignored
             for k, v in rec.items():
                 if k not in sp["key"] and v is not None:        # blank cell = keep the stored value (Active included)
                     setattr(obj, k, v)
@@ -283,6 +285,8 @@ def delete(kind: str, key: str, request: Request, plant: str | None = None, p: P
         obj = db.get(M, key if kind == "pallets" else key.upper())
     if not obj:
         raise HTTPException(404, "Not found")
+    if kind in ("plants", "customers") and getattr(obj, "from_bench", False):
+        raise HTTPException(409, "Maintained in the Dispatch Planning Bench - remove / retire it there")
     if getattr(obj, "plant_code", None) and p.plant and obj.plant_code != p.plant:
         raise HTTPException(403, "Other plant's record")
     if kind == "transporters" and _plant_user(p):

@@ -72,6 +72,8 @@ def upsert_plant(body: PlantIn, request: Request, p: Principal = Depends(need("G
         vals = body.model_dump(exclude={"code"})
     else:                     # edit: change only what the form sends - Excel-only fields (address, notes, sub-inventories...) stay
         vals = body.model_dump(exclude={"code"}, exclude_unset=True)
+    from ..benchmasters import strip_locked
+    strip_locked(obj, vals, "plants")              # 1.37.0: plant name is maintained in the Dispatch Planning Bench
     for k, v in vals.items():
         setattr(obj, k, v)
     audit(db, p, "PLANT_UPSERT", "plant", code, old, body.model_dump(), request)
@@ -268,7 +270,10 @@ def upsert_customer(body: CustomerIn, request: Request, p: Principal = Depends(n
     old = row(obj) if obj else None
     if not obj:
         obj = models.Customer(code=body.code, plant_code=body.plant_code.upper()); db.add(obj)
-    for k, v in body.model_dump(exclude={"code", "plant_code"}).items():
+    vals = body.model_dump(exclude={"code", "plant_code"})
+    from ..benchmasters import strip_locked
+    strip_locked(obj, vals, "customers")           # 1.37.0: name / type / GSTIN / address / active come from the Bench
+    for k, v in vals.items():
         setattr(obj, k, v)
     audit(db, p, "CUSTOMER_UPSERT", "customer", f"{body.code}@{body.plant_code}", old, body.model_dump(), request)
     db.commit()
