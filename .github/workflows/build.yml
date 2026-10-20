@@ -460,17 +460,38 @@ jobs:
         with: { name: server-exe-zip, path: dl }
       - uses: actions/download-artifact@v4
         with: { name: hht-apk, path: dl }
+      - name: Release tools (gh) present
+        run: |
+          if ! command -v gh >/dev/null; then
+            echo "gh not on this runner image - installing"
+            (type -p wget >/dev/null || sudo apt-get install -y -q wget) && sudo mkdir -p -m 755 /etc/apt/keyrings
+            wget -nv -O- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+            sudo apt-get update -q && sudo apt-get install -y -q gh
+          fi
+          gh --version | head -1; node --version
       - name: Server release server-v<version> (Package, Portable, EXE)
         run: |
           SV=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' server/app/config.py)
           ls -la dl
-          if gh release view "server-v$SV" >/dev/null 2>&1; then
-            echo "::notice::server-v$SV already exists - not changed (raise APP_VERSION for a new release)"
-          else
-            gh release create "server-v$SV" --target "$GITHUB_SHA" --latest=false --title "AIS AssetTrack Server v$SV" \
-              --notes "AIS AssetTrack Server v$SV. Everything in one download: AIS_AssetTrack_Package.zip (open README_FIRST.txt). Also: Portable zip (tray server, no EXE - recommended on AIS PCs; same zip installs on IIS + SQL Server) and EXE zip (only where IT has whitelisted it). Changes: server/CHANGELOG.md. Developed by DT" \
-              dl/AIS_AssetTrack_Package.zip dl/AIS_AssetTrack_Server_Portable.zip dl/AIS_AssetTrack_Server_EXE.zip
-          fi
+          FILES="dl/AIS_AssetTrack_Package.zip dl/AIS_AssetTrack_Server_Portable.zip dl/AIS_AssetTrack_Server_EXE.zip"
+          for f in $FILES; do test -s "$f" || { echo "::error::missing release file $f"; exit 1; }; done
+          for try in 1 2 3; do                      # GitHub API sometimes busy (5xx): wait and retry
+            if gh release view "server-v$SV" --json tagName >/dev/null 2>/tmp/view.err; then
+              have=$(gh release view "server-v$SV" --json assets --jq '.assets[].name' | sort | tr '\n' ' ')
+              miss=""; for f in $FILES; do case " $have " in *" $(basename $f) "*) ;; *) miss="$miss $f";; esac; done
+              if [ -z "$miss" ]; then echo "server-v$SV complete - not changed"; exit 0; fi
+              echo "server-v$SV exists without:$miss - adding them"
+              gh release upload "server-v$SV" $miss > /tmp/rel.log 2>&1 && continue
+            else
+              gh release create "server-v$SV" --target "$GITHUB_SHA" --latest=false --title "AIS AssetTrack Server v$SV" \
+                --notes "AIS AssetTrack Server v$SV. Everything in one download: AIS_AssetTrack_Package.zip (open README_FIRST.txt). Also: Portable zip (tray server, no EXE - recommended on AIS PCs; same zip installs on IIS + SQL Server) and EXE zip (only where IT has whitelisted it). Changes: server/CHANGELOG.md. Developed by DT" \
+                $FILES > /tmp/rel.log 2>&1 && continue
+            fi
+            echo "try $try failed:"; cat /tmp/rel.log /tmp/view.err 2>/dev/null | tail -8; sleep 30
+          done
+          gh release view "server-v$SV" --json assets --jq '.assets[].name' 2>/dev/null | grep -q AIS_AssetTrack_Package.zip && exit 0
+          echo "::error::server release failed: $(cat /tmp/rel.log /tmp/view.err 2>/dev/null | tail -6 | tr '\n' ' ' | sed 's/%/%25/g')"; exit 1
       - name: HHT release hht-v<version> (only when the HHT version is new)
         run: |
           HV=$(node -p "require('./hht/app.json').expo.version")
@@ -480,6 +501,7 @@ jobs:
             cp "dl/AIS_AssetTrack_HHT_v$HV.apk" dl/AIS_AssetTrack_HHT.apk
             gh release create "hht-v$HV" --target "$GITHUB_SHA" --latest --title "AIS AssetTrack HHT v$HV" \
               --notes "AIS AssetTrack HHT app v$HV. Download AIS_AssetTrack_HHT.apk (or the versioned file) and install on the HHT. Developed by DT" \
-              "dl/AIS_AssetTrack_HHT_v$HV.apk" dl/AIS_AssetTrack_HHT.apk
+              "dl/AIS_AssetTrack_HHT_v$HV.apk" dl/AIS_AssetTrack_HHT.apk > /tmp/hht.log 2>&1 \
+              || { echo "::error::HHT release failed: $(tail -6 /tmp/hht.log | tr '\n' ' ' | sed 's/%/%25/g')"; exit 1; }
           fi
 
