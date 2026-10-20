@@ -173,6 +173,15 @@ def _date(v):
     return None
 
 
+def is_cancelled(f: dict) -> bool:
+    """GCS cancelled in the ERP: a real cancel date (a valid date from 2000 on - not '-', 'NA', '0', '01-JAN-1900'), or a
+    STATUS that is exactly CANCEL(L)ED. 'NOT CANCELLED', blanks and placeholders are not a cancel."""
+    d = _date(f.get("cancelled_date")) if f.get("cancelled_date") not in (None, "") else None
+    if d and d.year >= 2000:
+        return True
+    return bool(re.fullmatch(r"\s*CANCEL(L?ED)?\s*", str(f.get("status") or "").upper()))
+
+
 def _line_qty(r):
     """Total qty of an invoice line; when only cases x qty/case are given, their product."""
     q = _int(r.get("part_qty"))
@@ -355,7 +364,7 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
     pk = db.get(models.PickList, no) or db.query(models.PickList).filter(models.PickList.plant_code == plant, models.PickList.gcs_no == gcs,
                                                                          models.PickList.source == "GCS").first()
     cust = _customer(db, plant, f)
-    cancelled = bool(f.get("cancelled_date")) or "CANCEL" in str(f.get("status") or "").upper()
+    cancelled = is_cancelled(f)
     to_plant = plant_by_gcs_name(db, f.get("to_plant")) or (str(f.get("to_plant") or "").strip().upper() or None)
     dt = "STOCK_TRANSFER" if (to_plant and db.get(models.Plant, to_plant)) else "CUSTOMER"
     if not pk:
@@ -364,6 +373,9 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
         db.add(pk); db.flush(); what = "created"
     else:
         tr = db.get(models.PickList, pk.linked_picklist) if pk.status == "LINKED" and pk.linked_picklist else None
+        if (pk.status == "CANCELLED" and not cancelled and (pk.remarks or "").startswith("GCS CANCELLED in ERP")
+                and not db.query(models.PickListLine).filter_by(picklist_no=pk.picklist_no).count()):
+            pk.status = "OPEN"; pk.remarks = None          # the ERP sends it again, not cancelled: open again
         if pk.status != "OPEN" and not (tr and tr.status == "OPEN"):
             return "skipped", pk                   # already loaded / dispatched: frozen
         # a re-issued GCS whose Bench trip is still being loaded: its cards / invoices are updated on the trip too
@@ -466,11 +478,11 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
 BENCH_SOURCES = ("DISPATCH_BENCH", "HMIL_BENCH")
 
 
-WAITING = ("HOLD", "PENDING")      # on the trip but not loadable: PDI on hold (rework) / not inspected yet
+WAITING = ("HOLD", "PENDING", "PLANNED")   # on the trip but not loadable: PDI on hold (rework) / not inspected / not picked yet
 
 
 def _wait_word(st):
-    return "PDI not done yet" if st == "PENDING" else "PDI HOLD (rework)"
+    return {"PENDING": "PDI not done yet", "PLANNED": "not picked yet"}.get(st, "PDI HOLD (rework)")
 
 
 def trip_cards(db: Session, trip_no: str, active: bool = True) -> dict:
@@ -592,7 +604,8 @@ def reconcile(db: Session, k: models.PickList) -> dict:
     act, rem = trip_cards(db, t.picklist_no), trip_cards(db, t.picklist_no, active=False)
     for lpn, r in gcs.items():
         c = act.get(lpn)
-        row = {"lpn_no": lpn, "pallet": r.pallet_ref, "invoice": r.invoice_no, "gcs_part": r.part_no, "gcs_qty": r.qty,
+        cc = c or rem.get(lpn)
+        row = {"lpn_no": lpn, "pallet": r.pallet_ref or (cc.pallet_ref if cc else None), "invoice": r.invoice_no, "gcs_part": r.part_no, "gcs_qty": r.qty,
                "bench_part": c.part_no if c else None, "bench_qty": c.qty if c else None}
         if c is None:
             row["status"] = "REMOVED" if lpn in rem else "NOT_PDI"
@@ -610,10 +623,10 @@ def reconcile(db: Session, k: models.PickList) -> dict:
         for lpn, c in act.items():
             if lpn not in gcs:
                 if (c.pdi_status or "OK") in WAITING:   # on hold / not inspected and not invoiced: stays back - shown, does not block
-                    out["cards"].append({"lpn_no": lpn, "pallet": None, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
+                    out["cards"].append({"lpn_no": lpn, "pallet": c.pallet_ref, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
                                          "status": "HOLD_OUT", "pdi_status": c.pdi_status, "pdi_reason": c.pdi_reason})
                     continue
-                out["cards"].append({"lpn_no": lpn, "pallet": None, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
+                out["cards"].append({"lpn_no": lpn, "pallet": c.pallet_ref, "invoice": None, "bench_part": c.part_no, "bench_qty": c.qty,
                                      "status": "NOT_INVOICED"}); out["counts"]["not_invoiced"] += 1
     elif not (t.link_mode == "ADMIN" or (k.source == "GCS" and k.linked_picklist)):
         out["issues"].append("No GCS (invoice / gate pass) received for this Bench trip yet")
@@ -626,7 +639,8 @@ def reconcile(db: Session, k: models.PickList) -> dict:
         for c in act.values():
             if (c.pdi_status or "OK") in WAITING:
                 out["counts"]["hold"] += 1
-                out["cards"].append({"lpn_no": c.lpn_no, "bench_part": c.part_no, "bench_qty": c.qty, "status": c.pdi_status, "pdi_reason": c.pdi_reason})
+                out["cards"].append({"lpn_no": c.lpn_no, "pallet": c.pallet_ref, "bench_part": c.part_no, "bench_qty": c.qty, "status": c.pdi_status,
+                                     "pdi_reason": c.pdi_reason})
                 continue
             ben[c.part_no] = ben.get(c.part_no, 0) + int(c.qty or 0)
         for part in sorted(set(inv) | set(ben), key=str):
@@ -636,8 +650,8 @@ def reconcile(db: Session, k: models.PickList) -> dict:
                                  "bench_qty": ben.get(part), "status": st})
     for lpn, c in rem.items():
         if lpn not in gcs:
-            out["cards"].append({"lpn_no": lpn, "bench_part": c.part_no, "bench_qty": c.qty, "removed_at": c.removed_at, "status": "REMOVED",
-                                 "pdi_status": c.pdi_status, "pdi_reason": c.pdi_reason})
+            out["cards"].append({"lpn_no": lpn, "pallet": c.pallet_ref, "bench_part": c.part_no, "bench_qty": c.qty, "removed_at": c.removed_at,
+                                 "status": "REMOVED", "pdi_status": c.pdi_status, "pdi_reason": c.pdi_reason})
     n = out["counts"]
     if n["not_pdi"]:
         out["issues"].append(f"{n['not_pdi']} GCS card(s) not on the Bench PDI check sheet")
@@ -648,7 +662,7 @@ def reconcile(db: Session, k: models.PickList) -> dict:
     if n["differs"]:
         out["issues"].append(f"{n['differs']} line(s) item / qty differ between Bench and GCS")
     if n["hold"]:
-        out["issues"].append(f"{n['hold']} invoiced card(s) not PDI Accepted yet (Hold / Pending) - wait for Accepted in the Bench, or reject it there and re-issue the GCS")
+        out["issues"].append(f"{n['hold']} invoiced card(s) not PDI Accepted yet (Hold / Pending / not picked) - wait for Accepted in the Bench, or reject it there and re-issue the GCS")
     out["ok"] = not out["issues"]
     return out
 

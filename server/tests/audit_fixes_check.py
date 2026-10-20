@@ -512,14 +512,16 @@ with TestClient(app, raise_server_exceptions=False) as c:
             for t_ in ("picklist_dispatch", "pick_log", "pdi_inspections"):
                 x.execute(_t(f"DELETE FROM {t_}"))
             for pid, veh in pls:
-                x.execute(_t("INSERT INTO picklist_dispatch VALUES (:i, :t, 'HMIL1', :v, 'A', 'Completed', :s, '', 'OEM', 'HMIL', 'MAIN')"),
+                x.execute(_t("INSERT INTO picklist_dispatch (id, trip_id, plant, vehicle, shift_name, dispatch_status, sent_at, completed_at, segment, customer_code, section) "
+                             "VALUES (:i, :t, 'HMIL1', :v, 'A', 'Completed', :s, '', 'OEM', 'HMIL', 'MAIN')"),
                           {"i": pid, "t": pid + 7000, "v": veh, "s": sent})
             for pid, lpn, _st, _why in picks:         # PDI status comes from pdi_inspections (no row = not inspected yet)
                 seq["n"] += 1
                 x.execute(_t("INSERT INTO pick_log VALUES (:n, :i, :t, 'HMIL-WS-1', 'FGWH', :l, :l, 10, 0, :s)"), {"n": seq["n"], "i": pid, "t": pid + 7000, "l": lpn, "s": sent})
             for pid, lpn, st_, why in decisions:
                 seq["n"] += 1
-                x.execute(_t("INSERT INTO pdi_inspections VALUES (:n, 0, :i, 'HMIL-WS-1', :l, :s, :w, 'S. Kumar', :at)"),
+                x.execute(_t("INSERT INTO pdi_inspections (id, pick_log_id, dispatch_id, item_code, lpn, status, rejection_reason, inspector_name, inspected_at) "
+                             "VALUES (:n, 0, :i, 'HMIL-WS-1', :l, :s, :w, 'S. Kumar', :at)"),
                           {"n": seq["n"], "i": pid, "l": lpn, "s": st_, "w": why, "at": sent})
     with SessionLocal() as db:
         for sn in (9201, 9202, 9203, 9204, 9205, 9206):
@@ -611,6 +613,80 @@ with TestClient(app, raise_server_exceptions=False) as c:
         check("bench_sql_url" not in stt["settings"], "the SQL connection string is never sent to the browser")
     finally:
         _bn._get = real_get
+
+    print("31. 20-Oct field report: Bench LPN pallet.card, planned cards, PDI sheet PDF, no gate QR before finish, false GCS cancel")
+    with SessionLocal() as db:                    # SQL read again (section 30 ended on the API fallback)
+        for k_, v_ in (("bench_sql_url", src), ("bench_url", None), ("bench_user", None)):
+            row_ = db.get(models.Setting, k_) or models.Setting(key=k_); row_.value = v_; db.add(row_)
+        for sn in (9301, 9302, 9303):
+            db.add(models.Pallet(pallet_no=f"AIS-CHN-F-0{sn}-00{sn}0", home_plant="CHN", location_plant="CHN", status="AVAILABLE", zone="FGWH", load_state="LOADED", pallet_type="F"))
+        db.commit()
+    add = "ADD COLUMN" if se.dialect.name == "sqlite" else "ADD"
+    with se.begin() as x:
+        x.execute(_t(f"ALTER TABLE picklist_dispatch {add} items_json NVARCHAR(2000)"))
+        x.execute(_t(f"ALTER TABLE picklist_dispatch {add} closed_partial NVARCHAR(5)"))
+        x.execute(_t(f"ALTER TABLE pdi_inspections {add} quality_notes NVARCHAR(500)"))
+        x.execute(_t("CREATE TABLE trips (id INT, vehicle NVARCHAR(20), plant NVARCHAR(20))"))
+    src_set([(960, "TN-OLD")], [(960, "F.9301.Q1", None, None), (960, "F.9302.Q2", None, None)],
+            [(960, "F.9301.Q1", "Accepted", None)])
+    with se.begin() as x:
+        x.execute(_t("UPDATE picklist_dispatch SET items_json = :j WHERE id = 960"),
+                  {"j": '[{"item_code": "HMIL-WS-1", "pallets": 3, "lpns": [{"lpn": "F.9301.Q1"}, {"lpn": "F.9302.Q2"}, {"lpn": "F.9303.Q3"}]}]'})
+        x.execute(_t("UPDATE pdi_inspections SET quality_notes = :q WHERE lpn = 'F.9301.Q1'"), {"q": '{"inspector": "R. Devi", "params": {"Spec": "OK", "Logo": "OK"}}'})
+        x.execute(_t("INSERT INTO trips VALUES (7960, 'TN31SQL', 'AAC')"))
+    r = c.post("/api/v1/integrations/dispatch-bench/pull", headers=CA).json()
+    with SessionLocal() as db:
+        t = db.get(models.PickList, "DB-CHN-960")
+        cs = {x.lpn_no: x for x in db.query(models.BenchTripCard).filter_by(trip_no="DB-CHN-960").all()}
+        check(set(cs) == {"Q1", "Q2", "Q3"} and cs["Q1"].pallet_ref == "F.9301", f"Bench LPN 'F.9301.Q1' = pallet F.9301 + card Q1, as on the GCS ({sorted(cs)})")
+        check(cs["Q3"].pdi_status == "PLANNED" and cs["Q2"].pdi_status == "PENDING" and cs["Q1"].inspector == "R. Devi" and "Spec:OK" in (cs["Q1"].checks or ""),
+              "planned card listed before picking; inspector and check points from the PDI decision")
+        check(t.vehicle_no == "TN31SQL", f"vehicle from the Bench trip ({t.vehicle_no})")
+        check(db.get(models.Lpn, "Q3") is None or db.get(models.Lpn, "Q3").reserved_for != "DB-CHN-960", "planned (not picked) card is not reserved")
+    g7 = gcs_in("G960", "TN31SQL", [(9301, "Q1"), (9302, "Q2"), (9303, "Q3")])
+    m = c.get(f"/api/v1/picklists/{g7}/pdi-match", headers=HY).json()
+    st = {x["lpn_no"]: (x["status"], x.get("pallet")) for x in m["cards"]}
+    check(m["trip_no"] == "DB-CHN-960" and st.get("Q1") == ("OK", "F.9301") and st.get("Q3", ("",))[0] == "PLANNED",
+          f"GCS cards matched to the Bench cards (no more 'no Bench trip'), pallet numbers shown ({st})")
+    r = c.post(f"/api/v1/picklists/{g7}/load", headers=HY, json={"scanned": "AIS-CHN-F-09303-0093030"})
+    check(r.status_code == 400 and "not picked yet" in r.text, f"invoiced card not picked yet: STOP at loading ({r.text[:90]})")
+    r = c.post(f"/api/v1/picklists/{g7}/load", headers=HY, json={"scanned": "AIS-CHN-F-09301-0093010"})
+    check(r.status_code == 200, "accepted card loads")
+    pdf = c.get(f"/api/v1/picklists/{g7}/pdi-sheet.pdf", headers=HY)
+    if os.getenv("KEEP_PDF"):
+        open(os.environ["KEEP_PDF"], "wb").write(pdf.content)
+    from pypdf import PdfReader
+    import io as _io
+    txt = "".join(pg.extract_text() for pg in PdfReader(_io.BytesIO(pdf.content)).pages) if pdf.status_code == 200 else ""
+    check(pdf.status_code == 200 and "PDI Check Sheet" in txt and "F.9301" in txt and "Accepted" in txt and "R. Devi" in txt and "Loaded on vehicle 1 / 3" in txt,
+          f"PDI check sheet PDF (Bench layout): pallets, PDI, inspector, live loading count ({pdf.status_code})")
+    # gate QR only after loading is finished; a GCS cancelled in the ERP gets a preview, and no reprint
+    pv = c.get(f"/api/v1/picklists/{g7}/gcs.pdf", headers=HY)
+    check(pv.status_code == 200 and "PREVIEW" in pv.headers.get("content-disposition", ""), "open GCS: gate pass PDF is a preview without QR")
+    r = c.post(f"/api/v1/picklists/{g7}/gcs-print", headers=HY)
+    check(r.status_code == 400, "reprint with the gate QR refused while loading is not finished")
+    # false cancel: '-' / '01-JAN-1900' in CANCELLED_DATE is not a cancel; a real date is; Reopen for a wrong one
+    with SessionLocal() as db:
+        for no_, cd in (("G970", "-"), ("G971", "01-JAN-1900"), ("G972", "20-OCT-2026 10:00:00")):
+            _gc.apply_gcs(db, "CHN", {"gcs_no": no_, "vehicle_no": "TN99C1", "customer_code": "HMIL", "cancelled_date": cd}, "t",
+                          [{"lpn_no": f"F.9301.C{no_}", "invoice_no": "INV-C", "part_no": "WS-1", "part_qty": 10}])
+        db.commit()
+        sts = {n: db.get(models.PickList, "GCS-CHN-" + n).status for n in ("G970", "G971", "G972")}
+    check(sts["G970"] != "CANCELLED" and sts["G971"] != "CANCELLED" and sts["G972"] == "CANCELLED", f"cancel only on a real cancel date ({sts})")
+    pv = c.get("/api/v1/picklists/GCS-CHN-G972/gcs.pdf", headers=HY)
+    check(pv.status_code == 200 and "PREVIEW" in pv.headers.get("content-disposition", ""), "cancelled GCS: PDF without the gate QR (was printed WITH it)")
+    r = c.post("/api/v1/picklists/GCS-CHN-G972/reopen", headers=HY)      # plant admin (GCS link approver)
+    check(r.status_code == 200 and r.json()["status"] in ("OPEN", "LINKED"), f"admin reopens a GCS wrongly shown cancelled ({r.text[:80]})")
+    r = c.post("/api/v1/picklists/GCS-CHN-G972/reopen", headers=HY)
+    check(r.status_code == 400, "a GCS that is not cancelled cannot be reopened")
+    with SessionLocal() as db:                    # the ERP sends a cancelled GCS again, not cancelled: opens by itself
+        _gc.apply_gcs(db, "CHN", {"gcs_no": "G973", "vehicle_no": "TN99C1", "customer_code": "HMIL", "status": "CANCELLED"}, "t",
+                      [{"lpn_no": "F.9301.CX3", "invoice_no": "INV-C", "part_no": "WS-1", "part_qty": 10}]); db.commit()
+        a = db.get(models.PickList, "GCS-CHN-G973").status
+        _gc.apply_gcs(db, "CHN", {"gcs_no": "G973", "vehicle_no": "TN99C1", "customer_code": "HMIL"}, "t",
+                      [{"lpn_no": "F.9301.CX3", "invoice_no": "INV-C", "part_no": "WS-1", "part_qty": 10}]); db.commit()
+        b = db.get(models.PickList, "GCS-CHN-G973").status
+    check(a == "CANCELLED" and b == "OPEN", f"re-sent without cancel: opens again ({a} -> {b})")
     se.dispose()
 
 print()

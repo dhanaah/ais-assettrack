@@ -157,8 +157,9 @@ def build_pdf(db: Session, pk: models.PickList, user: models.User | None, qr_tex
             else:
                 c.saveState(); c.setFillColorRGB(*red)
                 txt(x0 + tw - 1.5 * mm - qw / 2, top - 8 * mm, "NO GATE QR", 9, True, align="c")
-                txt(x0 + tw - 1.5 * mm - qw / 2, top - 13 * mm, "loading not", 7, align="c")
-                txt(x0 + tw - 1.5 * mm - qw / 2, top - 17 * mm, "finished", 7, align="c")
+                w1, w2 = ("GCS", "CANCELLED") if pk.status == "CANCELLED" else ("loading not", "finished")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 13 * mm, w1, 7, pk.status == "CANCELLED", align="c")
+                txt(x0 + tw - 1.5 * mm - qw / 2, top - 17 * mm, w2, 7, pk.status == "CANCELLED", align="c")
                 txt(x0 + tw - 1.5 * mm - qw / 2, top - hh + 3 * mm, "NOT VALID AT THE OUT GATE", 6.5, True, align="c")
                 c.restoreState()
             return top - hh - 3 * mm

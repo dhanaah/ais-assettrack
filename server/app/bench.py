@@ -227,6 +227,23 @@ def bench_default_plant(cfg, c, dbn, cache=None):
     return cache["v"]
 
 
+def _json(v, dflt):
+    import json
+    try:
+        return json.loads(v) if isinstance(v, str) and v.strip() else (v if v is not None else dflt)
+    except Exception:
+        return dflt
+
+
+def _pdi_detail(d: dict) -> dict:
+    """Inspector and check points of a PDI decision, as the Bench sheet prints them ('Spec:OK Color:OK ...')."""
+    q = _json(d.get("quality_notes"), {}) or {}
+    q = q if isinstance(q, dict) else {}
+    params = q.get("params") if isinstance(q.get("params"), dict) else {}
+    checks = " ".join(f"{k}:{'OK' if str(v).upper() == 'OK' else v}" for k, v in params.items())
+    return {"inspector": _s(q.get("inspector")) or _s(d.get("inspector_name")), "checks": checks or None}
+
+
 def _rows(c, sql, args=None):
     return [{k.lower(): v for k, v in r.items()} for r in c.execute(text(sql), args or {}).mappings().all()]
 
@@ -260,36 +277,61 @@ def sql_fetch(cfg):
         with eng.connect() as c:
             for dbn in _databases(cfg, c):
                 plant = _db_plant(dbn) or bench_default_plant(cfg, c, dbn, master)
-                for t in _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'picklist_dispatch')} WHERE sent_at >= :s", {"s": since}):
+                pls = _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'picklist_dispatch')} WHERE sent_at >= :s", {"s": since})
+                veh = {}
+                try:                                     # the Bench sheet takes the vehicle from the trip
+                    for r in _rows(c, f"SELECT id, vehicle FROM {_t(cfg, dbn, 'trips')} WHERE id IN "
+                                      f"(SELECT trip_id FROM {_t(cfg, dbn, 'picklist_dispatch')} WHERE sent_at >= :s)", {"s": since}):
+                        veh[_s(r.get("id"))] = _s(r.get("vehicle"))
+                except Exception:
+                    pass
+                for t in pls:
                     out.append({"id": _s(t.get("id")), "trip_id": _s(t.get("trip_id")), "ais_plant": plant,
                                 "section": _s(t.get("section")) or "MAIN", "customer_code": _s(t.get("customer_code")), "segment": _s(t.get("segment")),
-                                "shift_name": _s(t.get("shift_name")), "vehicle": _s(t.get("vehicle")), "dispatch_status": _s(t.get("dispatch_status")),
+                                "shift_name": _s(t.get("shift_name")), "vehicle": veh.get(_s(t.get("trip_id"))) or _s(t.get("vehicle")),
+                                "dispatch_status": _s(t.get("dispatch_status")),
                                 "sent_at": _iso(t.get("sent_at")), "so_no": _s(t.get("so_number")), "_db": dbn or ""})
         return out
 
     def picks(pid, dbn):
+        """Cards of one Bench pick list = its PDI check sheet: picked LPNs with their last PDI decision, cards re-picked
+        away (left the trip), and planned LPNs not picked yet (not after a partial close) - as the Bench sheet shows."""
         dbn = dbn or None
         with eng.connect() as c:
+            head = (_rows(c, f"SELECT * FROM {_t(cfg, dbn, 'picklist_dispatch')} WHERE id = :p", {"p": int(pid)}) or [{}])[0]
             rows = _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'pick_log')} WHERE dispatch_id = :p ORDER BY id", {"p": int(pid)})
             dec = _rows(c, f"SELECT * FROM {_t(cfg, dbn, 'pdi_inspections')} WHERE dispatch_id = :p ORDER BY id", {"p": int(pid)})
             last = {}
             for r in dec:                                # last decision per card
                 if _s(r.get("lpn")):
-                    last[_s(r["lpn"])] = r
+                    last[_s(r["lpn"]).upper()] = r
             out, seen = [], set()
             for r in rows:
                 lpn = _s(r.get("picked_lpn"))
                 if not lpn:
                     continue
-                seen.add(lpn)
-                d = last.get(lpn) or {}
+                seen.add(lpn.upper())
+                d = last.get(lpn.upper()) or {}
                 out.append({"picked_lpn": lpn, "item_code": ais_code(c, dbn, _s(r.get("item_code"))), "qty": r.get("qty") or 0, "sub_inv": _s(r.get("sub_inv")),
                             "pdi_status": _s(d.get("status")) or "Pending", "pdi_reason": _s(d.get("rejection_reason")),
-                            "inspector": _s(d.get("inspector_name"))})
+                            **_pdi_detail(d), "segment": _s(head.get("segment"))})
             for lpn, d in last.items():                  # re-picked away (rejected / hold, replaced): left the trip
                 if lpn not in seen:
+                    seen.add(lpn)
                     out.append({"picked_lpn": lpn, "item_code": ais_code(c, dbn, _s(d.get("item_code"))), "qty": 0, "pdi_status": _s(d.get("status")),
-                                "pdi_reason": _s(d.get("rejection_reason")), "gone": True})
+                                "pdi_reason": _s(d.get("rejection_reason")), "gone": True, **_pdi_detail(d), "segment": _s(head.get("segment"))})
+            if str(head.get("closed_partial") or "") != "1":    # planned pallets not picked yet (the sheet shows them before scanning)
+                for it in _json(head.get("items_json"), []):
+                    if not isinstance(it, dict):
+                        continue
+                    code = _s(it.get("item_code") or it.get("itemCode"))
+                    for x in (it.get("lpns") or []):
+                        lpn = _s((x or {}).get("lpn") if isinstance(x, dict) else x)
+                        if lpn and lpn.upper() not in seen:
+                            seen.add(lpn.upper())
+                            q = (x.get("qty") if isinstance(x, dict) else None) or 0
+                            out.append({"picked_lpn": lpn, "item_code": ais_code(c, dbn, code), "qty": q, "pdi_status": "PLANNED",
+                                        "segment": _s(it.get("segment") or head.get("segment"))})
         return out
 
     def fetch(path):
@@ -329,7 +371,7 @@ def card_pdi(pr: dict) -> str:
     if not v:
         return "OK"
     return {"OK": "OK", "PASS": "OK", "PASSED": "OK", "ACCEPTED": "OK", "HOLD": "HOLD", "ON_HOLD": "HOLD", "HELD": "HOLD", "REWORK": "HOLD",
-            "PENDING": "PENDING", "NEW": "PENDING", "OPEN": "PENDING",
+            "PENDING": "PENDING", "NEW": "PENDING", "OPEN": "PENDING", "PLANNED": "PLANNED",
             "REJECT": "REJECT", "REJECTED": "REJECT", "NG": "REJECT", "NOK": "REJECT", "NOT_OK": "REJECT"}.get(v, "HOLD")
 
 
@@ -359,18 +401,32 @@ PLANT_KEYS = ("ais_plant", "aisplant", "plant_code", "from_plant", "source_plant
 def sync_trip_cards(db: Session, trip_no: str, picks: dict) -> bool:
     """Keep the trip's PDI check sheet (BenchTripCard) equal to the Bench: new cards added, cards the Bench took off
     marked removed (PDI reject / alternate), a card put back made active again. Returns True when anything changed."""
-    have = {c.lpn_no: c for c in db.query(models.BenchTripCard).filter_by(trip_no=trip_no).all()}
+    from .gcs import lpn_parts
+    have = {}
+    for c in db.query(models.BenchTripCard).filter_by(trip_no=trip_no).all():
+        if "." in (c.lpn_no or ""):                  # stored before 1.36: full Bench LPN 'RQL-07.P1026...' -> card 'P1026...'
+            card, pref = lpn_parts(c.lpn_no)
+            if card in have or db.query(models.BenchTripCard).filter_by(trip_no=trip_no, lpn_no=card).first():
+                db.delete(c); continue
+            c.lpn_no, c.pallet_ref = card, c.pallet_ref or pref
+        have[c.lpn_no] = c
     changed = False
     for lpn, pr in picks.items():
         q = int(float(pr.get("qty") or 0))
         st = card_pdi(pr)
         why = (str(pr.get("pdi_reason")).strip()[:200] or None) if pr.get("pdi_reason") else None
         gone = card_gone(pr)                         # rejected / re-picked away = off the trip
+        extra = {"pallet_ref": (pr.get("_pref") or None), "inspector": (str(pr.get("inspector") or "")[:80] or None),
+                 "checks": (str(pr.get("checks") or "")[:200] or None), "segment": (str(pr.get("segment") or "")[:20] or None)}
         c = have.get(lpn)
         if c is None:
             db.add(models.BenchTripCard(trip_no=trip_no, lpn_no=lpn, part_no=(pr.get("item_code") or None), qty=q, pdi_status=st, pdi_reason=why,
-                                        removed_at=utcnow() if gone else None)); changed = True
-        elif ((c.removed_at is not None) != gone or c.qty != q or (pr.get("item_code") and c.part_no != pr.get("item_code"))
+                                        removed_at=utcnow() if gone else None, **extra)); changed = True
+            continue
+        for k_, v_ in extra.items():                 # details only: never a reason to re-match
+            if v_ and getattr(c, k_) != v_:
+                setattr(c, k_, v_)
+        if ((c.removed_at is not None) != gone or c.qty != q or (pr.get("item_code") and c.part_no != pr.get("item_code"))
               or (c.pdi_status or "OK") != st or c.pdi_reason != why):
             c.removed_at = (c.removed_at or utcnow()) if gone else None
             c.qty = q; c.part_no = pr.get("item_code") or c.part_no; c.pdi_status = st; c.pdi_reason = why; changed = True
@@ -455,11 +511,13 @@ def pull(db: Session, fetch=None) -> dict:
         if pk and pk.status in ("DISPATCHED", "CLOSED", "CANCELLED"):
             continue                 # gone out / closed in AssetTrack: frozen
         picks = fetch(f"/api/picks?dispatch_id={did}" + (f"&_db={d['_db']}" if d.get("_db") else "")).get("picks", [])
+        from .gcs import lpn_parts
         lp = {}
         for pr in picks:
-            lpn = (pr.get("picked_lpn") or "").strip()
-            if lpn:
-                lp[lpn] = pr        # last pick wins (repicks replace)
+            raw = (pr.get("picked_lpn") or "").strip()
+            if raw:
+                lpn, pref = lpn_parts(raw)               # Bench LPN 'RQL-07.P1026...' = pallet RQL-07 + part card P1026... (as on the GCS)
+                lp[lpn] = {**pr, "_pref": pref or pr.get("_pref")}   # last pick wins (repicks replace)
         if pk:
             if sync_trip_cards(db, no, lp):          # the PDI check sheet changed (e.g. reject -> alternate card)
                 changed_trips.add(no)
@@ -481,7 +539,7 @@ def pull(db: Session, fetch=None) -> dict:
         if sup:
             pk.supervisor_sign = (f"{sup} ({d['supervisor_login']})" if d.get("supervisor_login") else str(sup))[:120]
         total = 0
-        live = {lpn for lpn, pr in lp.items() if not card_gone(pr)}   # rejected / re-picked-away cards are not reserved
+        live = {lpn for lpn, pr in lp.items() if not card_gone(pr) and card_pdi(pr) != "PLANNED"}   # rejected / re-picked-away / not yet picked: not reserved
         for lpn, pr in lp.items():
             if lpn not in live:
                 continue

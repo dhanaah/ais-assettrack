@@ -397,6 +397,20 @@ def confirm_picklist(no: str, request: Request, p: Principal = Depends(hht()), d
     return row(k)
 
 
+GATE_DONE = ("APPROVED", "DISPATCHED", "CLOSED")
+
+
+def _gate_qr_ok(db: Session, k: models.PickList) -> bool:
+    """The OUT-gate QR is printed only once loading is finished (GCS APPROVED or later). A cancelled GCS, an open one,
+    or one waiting for PDI never gets it - its PDF is a preview marked NO GATE QR."""
+    if k.status in GATE_DONE:
+        return True
+    if k.status == "LINKED" and k.linked_picklist:            # loaded on its Bench trip: the trip decides
+        t = db.get(models.PickList, k.linked_picklist)
+        return bool(t and t.status in GATE_DONE)
+    return False
+
+
 @router.post("/picklists/{no}/gcs-print")
 def gcs_reprint(no: str, request: Request, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
     """Rebuild the GCS PDF and print it again on the plant printer (web or HHT)."""
@@ -408,6 +422,8 @@ def gcs_reprint(no: str, request: Request, p: Principal = Depends(current_user),
     p.require_plant(k.plant_code)
     if not (p.has("OUT_GATE_SCAN") or p.has("DOCK_SCAN") or p.has("LOGISTICS_APPROVE") or p.has("CHALLAN_REQUEST")):
         raise HTTPException(403, "Not allowed")
+    if not _gate_qr_ok(db, k):
+        raise HTTPException(400, f"GCS {k.gcs_no} is {k.status} - loading not finished, no gate pass with QR to print (use PDF (no QR) for a preview)")
     n = db.query(models.PickListLine).filter_by(picklist_no=no).count()
     pr = gcsprint.generate_and_print(SessionLocal, no, p.user.id, gcssvc.gcs_qr(k, n))
     audit(db, p, "GCS_REPRINT", "picklist", no, None, pr, request); db.commit()
@@ -423,8 +439,8 @@ def gcs_pdf(no: str, p: Principal = Depends(current_user), db: Session = Depends
         raise HTTPException(404, "GCS not found")
     p.require_plant(k.plant_code)
     n = db.query(models.PickListLine).filter_by(picklist_no=no).count()
-    if k.status in ("OPEN", "SO_PENDING", "PDI_PENDING"):
-        # loading not finished: a PREVIEW without the gate QR (fresh each time, never kept) - the OUT gate cannot accept it
+    if not _gate_qr_ok(db, k):
+        # loading not finished (or GCS cancelled): a PREVIEW without the gate QR (fresh each time, never kept) - the OUT gate cannot accept it
         from fastapi.responses import Response
         data = gcsprint.build_pdf(db, k, p.user, None)
         return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="GCS_{(k.gcs_no or no).replace("/", "-")}_PREVIEW.pdf"'})
@@ -433,6 +449,20 @@ def gcs_pdf(no: str, p: Principal = Depends(current_user), db: Session = Depends
         data = gcsprint.build_pdf(db, k, p.user, gcssvc.gcs_qr(k, n))
         open(path, "wb").write(data)
     return FileResponse(path, media_type="application/pdf", filename=os.path.basename(path))
+
+
+@router.get("/picklists/{no}/pdi-sheet.pdf")
+def pdi_sheet_pdf(no: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)):
+    """PDI check sheet in the Bench layout with pallet numbers, invoices and loading status - built live, never kept."""
+    from fastapi.responses import Response
+    from .. import pdisheet
+    k = db.get(models.PickList, no)
+    if not k:
+        raise HTTPException(404, "Pick list not found")
+    p.require_plant(k.plant_code)
+    data = pdisheet.build_pdf(db, k)
+    name = f"PDI_CheckSheet_{(k.gcs_no or k.ext_ref or no).replace('/', '-')}.pdf"
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "no-store"})
 
 
 @router.get("/picklists/{no}/challan.pdf")
@@ -629,6 +659,28 @@ def unlink(no: str, request: Request, p: Principal = Depends(need("GCS_LINK_APPR
     audit(db, p, "GCS_UNLINK", "picklist", g.picklist_no, None, {"trip": t.picklist_no}, request)
     db.commit()
     return {"gcs": g.picklist_no, "trip": t.picklist_no, "unlinked": True}
+
+
+@router.post("/picklists/{no}/reopen")
+def reopen_gcs(no: str, request: Request, p: Principal = Depends(need("GCS_LINK_APPROVE")), db: Session = Depends(get_db)):
+    """Admin: a GCS wrongly shown CANCELLED (not cancelled in the ERP) is opened again while nothing is loaded on it.
+    Its Bench trip is matched again by part cards."""
+    from .. import gcs as _gp
+    k = db.get(models.PickList, no)
+    if not k or (k.source or "") != "GCS":
+        raise HTTPException(404, "GCS not found")
+    p.require_plant(k.plant_code)
+    if k.status != "CANCELLED":
+        raise HTTPException(400, f"GCS {k.gcs_no} is {k.status}, not CANCELLED")
+    if db.query(models.PickListLine).filter_by(picklist_no=no).count() or k.challan_no:
+        raise HTTPException(400, "Pallets / a challan exist on this GCS - it cannot be reopened")
+    old = k.remarks
+    k.status = "OPEN"; k.remarks = f"Reopened by {p.user_id} (was: {old or 'cancelled'})"[:250]
+    db.flush()
+    linked = _gp.link_bench_trip(db, k)
+    audit(db, p, "GCS_REOPEN", "picklist", no, {"status": "CANCELLED", "remarks": old}, {"status": k.status, "linked": linked}, request)
+    db.commit()
+    return {"picklist_no": no, "status": k.status, "linked_to": linked}
 
 
 @router.post("/picklists/{no}/challan")

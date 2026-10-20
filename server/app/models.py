@@ -503,8 +503,12 @@ class BenchTripCard(Base):
     qty: Mapped[int | None] = mapped_column(Integer)
     added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime)       # set when the Bench no longer has the card on the trip
-    pdi_status: Mapped[str | None] = mapped_column(String(10))          # OK | HOLD (rework, may become OK) | REJECT (final, removed); None = OK
+    pdi_status: Mapped[str | None] = mapped_column(String(10))          # OK | PENDING | HOLD (rework) | PLANNED (not picked yet) | REJECT (final, removed); None = OK
     pdi_reason: Mapped[str | None] = mapped_column(String(200))         # reject / hold reason from the Bench
+    pallet_ref: Mapped[str | None] = mapped_column(String(30))          # pallet part of the Bench LPN (RQL-07 of RQL-07.P1026...)
+    inspector: Mapped[str | None] = mapped_column(String(80))           # PDI inspector of the card
+    checks: Mapped[str | None] = mapped_column(String(200))             # PDI check points (Spec:OK Color:OK ...)
+    segment: Mapped[str | None] = mapped_column(String(20))
     __table_args__ = (UniqueConstraint("trip_no", "lpn_no", name="uq_bench_card"),)
 
 

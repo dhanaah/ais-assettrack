@@ -1,4 +1,12 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.36.0 - 2026-10-20 (HHT unchanged 2.23.0) - field report fixes (DT, 20-Oct)
+- **Bench LPN = pallet + part card:** a Bench LPN like `RQL-07.P10266594439` is now split exactly as the GCS `LPN_NUMBER` (pallet `RQL-07`, card `P10266594439`), so GCS cards match their Bench trip (they showed "no Bench trip" before). Cards stored the old way are converted on the next Bench pull.
+- **Pallet numbers on the PDI check sheet**, before and after scanning: every card shows its pallet (Bench / GCS reference and the AssetTrack pallet number).
+- **Planned cards before picking:** the Bench's planned LPNs that are not picked yet are listed ("not picked yet", not loadable, not reserved; after a partial close only the picked ones stay). Inspector and check points come from the Bench PDI decision; the vehicle from the Bench trip.
+- **PDI check sheet PDF in the Bench layout** ("AIS Glass - Picklist / PDI Check Sheet", grouped by invoice) plus pallet numbers, invoice and loaded time - built live each time: GCS inbox › 📋 PDI sheet, and in the PDI match panel. The PDI match panel now refreshes itself every 15 s while open.
+- **No gate QR before loading is finished:** the GCS PDF carries the OUT-gate QR only when the GCS is APPROVED (or later). A cancelled or open GCS opened as a full pass with the QR before - now it is a preview marked NO GATE QR / GCS CANCELLED; reprint with QR is refused until then.
+- **GCS wrongly shown CANCELLED:** only a real date (2000 or later) in CANCELLED_DATE, or STATUS exactly CANCELLED, cancels a GCS - placeholders such as "-", "NA", "0", "01-JAN-1900" no longer do. A GCS the ERP sends again without the cancel opens again by itself; admins get **↺ Reopen (not cancelled)** on the GCS inbox for one already marked (nothing loaded).
+
 ## Server 1.35.0 - 2026-10-20 (HHT unchanged 2.23.0) - Bench link with almost no input (requested by DT)
 - *Read the Bench from* = **Automatic** (new default): the Bench tables when AssetTrack runs on SQL Server, otherwise the Bench web server. The page shows which way it uses now.
 - **Plants from the Bench:** the Bench plant list (`ais_plants`, default plant) gives the plant of `AIS_DPB_MASTER`; `AIS_DPB_<PLANT>` gives the others. No default plant to choose.
