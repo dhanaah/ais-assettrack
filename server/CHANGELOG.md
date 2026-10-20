@@ -1,4 +1,7 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.36.1 - 2026-10-20 (HHT unchanged 2.23.0) - button label (DT)
+- The gate pass button reads **📄 GCS** / **📄 GCS (no QR)** (was "PDF") in the GCS inbox and on the pick list page.
+
 ## Server 1.36.0 - 2026-10-20 (HHT unchanged 2.23.0) - field report fixes (DT, 20-Oct)
 - **Bench LPN = pallet + part card:** a Bench LPN like `RQL-07.P10266594439` is now split exactly as the GCS `LPN_NUMBER` (pallet `RQL-07`, card `P10266594439`), so GCS cards match their Bench trip (they showed "no Bench trip" before). Cards stored the old way are converted on the next Bench pull.
 - **Pallet numbers on the PDI check sheet**, before and after scanning: every card shows its pallet (Bench / GCS reference and the AssetTrack pallet number).

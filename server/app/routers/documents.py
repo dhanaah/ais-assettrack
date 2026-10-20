@@ -423,7 +423,7 @@ def gcs_reprint(no: str, request: Request, p: Principal = Depends(current_user),
     if not (p.has("OUT_GATE_SCAN") or p.has("DOCK_SCAN") or p.has("LOGISTICS_APPROVE") or p.has("CHALLAN_REQUEST")):
         raise HTTPException(403, "Not allowed")
     if not _gate_qr_ok(db, k):
-        raise HTTPException(400, f"GCS {k.gcs_no} is {k.status} - loading not finished, no gate pass with QR to print (use PDF (no QR) for a preview)")
+        raise HTTPException(400, f"GCS {k.gcs_no} is {k.status} - loading not finished, no gate pass with QR to print (use GCS (no QR) for a preview)")
     n = db.query(models.PickListLine).filter_by(picklist_no=no).count()
     pr = gcsprint.generate_and_print(SessionLocal, no, p.user.id, gcssvc.gcs_qr(k, n))
     audit(db, p, "GCS_REPRINT", "picklist", no, None, pr, request); db.commit()
