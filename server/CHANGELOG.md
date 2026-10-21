@@ -1,4 +1,10 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.37.1 - 2026-10-21 (HHT unchanged 2.23.0) - EXE and antivirus (DT)
+- Trend Micro Apex One quarantined the 1.36.1 EXE (*Predictive Machine Learning*, `Troj.Win32.TRX.XXPE50…` - a generic score for new unsigned EXEs, not a virus); the older EXE kept running.
+- The EXE now carries Windows file details (Company AIS Glass, Product AIS AssetTrack, version, "Developed by DT") - before it had none.
+- PyInstaller's start-up part (bootloader) is now built fresh in our build instead of the shared standard one.
+- These lower the antivirus score; they cannot guarantee it. The reliable fix stays an IT exception for the AssetTrack folder, or a code-signing certificate. The Portable version is unaffected.
+
 ## Server 1.37.0 - 2026-10-20 (HHT unchanged 2.23.0) - common masters with the Dispatch Planning Bench (DT)
 - **Plant and Customer are owned by the Dispatch Planning Bench** (needs Bench 10.4.0) and copied here one way on every Bench pull (SQL: `ais_plants`, `ais_customers`, `customer_master`; API: `GET /api/masters/shared`).
 - Customer code = **Oracle customer no.**; name, type, GSTIN, address, city, state and active come from the Bench. One row per AIS plant that serves the customer. An existing AssetTrack row under the Bench short code (e.g. HMIL) without documents is re-coded to the Oracle no.; AssetTrack-only fields (mail ids, hold / reminder / escalation days, return mode, chargeable, API key, HHT pairing) are kept.

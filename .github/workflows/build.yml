@@ -45,7 +45,20 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: pip install -r requirements.txt -r requirements-build.txt
+      - name: PyInstaller with its start-up part (bootloader) built here, not the shared download - fewer antivirus false alarms
+        shell: pwsh
+        env: { PYINSTALLER_COMPILE_BOOTLOADER: '1' }
+        run: |
+          $v = (Select-String -Path requirements-build.txt -Pattern '^pyinstaller==(.+)$').Matches[0].Groups[1].Value
+          pip install --force-reinstall --no-deps --no-binary pyinstaller "pyinstaller==$v"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::bootloader build failed"; exit 1 }
       - run: pyinstaller --noconfirm assettrack_server.spec
+      - name: Check the EXE carries its file details
+        shell: pwsh
+        run: |
+          $i = (Get-Item dist/AssetTrack_Server/AssetTrack_Server.exe).VersionInfo
+          Write-Host "$($i.CompanyName) | $($i.ProductName) | $($i.FileVersion) | $($i.LegalCopyright)"
+          if (-not $i.CompanyName -or -not $i.FileVersion) { Write-Host "::error::EXE has no version details"; exit 1 }
       - name: Smoke test the EXE build (import only)
         shell: pwsh
         run: |
