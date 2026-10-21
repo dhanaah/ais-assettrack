@@ -6,7 +6,7 @@ done folder, interval. Files: .json / .csv / .txt / .pdf - fields found by name 
 Developed by DT
 Developed by DT"""
 import io, json, logging, re, threading, time, csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from ftplib import FTP
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -29,7 +29,7 @@ FIELDS = {
     "customer_location": ["customer_location", "customer location", "cust location", "location", "ship to location", "delivery location",
                           "destination", "customer city", "delivery address"],
     "invoice_no": ["invoice_no", "invoice no", "invoice number", "invoice", "inv no", "inv number"],
-    "invoice_date": ["invoice_date", "invoice date", "inv date"],
+    "invoice_date": ["invoice_date", "invoice date", "inv date", "invoice dt", "inv dt", "trx date", "trx_date", "bill date", "invoice_dt"],
     "so_number": ["so_number", "so no", "sale order", "sales order", "order no"],
     "part_no": ["part_no", "part no", "item", "item code", "item no", "part"],
     "part_desc": ["part_desc", "item description", "description", "item desc", "part name", "part description"],
@@ -164,12 +164,32 @@ def _float(v):
         return None
 
 
+_DATE_FMTS = ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%b-%y", "%d-%m-%y", "%d.%m.%y",
+              "%Y/%m/%d", "%d %b %Y", "%d %b %y", "%d-%B-%Y", "%d %B %Y", "%Y%m%d", "%m/%d/%Y")
+
+
 def _date(v):
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d.%m.%Y", "%d/%m/%y"):
+    """A date as the ERP writes it: 09/10/2026, 21-OCT-2026, 21-OCT-26 (Oracle DD-MON-RR), 2026-10-21T11:03:52,
+    21-10-2026 11:03:52, 20261021, an Excel day number (46316) ... - day first; month first only when it cannot be day
+    first (10/21/2026). The time part is ignored."""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v
+    t = str(v).strip()
+    if not t or t in ("-", "NA", "N/A", "0"):
+        return None
+    if re.fullmatch(r"\d{5}(\.\d+)?", t):                      # Excel serial day (1900 system)
+        n = float(t)
+        return datetime(1899, 12, 30) + timedelta(days=int(n)) if 20000 < n < 80000 else None
+    d = re.split(r"[T ](?=\d{1,2}:\d{2})", t, maxsplit=1)[0].strip()   # drop a time part: "T11:03", " 11:03:52"
+    for fmt in _DATE_FMTS:
         try:
-            return datetime.strptime(str(v)[:11].strip(), fmt)
+            x = datetime.strptime(d, fmt)
         except ValueError:
             continue
+        if x.year >= 1900:          # "09/10/26" must not become year 26 through a 4-digit-year layout
+            return x
     return None
 
 
@@ -459,6 +479,10 @@ def apply_gcs(db: Session, plant: str, f: dict, source_file: str | None = None, 
             pk.qty = len(refs)
         d = _date(items[0].get("invoice_date") or f.get("invoice_date") or "")
         pk.invoice_date = d or pk.invoice_date
+        raw = {str(r.get("invoice_date") or f.get("invoice_date") or "") for r in items}
+        bad = sorted(x for x in raw if x and _date(x) is None)
+        if bad or raw == {""}:                     # shows in the server log why the gate pass has no invoice date
+            log.warning("GCS %s: invoice date %s", pk.gcs_no, f"not understood: {', '.join(bad)[:120]}" if bad else "not in the file")
     else:
         pk.qty = _int(f.get("pallets")) or pk.qty
     pk.remarks = (f"GCS from {source_file}" if source_file else pk.remarks)

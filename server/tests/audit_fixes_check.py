@@ -689,6 +689,20 @@ with TestClient(app, raise_server_exceptions=False) as c:
     check(a == "CANCELLED" and b == "OPEN", f"re-sent without cancel: opens again ({a} -> {b})")
     se.dispose()
 
+print("\n32) GCS invoice date in every ERP layout (blank Inv Date on the gate pass, 21-Oct)")
+from datetime import datetime as _dt  # noqa: E402
+from app import gcs as _g32  # noqa: E402
+_want = _dt(2026, 10, 21)
+for _s in ("21-OCT-26", "21-Oct-2026 11:03", "2026-10-21T11:03:52", "21/10/2026", "21-10-26", "20261021", "46316",
+           "2026-10-21 00:00:00", "21.10.2026", "21 Oct 2026", "10/21/2026"):
+    check(_g32._date(_s) == _want, f"invoice date '{_s}' read as 21-Oct-2026")
+check(_g32._date("09/10/26") == _dt(2026, 10, 9), "09/10/26 is 9-Oct-2026 (day first, not year 26)")
+check(all(_g32._date(x) is None for x in ("", "-", "NA", None, "garbage")), "blank / placeholder dates stay empty")
+check(_g32.is_cancelled({"cancelled_date": "01-JAN-1900"}) is False and _g32.is_cancelled({"cancelled_date": "21-OCT-26"}) is True,
+      "cancel date: placeholder 1900 no, real 21-OCT-26 yes")
+_r = _g32._lookup({"TRX_DATE": "21-OCT-26"})
+check(_r.get("invoice_date") == "21-OCT-26", "TRX_DATE column is taken as the invoice date")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)

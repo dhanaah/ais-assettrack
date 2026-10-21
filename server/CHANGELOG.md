@@ -1,4 +1,10 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.37.2 - 2026-10-21 (HHT unchanged 2.23.0) - GCS invoice date (DT)
+- **Inv Date was blank on the gate pass** when the ERP file wrote the date in a layout AssetTrack did not know. Now read: 21-OCT-26 (Oracle DD-MON-RR), 21-Oct-2026, 21/10/2026, 21-10-26, 21.10.2026, 2026-10-21, with a time (11:03:52 or T11:03:52), 20261021 and Excel day numbers. Day first; month first only when it cannot be day first (10/21/2026). 2-digit years are no longer read as year 26.
+- Also taken as the invoice date: columns TRX_DATE, INVOICE_DT, INV DT, BILL DATE.
+- When a GCS still comes without a readable invoice date, the server log says so with the value received ("GCS …: invoice date not understood: …" / "not in the file").
+- A GCS already received gets its date when the ERP sends it again (next FTP file for that GCS).
+
 ## Server 1.37.1 - 2026-10-21 (HHT unchanged 2.23.0) - EXE and antivirus (DT)
 - Trend Micro Apex One quarantined the 1.36.1 EXE (*Predictive Machine Learning*, `Troj.Win32.TRX.XXPE50…` - a generic score for new unsigned EXEs, not a virus); the older EXE kept running.
 - The EXE now carries Windows file details (Company AIS Glass, Product AIS AssetTrack, version, "Developed by DT") - before it had none.
