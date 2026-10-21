@@ -222,7 +222,7 @@ if "--pdf" in sys.argv:
     with sync_playwright() as p:
         b = p.chromium.launch(executable_path="/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell")
         pg = b.new_page(viewport={"width": W, "height": H}); pg.goto("file://" + hp); pg.wait_for_timeout(300)
-        pg.pdf(path=os.path.join(OUT, "AssetTrack_Process_Flow_A3.pdf"), width="420mm", height="297mm", print_background=True, margin={"top": "0", "bottom": "0", "left": "0", "right": "0"})
+        pg.pdf(path=os.path.join(OUT, "AssetTrack_Process_Flow_A3.pdf"), width="420mm", height="297mm", print_background=True, page_ranges="1", margin={"top": "0", "bottom": "0", "left": "0", "right": "0"})
         pg.screenshot(path=os.path.join(OUT, "preview.png"))
         b.close()
     print("pdf done")
