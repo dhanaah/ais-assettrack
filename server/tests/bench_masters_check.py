@@ -60,5 +60,20 @@ with TestClient(app):
             if path.startswith("/api/masters/shared"): raise RuntimeError("old Bench")
             return fetch(path)
         r = bench.pull(db, fetch=f2); check(bench.status()["masters"]["ok"] is False and r["updated"] >= 0, "old Bench without shared masters: pull continues")
+        # removed in the Bench -> released (lock off, can be deleted); partial list -> nothing released (DT, 30-Oct)
+        SHARED["customers"].append({"code": "TATA", "name": "Tata", "oracle_cust_no": "20001", "active": 1, "plants": ["AAC", "ASP"]})
+        bench.pull(db, fetch=fetch); db.expire_all()
+        check(all(x.from_bench for x in db.query(models.Customer).filter_by(code="20001").all()), "new Bench customer locked at both plants")
+        SHARED["customers"][-1]["plants"] = ["AAC"]; SHARED["complete"] = False
+        bench.pull(db, fetch=fetch); db.expire_all()
+        check(db.query(models.Customer).filter_by(code="20001", plant_code="ASP").first().from_bench, "partly read Bench list: nothing released")
+        SHARED["complete"] = True
+        bench.pull(db, fetch=fetch); db.expire_all()
+        a = db.query(models.Customer).filter_by(code="20001", plant_code="ASP").first(); b = db.query(models.Customer).filter_by(code="20001", plant_code="AAC").first()
+        check(not a.from_bench and "can be deleted" in (a.notes or "") and b.from_bench, "customer dropped for ASP in the Bench: ASP row released, AAC row still locked")
+        check(bench.status()["masters"]["released"] == 1, "status counts the released record")
+        SHARED["plants"] = [x for x in SHARED["plants"] if x["code"] != "ASP"]
+        bench.pull(db, fetch=fetch); db.expire_all()
+        check(not db.get(models.Plant, "ASP").from_bench and db.get(models.Plant, "AAC").from_bench, "plant removed in the Bench: released")
 print("\nALL BENCH MASTER CHECKS PASSED" if not FAILS else f"\n{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)

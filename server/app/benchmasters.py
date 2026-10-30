@@ -60,8 +60,31 @@ def sync(db: Session, fetch) -> dict:
                 setattr(obj, k, v)
             obj.bench_code, obj.from_bench = bcode, True
     db.flush()
+    released = _release_removed(db, plants, custs, data) if data.get("complete", True) else 0
     bench._cust_oracle.clear(); bench._cust_oracle.update(omap)
-    return {"ok": True, "plants": len(plants), "customers": len(omap), "changed": changed, "missing_oracle_no": missing}
+    return {"ok": True, "plants": len(plants), "customers": len(omap), "changed": changed, "missing_oracle_no": missing,
+            "released": released}
+
+
+def _release_removed(db: Session, plants: list, custs: list, data: dict) -> int:
+    """A plant / customer (per plant) the Bench no longer has is released: the 🔒 lock goes, so it can be edited or
+    deleted in AssetTrack (Delete keeps history: a record already used is only set inactive). Only when the Bench sent a
+    full list - an empty or partly read list releases nothing."""
+    n = 0
+    if plants:
+        have = {p["code"].strip().upper()[:10] for p in plants}
+        for obj in db.query(models.Plant).filter(models.Plant.from_bench.is_(True)).all():
+            if obj.code not in have:
+                obj.from_bench = False; n += 1
+    if custs:
+        have = {((c.get("oracle_cust_no") or "").strip(), (pl or "").upper()) for c in custs for pl in (c.get("plants") or [])}
+        for obj in db.query(models.Customer).filter(models.Customer.from_bench.is_(True)).all():
+            if (obj.code, obj.plant_code) not in have:
+                obj.from_bench = False; n += 1
+                obj.notes = ("No longer in the Dispatch Planning Bench - can be deleted. " + (obj.notes or ""))[:250]
+    if n:
+        db.flush()
+    return n
 
 
 def strip_locked(obj, vals: dict, kind: str) -> list:

@@ -1,4 +1,11 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.37.3 - 2026-10-30 (HHT unchanged 2.23.0) - delete customers removed from the Bench (DT)
+- Customer master had no Delete for 🔒 Bench customers, and a customer deleted in the Dispatch Planning Bench stayed locked in AssetTrack for ever.
+- Now: a customer (per plant) or plant the Bench no longer has is **released on the next Bench pull** - the 🔒 lock goes, the note says "No longer in the Dispatch Planning Bench - can be deleted", and **Delete** works (a customer already used on dispatches / slips is set inactive, history kept).
+- Nothing is released when the Bench list is empty or a plant database could not be read.
+- 🔒 Bench rows show a greyed **Delete** with a tooltip: delete or deactivate it in the Bench Customer Master.
+- Bench link status counts the released records.
+
 ## Server 1.37.2 - 2026-10-21 (HHT unchanged 2.23.0) - GCS invoice date (DT)
 - **Inv Date was blank on the gate pass** when the ERP file wrote the date in a layout AssetTrack did not know. Now read: 21-OCT-26 (Oracle DD-MON-RR), 21-Oct-2026, 21/10/2026, 21-10-26, 21.10.2026, 2026-10-21, with a time (11:03:52 or T11:03:52), 20261021 and Excel day numbers. Day first; month first only when it cannot be day first (10/21/2026). 2-digit years are no longer read as year 26.
 - Also taken as the invoice date: columns TRX_DATE, INVOICE_DT, INV DT, BILL DATE.

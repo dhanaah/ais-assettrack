@@ -339,7 +339,7 @@ def sql_fetch(cfg):
     def shared():
         """Bench shared masters (1.37.0 · DT): plants + company customers (ais_plants / ais_customers in the master
         database) and which plants serve each customer (customer_master of every plant database)."""
-        plants, custs, serve = [], {}, {}
+        plants, custs, serve, complete = [], {}, {}, True
         with eng.connect() as c:
             dbs = _databases(cfg, c)
             mdb = next((d for d in dbs if not d or not _db_plant(d)), dbs[0] if dbs else None)
@@ -356,9 +356,9 @@ def sql_fetch(cfg):
                     for r in _rows(c, f"SELECT code FROM {_t(cfg, dbn, 'customer_master')}"):
                         serve.setdefault((_s(r.get("code")) or "").upper(), []).append(pl)
                 except Exception:
-                    pass
+                    complete = False                # a plant database not readable: do not treat its customers as removed
         out = [{**v, "code": k, "plants": sorted(set(p for p in serve.get(k, []) if p))} for k, v in custs.items()]
-        return {"plants": plants, "customers": out}
+        return {"plants": plants, "customers": out, "complete": complete}
 
     def fetch(path):
         if path.startswith("/api/masters/shared"):
