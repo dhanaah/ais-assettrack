@@ -636,6 +636,15 @@ with TestClient(app) as c:
     check(r.status_code == 200, f"Customer Staff user created for HMIL: {r.text[:80]}")
     r = c.post("/api/v1/users", headers=A, json={"user_id": "bad.staff", "full_name": "x", "plant_code": "CHN", "roles": ["CUST_STAFF"], "password": "Cust@1234"})
     check(r.status_code == 400, "Customer Staff without a customer refused")
+    with SessionLocal() as db:                    # 1.37.4: the Bench short code is accepted too and stored as the customer code
+        db.get(models.Customer, hm_id).bench_code = "HMB"; db.commit()
+    r = c.post("/api/v1/users", headers=A, json={"user_id": "hmb.staff", "full_name": "x", "plant_code": "CHN", "customer_code": "hmb",
+                                                 "roles": ["CUST_STAFF"], "password": "Cust@1234"})
+    check(r.status_code == 200 and next(u for u in c.get("/api/v1/users", headers=A).json() if u["user_id"] == "hmb.staff")["customer_code"] == "HMIL",
+          "Customer Staff by Bench code HMB -> saved as customer HMIL")
+    r = c.post("/api/v1/users", headers=A, json={"user_id": "x.staff", "full_name": "x", "plant_code": "CHN", "customer_code": "NOPE",
+                                                 "roles": ["CUST_STAFF"], "password": "Cust@1234"})
+    check(r.status_code == 400 and "not a customer of plant CHN" in r.text, "unknown customer: clear message")
     r = c.post("/api/v1/auth/login", json={"user_id": "hmil.staff", "password": "Cust@1234", "device_id": "HHT-X", "app_version": "9.9.9"})
     check(r.status_code == 403 and "customer HHT" in r.text, "customer staff cannot sign in on an AIS HHT")
     r = c.post("/api/ext/v1/return-slip", headers=DK, json={"pallets": ["CHN-P002"], "vehicle_no": "TN09ZZ1"})

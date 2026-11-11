@@ -209,8 +209,15 @@ def upsert_user(body: UserIn, request: Request, p: Principal = Depends(current_u
     u.extra_plants = ";".join(x.strip().upper() for x in (body.extra_plants or "").replace(",", ";").split(";") if x.strip() and db.get(models.Plant, x.strip().upper()))[:200] or None
     if "CUST_STAFF" in roles:              # customer staff: one customer of this plant, no AIS roles beside it
         cc = (body.customer_code or "").strip().upper()
-        if not cc or not db.query(models.Customer).filter_by(code=cc, plant_code=plant).first():
-            raise HTTPException(400, "Customer Staff needs the plant and a customer of that plant")
+        if not plant:
+            raise HTTPException(400, "Customer Staff needs a plant - choose the plant that serves the customer")
+        if not cc:
+            raise HTTPException(400, f"Customer Staff needs a customer - choose one of plant {plant}'s customers")
+        cobj = (db.query(models.Customer).filter_by(code=cc, plant_code=plant).first()
+                or db.query(models.Customer).filter_by(bench_code=cc, plant_code=plant).first())   # Bench code (HMIL) also accepted
+        if not cobj:
+            raise HTTPException(400, f"Customer {cc} is not a customer of plant {plant} - since 1.37 the code is the Oracle customer no.")
+        cc = cobj.code
         if len(roles) > 1:
             raise HTTPException(400, "Customer Staff cannot have AIS roles as well")
         u.customer_code = cc

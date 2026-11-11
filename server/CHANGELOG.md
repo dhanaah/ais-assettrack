@@ -1,4 +1,9 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.37.4 - 2026-11-11 (HHT unchanged 2.23.0) - Customer Staff user (DT)
+- "Customer Staff needs the plant and a customer of that plant" although the customer exists: since 1.37.0 the customer code is the Oracle customer no. (101653, 1234), but the Users form asked for a typed code "e.g. HMIL".
+- Users form: **Customer is now a drop-down** of the chosen plant's customers (Oracle no. · Bench code · name), refreshed when the plant changes.
+- Server also accepts the Bench code (HMIL, RNAIPL) and saves the Oracle no.; clearer messages (no plant / no customer / not a customer of that plant).
+
 ## Server 1.37.3 - 2026-10-30 (HHT unchanged 2.23.0) - delete customers removed from the Bench (DT)
 - Customer master had no Delete for 🔒 Bench customers, and a customer deleted in the Dispatch Planning Bench stayed locked in AssetTrack for ever.
 - Now: a customer (per plant) or plant the Bench no longer has is **released on the next Bench pull** - the 🔒 lock goes, the note says "No longer in the Dispatch Planning Bench - can be deleted", and **Delete** works (a customer already used on dispatches / slips is set inactive, history kept).
