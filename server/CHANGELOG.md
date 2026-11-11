@@ -1,4 +1,8 @@
 # Changelog — AIS AssetTrack Server
+## Server 1.37.5 - 2026-11-11 (HHT unchanged 2.23.0) - GCS FTP messages (DT)
+- "GCS inbox pull failed: 530 Please login with USER and PASS." - the FTP server (vsftpd) does not offer FTPS and answers the FTPS start (AUTH TLS) with this 530; the user / password were never sent.
+- Now the message says what to do: "FTP server … does not accept FTPS - untick FTPS (TLS), Save and read again"; a wrong login says "FTP login refused for user … - check user and password".
+
 ## Server 1.37.4 - 2026-11-11 (HHT unchanged 2.23.0) - Customer Staff user (DT)
 - "Customer Staff needs the plant and a customer of that plant" although the customer exists: since 1.37.0 the customer code is the Oracle customer no. (101653, 1234), but the Users form asked for a typed code "e.g. HMIL".
 - Users form: **Customer is now a drop-down** of the chosen plant's customers (Oracle no. · Bench code · name), refreshed when the plant changes.

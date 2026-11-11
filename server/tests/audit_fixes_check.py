@@ -703,6 +703,30 @@ check(_g32.is_cancelled({"cancelled_date": "01-JAN-1900"}) is False and _g32.is_
 _r = _g32._lookup({"TRX_DATE": "21-OCT-26"})
 check(_r.get("invoice_date") == "21-OCT-26", "TRX_DATE column is taken as the invoice date")
 
+print("\n33) GCS FTP: clear message when FTPS is ticked on a plain FTP server / wrong login (530, 11-Nov)")
+import socket as _so, threading as _th  # noqa: E402
+def _fake_ftp(sock):
+    while True:
+        cn, _ = sock.accept(); cn.sendall(b"220 vsFTPd\r\n")
+        for ln in cn.makefile("rb"):
+            cmd = ln.decode().strip()
+            if cmd.startswith("AUTH"): cn.sendall(b"530 Please login with USER and PASS.\r\n")
+            elif cmd.startswith("USER"): cn.sendall(b"331 Please specify the password.\r\n")
+            elif cmd.startswith("PASS"): cn.sendall(b"230 Login successful.\r\n" if cmd == "PASS good" else b"530 Login incorrect.\r\n")
+            elif cmd.startswith("QUIT"): cn.sendall(b"221 bye\r\n"); break
+        cn.close()
+_ss = _so.socket(); _ss.bind(("127.0.0.1", 0)); _ss.listen(5)
+_th.Thread(target=_fake_ftp, args=(_ss,), daemon=True).start()
+_fc = {"gcs_host": "127.0.0.1", "gcs_port": _ss.getsockname()[1], "gcs_user": "gcs"}
+def _try(**kw):
+    try:
+        _g32._ftp(_fc | kw).close(); return "ok"
+    except Exception as ex:
+        return str(ex)
+check("untick FTPS" in _try(gcs_tls=True, gcs_password="good"), "FTPS ticked on a plain FTP server: says untick FTPS (TLS)")
+check("check user and password" in _try(gcs_tls=False, gcs_password="bad"), "wrong password: says check user and password")
+check(_try(gcs_tls=False, gcs_password="good") == "ok", "plain FTP with the right login connects")
+
 print()
 print("ALL AUDIT CHECKS PASSED" if not FAILS else f"{len(FAILS)} FAILED")
 sys.exit(1 if FAILS else 0)

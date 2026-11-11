@@ -718,11 +718,26 @@ def card_block(db: Session, k: models.PickList, lpn_nos: list[str], pallet_no: s
 
 
 def _ftp(cfg):
+    """Connect + log in. Plain FTP errors are turned into a clear next step for the user (1.37.5 · DT)."""
+    from ftplib import error_perm
+    host, user = cfg["gcs_host"], cfg["gcs_user"] or "anonymous"
     if cfg["gcs_tls"]:
         from ftplib import FTP_TLS
-        f = FTP_TLS(); f.connect(cfg["gcs_host"], cfg["gcs_port"], timeout=20); f.login(cfg["gcs_user"] or "anonymous", cfg["gcs_password"] or ""); f.prot_p()
+        f = FTP_TLS(); f.connect(host, cfg["gcs_port"], timeout=20)
+        try:
+            f.auth()                                  # AUTH TLS - refused by a server without FTPS
+        except error_perm as e:
+            f.close()
+            raise RuntimeError(f"FTP server {host} does not accept FTPS (it answered '{str(e)[:60]}') - untick FTPS (TLS), Save and read again") from e
     else:
-        f = FTP(); f.connect(cfg["gcs_host"], cfg["gcs_port"], timeout=20); f.login(cfg["gcs_user"] or "anonymous", cfg["gcs_password"] or "")
+        f = FTP(); f.connect(host, cfg["gcs_port"], timeout=20)
+    try:
+        f.login(user, cfg["gcs_password"] or "")
+    except error_perm as e:
+        f.close()
+        raise RuntimeError(f"FTP login refused for user '{user}' on {host} ('{str(e)[:60]}') - check user and password (retype the password and Save)") from e
+    if cfg["gcs_tls"]:
+        f.prot_p()
     return f
 
 
